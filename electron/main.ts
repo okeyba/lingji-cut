@@ -11,10 +11,12 @@ import { analyzeSrt, regenerateAICard } from '../src/lib/ai-analysis';
 import { buildExportRenderConfig, type ExportConfig } from '../src/lib/export-settings';
 import { generateCoverCandidates } from '../src/lib/jimeng-client';
 import { prepareTimelineForRemotionRender, type RenderAssetDescriptor } from '../src/lib/remotion-assets';
+import type { PersistedAIState } from '../src/lib/ai-persistence';
 import { parseSrt } from '../src/lib/srt-parser';
 import type { SrtEntry, TimelineData } from '../src/types';
 import type { AICard, AISettings } from '../src/types/ai';
 import { createApplicationMenuTemplate } from './app-menu';
+import { materializePersistedAIState, materializeTimelineWebCards } from './web-card-storage';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -222,12 +224,24 @@ ipcMain.handle(
 
 ipcMain.handle('save-timeline', async (_event, projectDir: string, data: string) => {
   await fs.mkdir(projectDir, { recursive: true });
-  await fs.writeFile(path.join(projectDir, 'timeline.json'), data, 'utf-8');
+  const parsedTimeline = JSON.parse(data) as TimelineData;
+  const { data: normalizedTimeline } = await materializeTimelineWebCards(projectDir, parsedTimeline);
+  const serializedTimeline = JSON.stringify(normalizedTimeline, null, 2);
+  await fs.writeFile(path.join(projectDir, 'timeline.json'), serializedTimeline, 'utf-8');
+  return serializedTimeline;
 });
 
 ipcMain.handle('load-timeline', async (_event, projectDir: string) => {
   try {
-    return await fs.readFile(path.join(projectDir, 'timeline.json'), 'utf-8');
+    const filePath = path.join(projectDir, 'timeline.json');
+    const rawTimeline = await fs.readFile(filePath, 'utf-8');
+    const parsedTimeline = JSON.parse(rawTimeline) as TimelineData;
+    const { data: normalizedTimeline, changed } = await materializeTimelineWebCards(projectDir, parsedTimeline);
+    const serializedTimeline = JSON.stringify(normalizedTimeline, null, 2);
+    if (changed) {
+      await fs.writeFile(filePath, serializedTimeline, 'utf-8');
+    }
+    return serializedTimeline;
   } catch {
     return null;
   }
@@ -235,12 +249,24 @@ ipcMain.handle('load-timeline', async (_event, projectDir: string) => {
 
 ipcMain.handle('save-ai-analysis', async (_event, projectDir: string, data: string) => {
   await fs.mkdir(projectDir, { recursive: true });
-  await fs.writeFile(path.join(projectDir, 'ai-analysis.json'), data, 'utf-8');
+  const parsedState = JSON.parse(data) as PersistedAIState;
+  const { data: normalizedState } = await materializePersistedAIState(projectDir, parsedState);
+  const serializedState = JSON.stringify(normalizedState, null, 2);
+  await fs.writeFile(path.join(projectDir, 'ai-analysis.json'), serializedState, 'utf-8');
+  return serializedState;
 });
 
 ipcMain.handle('load-ai-analysis', async (_event, projectDir: string) => {
   try {
-    return await fs.readFile(path.join(projectDir, 'ai-analysis.json'), 'utf-8');
+    const filePath = path.join(projectDir, 'ai-analysis.json');
+    const rawState = await fs.readFile(filePath, 'utf-8');
+    const parsedState = JSON.parse(rawState) as PersistedAIState;
+    const { data: normalizedState, changed } = await materializePersistedAIState(projectDir, parsedState);
+    const serializedState = JSON.stringify(normalizedState, null, 2);
+    if (changed) {
+      await fs.writeFile(filePath, serializedState, 'utf-8');
+    }
+    return serializedState;
   } catch {
     return null;
   }

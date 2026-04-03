@@ -59,6 +59,6 @@ describe('Editor', () => {
     );
 
     expect(html).toContain('overflow:hidden');
-    expect(html).toContain('padding:0 12px 12px');
+    expect(html).toContain('padding:0 16px 16px');
   });
 });

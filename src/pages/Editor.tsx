@@ -20,7 +20,7 @@ interface EditorProps {
 }
 
 const TIMELINE_PANEL_HEIGHT_KEY = 'podcast-editor-timeline-panel-height';
-const TIMELINE_RESIZE_HANDLE_HEIGHT = 8;
+const TIMELINE_RESIZE_HANDLE_HEIGHT = 10;
 
 function readStoredTimelinePanelHeight(): number | null {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
@@ -230,20 +230,23 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
         gridTemplateRows: `minmax(0, 1fr) ${TIMELINE_RESIZE_HANDLE_HEIGHT}px ${timelinePanelHeight}px`,
         height: '100%',
         minHeight: 0,
+        background: 'linear-gradient(135deg, #020617 0%, #020617 50%, #020617 100%)',
       }}
     >
       <div
         style={{
           minHeight: 0,
           display: 'grid',
-          gridTemplateColumns: layout.stackSidebar ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(240px, 280px)',
+          gridTemplateColumns: layout.stackSidebar ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(260px, 300px)',
           gridTemplateRows: layout.stackSidebar
             ? `minmax(0, 1fr) ${layout.sidebarRailHeight}px`
             : 'minmax(0, 1fr)',
           overflow: 'hidden',
+          gap: 16,
+          padding: 16,
         }}
       >
-        <div style={{ padding: layout.compactToolbar ? 12 : 20, minWidth: 0, minHeight: 0 }}>
+        <div style={{ minWidth: 0, minHeight: 0 }}>
           <PreviewPanel
             playerRef={playerRef}
             isPlaying={isPlaying}
@@ -260,14 +263,21 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
             flexDirection: 'column',
             minHeight: 0,
             overflow: 'hidden',
-            background: 'rgba(21, 23, 28, 0.98)',
+            background: 'rgba(15, 23, 42, 0.85)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            borderRadius: 20,
+            border: '1px solid rgba(148, 163, 184, 0.12)',
+            boxShadow: '0 24px 60px rgba(15, 23, 42, 0.65)',
           }}
         >
           <div
             style={{
               display: 'flex',
-              borderBottom: '1px solid rgba(255,255,255,0.06)',
+              borderBottom: '1px solid rgba(148, 163, 184, 0.10)',
               flexShrink: 0,
+              padding: '6px 8px 0',
+              background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.6) 0%, rgba(15, 23, 42, 0.3) 100%)',
             }}
           >
             <button
@@ -276,9 +286,11 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
               style={{
                 ...sidebarTabStyle,
                 borderBottom:
-                  activePanel === 'assets' ? '2px solid #7bd5ff' : '2px solid transparent',
-                color: activePanel === 'assets' ? '#f4f7fb' : '#64748b',
-                fontWeight: activePanel === 'assets' ? 700 : 500,
+                  activePanel === 'assets' ? '2px solid #38bdf8' : '2px solid transparent',
+                color: activePanel === 'assets' ? '#f8fafc' : '#64748b',
+                background: activePanel === 'assets' ? 'rgba(56, 189, 248, 0.08)' : 'transparent',
+                borderRadius: activePanel === 'assets' ? '12px 12px 0 0' : 0,
+                margin: '0 2px',
               }}
             >
               素材
@@ -289,9 +301,11 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
               style={{
                 ...sidebarTabStyle,
                 borderBottom:
-                  activePanel === 'ai' ? '2px solid #6366f1' : '2px solid transparent',
-                color: activePanel === 'ai' ? '#f4f7fb' : '#64748b',
-                fontWeight: activePanel === 'ai' ? 700 : 500,
+                  activePanel === 'ai' ? '2px solid #818cf8' : '2px solid transparent',
+                color: activePanel === 'ai' ? '#f8fafc' : '#64748b',
+                background: activePanel === 'ai' ? 'rgba(129, 140, 248, 0.08)' : 'transparent',
+                borderRadius: activePanel === 'ai' ? '12px 12px 0 0' : 0,
+                margin: '0 2px',
               }}
             >
               AI 助手
@@ -320,11 +334,16 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
       >
         <div
           style={{
-            width: 74,
-            height: 4,
+            width: 80,
+            height: 5,
             borderRadius: 999,
-            background: isResizingTimeline ? 'rgba(123,213,255,0.82)' : 'rgba(255,255,255,0.16)',
-            boxShadow: isResizingTimeline ? '0 0 0 1px rgba(123,213,255,0.16)' : 'none',
+            background: isResizingTimeline
+              ? 'linear-gradient(90deg, rgba(56, 189, 248, 0.9), rgba(129, 140, 248, 0.9))'
+              : 'rgba(148, 163, 184, 0.25)',
+            boxShadow: isResizingTimeline
+              ? '0 0 20px rgba(56, 189, 248, 0.35)'
+              : 'none',
+            transition: 'all 200ms ease-out',
           }}
         />
       </div>
@@ -332,7 +351,7 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
       <div
         style={{
           minHeight: 0,
-          padding: '0 12px 12px',
+          padding: '0 16px 16px',
           boxSizing: 'border-box',
           overflow: 'hidden',
         }}
@@ -367,16 +386,20 @@ const timelineResizeHandleStyle: CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   userSelect: 'none',
-  background: 'linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.05))',
+  background: 'linear-gradient(180deg, rgba(2, 6, 23, 0.98), rgba(15, 23, 42, 0.96))',
+  borderTop: '1px solid rgba(148, 163, 184, 0.10)',
+  borderBottom: '1px solid rgba(148, 163, 184, 0.08)',
 };
 
 const sidebarTabStyle: CSSProperties = {
   flex: 1,
-  padding: '10px 0',
+  padding: '12px 0',
   background: 'none',
   borderLeft: 'none',
   borderRight: 'none',
   borderTop: 'none',
-  fontSize: 12,
+  fontSize: 13,
+  fontWeight: 600,
   cursor: 'pointer',
+  transition: 'all 200ms ease-out',
 };

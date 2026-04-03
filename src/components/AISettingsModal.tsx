@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { AISettings } from '../types/ai';
 
 interface AISettingsModalProps {
@@ -46,7 +47,7 @@ export function AISettingsModal({
 
   const canSave = Boolean(llmBaseUrl.trim() && llmApiKey.trim());
 
-  return (
+  const modalContent = (
     <div style={overlayStyle}>
       <div style={modalStyle}>
         <div style={eyebrowStyle}>SETTINGS</div>
@@ -125,6 +126,12 @@ export function AISettingsModal({
       </div>
     </div>
   );
+
+  if (typeof document === 'undefined' || !document.body) {
+    return modalContent;
+  }
+
+  return createPortal(modalContent, document.body);
 }
 
 function SettingsField({
@@ -161,6 +168,8 @@ const overlayStyle = {
 const modalStyle = {
   width: 520,
   maxWidth: '100%',
+  maxHeight: '80vh',
+  overflowY: 'auto' as const,
   borderRadius: 26,
   border: '1px solid rgba(255,255,255,0.08)',
   background: '#0b1220',

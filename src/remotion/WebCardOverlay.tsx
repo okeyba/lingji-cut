@@ -1,18 +1,32 @@
 import { useMemo, type CSSProperties } from 'react';
 import { normalizeWebCardSrcDoc } from '../lib/web-card';
+import type { WebCardPayload } from '../types/ai';
+import { resolveRemotionAssetSrc } from '../lib/remotion-assets';
 
 interface WebCardOverlayProps {
-  srcDoc: string;
+  webCard: WebCardPayload;
   style?: CSSProperties;
 }
 
-export function WebCardOverlay({ srcDoc, style }: WebCardOverlayProps) {
-  const normalizedSrcDoc = useMemo(() => normalizeWebCardSrcDoc(srcDoc), [srcDoc]);
+export function WebCardOverlay({ webCard, style }: WebCardOverlayProps) {
+  const iframeSource = useMemo(
+    () =>
+      webCard.src
+        ? { src: resolveRemotionAssetSrc(webCard.src) }
+        : webCard.srcDoc
+          ? { srcDoc: normalizeWebCardSrcDoc(webCard.srcDoc) }
+          : null,
+    [webCard.src, webCard.srcDoc],
+  );
+
+  if (!iframeSource) {
+    return null;
+  }
 
   return (
     <iframe
       title="AI 网页卡片"
-      srcDoc={normalizedSrcDoc}
+      {...iframeSource}
       style={{
         width: '100%',
         height: '100%',

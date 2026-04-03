@@ -337,9 +337,9 @@ export default function App() {
           display: 'grid',
           gridTemplateRows: 'auto minmax(0, 1fr)',
           background:
-            'radial-gradient(circle at top, rgba(68,211,255,0.18), transparent 35%), #09111f',
-          color: '#f5f7fb',
-          fontFamily: '"PingFang SC", "Microsoft YaHei", sans-serif',
+            'radial-gradient(circle at 20% -10%, rgba(56, 189, 248, 0.15), transparent 40%), radial-gradient(circle at 80% 0%, rgba(129, 140, 248, 0.12), transparent 45%), #020617',
+          color: '#f8fafc',
+          fontFamily: '"PingFang SC", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, sans-serif',
         }}
       >
         <Toolbar
@@ -375,10 +375,10 @@ export default function App() {
         width: '100%',
         height: '100%',
         background:
-          'linear-gradient(180deg, rgba(11,20,35,1) 0%, rgba(7,11,20,1) 100%)',
-        color: '#f5f7fb',
+          'radial-gradient(circle at 20% -10%, rgba(56, 189, 248, 0.12), transparent 45%), radial-gradient(circle at 85% -5%, rgba(129, 140, 248, 0.10), transparent 50%), radial-gradient(circle at 50% 120%, rgba(249, 115, 22, 0.08), transparent 40%), #020617',
+        color: '#f8fafc',
         overflow: 'hidden',
-        fontFamily: '"PingFang SC", "Microsoft YaHei", sans-serif',
+        fontFamily: '"PingFang SC", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, sans-serif',
         display: 'grid',
         gridTemplateRows: 'auto minmax(0, 1fr)',
       }}

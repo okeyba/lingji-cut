@@ -9,6 +9,7 @@ import { InsightCard } from './cards/InsightCard';
 import { ChapterCard } from './cards/ChapterCard';
 import { QuoteCard } from './cards/QuoteCard';
 import { WebCardOverlay } from './WebCardOverlay';
+import { hasWebCardSource } from '../types/ai';
 
 interface AICardOverlayProps {
   overlay: OverlayItem;
@@ -29,8 +30,8 @@ function renderCard(overlay: OverlayItem, chapterIndex: number) {
     return null;
   }
 
-  if (data.renderMode === 'web-card' && data.webCard?.srcDoc) {
-    return <WebCardOverlay srcDoc={data.webCard.srcDoc} />;
+  if (data.renderMode === 'web-card' && hasWebCardSource(data.webCard)) {
+    return <WebCardOverlay webCard={data.webCard!} />;
   }
 
   if (data.cardType === 'summary') {
@@ -71,7 +72,7 @@ export function AICardOverlay({ overlay, fps, chapterIndex = 1 }: AICardOverlayP
   const durationInFrames = Math.max(1, msToFrame(overlay.durationMs, fps));
   const isFullscreen = overlay.aiCardData.displayMode === 'fullscreen';
   const isWebCard =
-    overlay.aiCardData.renderMode === 'web-card' && !!overlay.aiCardData.webCard?.srcDoc;
+    overlay.aiCardData.renderMode === 'web-card' && hasWebCardSource(overlay.aiCardData.webCard);
   const scale = Math.min(overlay.position.width / 1_920, overlay.position.height / 1_080);
   const wrapperStyle: CSSProperties = isFullscreen
     ? { position: 'absolute', inset: 0 }

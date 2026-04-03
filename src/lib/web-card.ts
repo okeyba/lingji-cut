@@ -1,5 +1,5 @@
-const DEFAULT_STAGE_WIDTH = 1_920;
-const DEFAULT_STAGE_HEIGHT = 1_080;
+export const DEFAULT_WEB_CARD_STAGE_WIDTH = 1_920;
+export const DEFAULT_WEB_CARD_STAGE_HEIGHT = 1_080;
 
 function injectIntoHead(source: string, injection: string): string {
   if (/<head[^>]*>/i.test(source)) {
@@ -34,6 +34,30 @@ function buildAutoScaleScript(
 <script data-web-card-autoscale="true">
 (function(){
   var W=${stageWidth},H=${stageHeight};
+  function isVisible(el){
+    if(!el)return false;
+    var style=window.getComputedStyle(el);
+    return style.display!=='none'&&style.visibility!=='hidden';
+  }
+  function getPrimary(body){
+    var children=Array.prototype.filter.call(body.children||[],isVisible);
+    if(children.length===1)return children[0];
+    return body.querySelector('[data-web-card-stage]')||body.firstElementChild||null;
+  }
+  function expandPrimary(body){
+    var primary=getPrimary(body);
+    if(!primary)return;
+    var rect=primary.getBoundingClientRect();
+    if(rect.width < W * 0.72){
+      primary.style.width='100%';
+      primary.style.maxWidth='none';
+    }
+    if(rect.height < H * 0.72){
+      primary.style.height='100%';
+      primary.style.minHeight=H+'px';
+    }
+    primary.style.boxSizing='border-box';
+  }
   function fit(){
     var root=document.documentElement,body=document.body;
     if(!body)return;
@@ -58,6 +82,9 @@ function buildAutoScaleScript(
     body.style.transformOrigin='top left';
     body.style.transform='scale('+s+')';
     body.style.overflow='hidden';
+    body.style.padding='0';
+    body.style.minHeight=H+'px';
+    expandPrimary(body);
   }
   fit();
   window.addEventListener('resize',fit);
@@ -68,8 +95,8 @@ function buildAutoScaleScript(
 
 export function normalizeWebCardSrcDoc(
   srcDoc: string,
-  stageWidth = DEFAULT_STAGE_WIDTH,
-  stageHeight = DEFAULT_STAGE_HEIGHT,
+  stageWidth = DEFAULT_WEB_CARD_STAGE_WIDTH,
+  stageHeight = DEFAULT_WEB_CARD_STAGE_HEIGHT,
 ): string {
   if (!srcDoc.trim()) {
     return srcDoc;
@@ -86,6 +113,8 @@ html, body {
   margin: 0 !important;
   overflow: hidden !important;
   background: #020617;
+  width: 100%;
+  height: 100%;
 }
 </style>`;
 
@@ -105,8 +134,8 @@ html, body {
  */
 export function fitWebCardIframe(
   iframe: HTMLIFrameElement,
-  stageWidth = DEFAULT_STAGE_WIDTH,
-  stageHeight = DEFAULT_STAGE_HEIGHT,
+  stageWidth = DEFAULT_WEB_CARD_STAGE_WIDTH,
+  stageHeight = DEFAULT_WEB_CARD_STAGE_HEIGHT,
 ): void {
   const doc = iframe.contentDocument;
   const win = iframe.contentWindow;

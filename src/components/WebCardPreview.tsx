@@ -1,17 +1,19 @@
 import { useMemo } from 'react';
 import { normalizeWebCardSrcDoc } from '../lib/web-card';
+import type { WebCardPayload } from '../types/ai';
+import { toFileSrc } from '../lib/utils';
 
 const DEFAULT_STAGE_WIDTH = 1_920;
 const DEFAULT_STAGE_HEIGHT = 1_080;
 
 interface WebCardPreviewProps {
-  srcDoc?: string;
+  webCard?: WebCardPayload;
   stageWidth?: number;
   stageHeight?: number;
 }
 
 export function WebCardPreview({
-  srcDoc,
+  webCard,
   stageWidth = DEFAULT_STAGE_WIDTH,
   stageHeight = DEFAULT_STAGE_HEIGHT,
 }: WebCardPreviewProps) {
@@ -19,12 +21,17 @@ export function WebCardPreview({
     () => `${Math.max(1, stageWidth)} / ${Math.max(1, stageHeight)}`,
     [stageHeight, stageWidth],
   );
-  const normalizedSrcDoc = useMemo(
-    () => (srcDoc ? normalizeWebCardSrcDoc(srcDoc, stageWidth, stageHeight) : undefined),
-    [srcDoc, stageWidth, stageHeight],
+  const iframeSource = useMemo(
+    () =>
+      webCard?.src
+        ? { src: toFileSrc(webCard.src) }
+        : webCard?.srcDoc
+          ? { srcDoc: normalizeWebCardSrcDoc(webCard.srcDoc, stageWidth, stageHeight) }
+          : null,
+    [stageHeight, stageWidth, webCard?.src, webCard?.srcDoc],
   );
 
-  if (!normalizedSrcDoc) {
+  if (!iframeSource) {
     return (
       <div
         style={{
@@ -46,7 +53,7 @@ export function WebCardPreview({
     >
       <iframe
         title="网页卡片预览"
-        srcDoc={normalizedSrcDoc}
+        {...iframeSource}
         style={{
           ...frameStyle,
         }}

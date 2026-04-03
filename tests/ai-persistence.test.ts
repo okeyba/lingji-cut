@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   createPersistedAIState,
   parsePersistedAIState,
+  removeCardsInResult,
+  setAllCardsEnabledInResult,
   selectCoverCandidate,
   toggleCardEnabledInResult,
   updateCardInResult,
@@ -62,6 +64,20 @@ describe('AI persistence helpers', () => {
   it('updates cards and cover selection without mutating the original state', () => {
     const toggled = toggleCardEnabledInResult(baseAnalysisResult, 'card-1');
     const updated = updateCardInResult(toggled, 'card-1', { title: '新的标题' });
+    const enabledAll = setAllCardsEnabledInResult(
+      {
+        ...baseAnalysisResult,
+        cards: [
+          ...baseAnalysisResult.cards,
+          {
+            ...baseAnalysisResult.cards[0],
+            id: 'card-2',
+            enabled: false,
+          },
+        ],
+      },
+      true,
+    );
     const selected = selectCoverCandidate(
       [
         { id: 'cover-1', prompt: 'A', imageUrl: '/tmp/1.png', selected: false },
@@ -74,6 +90,26 @@ describe('AI persistence helpers', () => {
     expect(toggled?.cards[0]?.enabled).toBe(false);
     expect(updated?.cards[0]?.title).toBe('新的标题');
     expect(updated?.cards[0]?.cardPrompt).toBe('做成更像商业海报');
+    expect(enabledAll?.cards.every((card) => card.enabled)).toBe(true);
     expect(selected.map((candidate) => candidate.selected)).toEqual([true, false]);
+  });
+
+  it('removes cards by id without mutating the original result', () => {
+    const resultWithTwoCards: AIAnalysisResult = {
+      ...baseAnalysisResult,
+      cards: [
+        ...baseAnalysisResult.cards,
+        {
+          ...baseAnalysisResult.cards[0],
+          id: 'card-2',
+          title: '第二张卡',
+        },
+      ],
+    };
+
+    const removed = removeCardsInResult(resultWithTwoCards, ['card-1']);
+
+    expect(resultWithTwoCards.cards).toHaveLength(2);
+    expect(removed?.cards.map((card) => card.id)).toEqual(['card-2']);
   });
 });

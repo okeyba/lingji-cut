@@ -57,8 +57,8 @@ function isWebCardPayload(value: unknown): value is WebCardPayload {
   return Boolean(
     value &&
       typeof value === 'object' &&
-      'srcDoc' in value &&
-      typeof (value as { srcDoc?: unknown }).srcDoc === 'string',
+      (('src' in value && typeof (value as { src?: unknown }).src === 'string') ||
+        ('srcDoc' in value && typeof (value as { srcDoc?: unknown }).srcDoc === 'string')),
   );
 }
 
@@ -68,7 +68,8 @@ function normalizeWebCardPayload(value: unknown): WebCardPayload | undefined {
   }
 
   return {
-    srcDoc: value.srcDoc,
+    src: typeof value.src === 'string' ? value.src : undefined,
+    srcDoc: typeof value.srcDoc === 'string' ? value.srcDoc : undefined,
     runtimeStatus:
       value.runtimeStatus === 'loading' ||
       value.runtimeStatus === 'ready' ||
@@ -238,7 +239,9 @@ srcDoc 要求：
 - 必须是完整 HTML 文档
 - 允许 HTML/CSS/JS
 - 允许外部图片、脚本、字体和样式
-- 默认 1920x1080 画布
+- 必须按 1920x1080 的 16:9 画布设计，并默认铺满整个画面
+- 禁止只做居中的窄卡片、手机比例、小弹窗或大量留白布局
+- 不要把主要内容限制在很小的 max-width 容器里
 - 尽量做成信息层级清晰、视觉冲击力强的 16:9 卡片
 - 不要输出 markdown 代码块
 - 内容必须忠于字幕事实，不要编造
@@ -300,6 +303,9 @@ ${cardPrompt || '无'}
 - renderMode 默认输出 "web-card"
 - webCard.srcDoc 必须是完整 HTML 文档
 - 允许 HTML/CSS/JS 和外部资源
+- 必须按 1920x1080 的 16:9 画布设计，并默认铺满整个画面
+- 禁止只做居中的窄卡片、手机比例、小弹窗或大量留白布局
+- 不要把主要内容限制在很小的 max-width 容器里
 - 内容必须忠于字幕事实，不要编造
 - 允许改变文案组织、视觉结构和表现方式
 - 保留结构化的 title/content 作为兜底文本

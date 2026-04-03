@@ -33,6 +33,7 @@ export interface TimelineStore {
   addTrack: () => string;
   addOverlay: (overlay: OverlayDraft) => string;
   addAICardsToTimeline: (cards: AICardTimelineDraft[]) => void;
+  removeAICardOverlaysBySourceIds: (sourceCardIds: string[]) => void;
   updateOverlay: (id: string, updates: Partial<OverlayItem>) => void;
   removeOverlay: (id: string) => void;
   undo: () => void;
@@ -413,6 +414,25 @@ export const useTimelineStore = create<TimelineStore>((set) => ({
       const nextTimeline = normalizeTimeline({
         ...state.timeline,
         overlays,
+      });
+
+      return buildCommittedTimelineState(state, nextTimeline);
+    }),
+  removeAICardOverlaysBySourceIds: (sourceCardIds) =>
+    set((state) => {
+      if (sourceCardIds.length === 0) {
+        return {};
+      }
+
+      const sourceCardIdSet = new Set(sourceCardIds);
+      const nextTimeline = normalizeTimeline({
+        ...state.timeline,
+        overlays: state.timeline.overlays.filter(
+          (overlay) =>
+            overlay.overlayType !== 'ai-card' ||
+            !overlay.aiCardData?.sourceCardId ||
+            !sourceCardIdSet.has(overlay.aiCardData.sourceCardId),
+        ),
       });
 
       return buildCommittedTimelineState(state, nextTimeline);

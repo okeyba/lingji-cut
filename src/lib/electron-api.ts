@@ -54,9 +54,9 @@ export interface ElectronAPI {
     settings: AISettings;
     projectDir: string;
   }) => Promise<CoverCandidate[]>;
-  saveTimeline: (projectDir: string, data: string) => Promise<void>;
+  saveTimeline: (projectDir: string, data: string) => Promise<string>;
   loadTimeline: (projectDir: string) => Promise<string | null>;
-  saveAIAnalysis: (projectDir: string, data: string) => Promise<void>;
+  saveAIAnalysis: (projectDir: string, data: string) => Promise<string>;
   loadAIAnalysis: (projectDir: string) => Promise<string | null>;
   selectProjectDirectory: () => Promise<string | null>;
   selectSetupFile: (kind: ImportKind) => Promise<string | null>;

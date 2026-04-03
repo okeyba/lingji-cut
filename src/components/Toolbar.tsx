@@ -22,21 +22,23 @@ const saveStatusLabelMap: Record<SaveStatus, string> = {
 };
 
 const baseMenuButtonStyle = {
-  height: 34,
-  padding: '0 12px',
+  height: 36,
+  padding: '0 14px',
   borderRadius: 12,
-  border: '1px solid rgba(255,255,255,0.08)',
-  background: 'rgba(255,255,255,0.04)',
-  color: '#f5f7fb',
+  border: '1px solid rgba(148, 163, 184, 0.16)',
+  background: 'rgba(15, 23, 42, 0.6)',
+  color: '#f8fafc',
   cursor: 'pointer',
   fontSize: 13,
   fontWeight: 600,
+  transition: 'all 150ms ease-out',
 };
 
 const shortcutTextStyle = {
-  color: '#6f829d',
+  color: '#64748b',
   fontSize: 12,
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  fontWeight: 500,
 };
 
 export function Toolbar({
@@ -94,15 +96,16 @@ export function Toolbar({
   return (
     <div
       style={{
-        minHeight: compact ? 62 : 58,
+        minHeight: compact ? 66 : 62,
         display: 'grid',
         gridTemplateColumns: 'minmax(320px, auto) minmax(0, 1fr) auto',
         alignItems: 'center',
-        gap: 12,
-        padding: compact ? '8px 12px' : '8px 14px',
-        borderBottom: '1px solid rgba(255,255,255,0.08)',
-        background: 'linear-gradient(180deg, rgba(9,17,31,0.98) 0%, rgba(7,12,22,0.94) 100%)',
-        backdropFilter: 'blur(18px)',
+        gap: 14,
+        padding: compact ? '10px 16px' : '10px 20px',
+        borderBottom: '1px solid rgba(148, 163, 184, 0.12)',
+        background: 'linear-gradient(180deg, rgba(2, 6, 23, 0.98) 0%, rgba(15, 23, 42, 0.92) 100%)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
         WebkitAppRegion: 'drag',
         userSelect: 'none',
       }}
@@ -122,7 +125,18 @@ export function Toolbar({
             <button
               type="button"
               onClick={() => setOpenMenu((current) => (current === menu.key ? null : menu.key))}
-              style={baseMenuButtonStyle}
+              style={{
+                ...baseMenuButtonStyle,
+                background: openMenu === menu.key
+                  ? 'linear-gradient(135deg, rgba(56, 189, 248, 0.18) 0%, rgba(129, 140, 248, 0.12) 100%)'
+                  : 'rgba(15, 23, 42, 0.6)',
+                borderColor: openMenu === menu.key
+                  ? 'rgba(56, 189, 248, 0.35)'
+                  : 'rgba(148, 163, 184, 0.16)',
+                color: openMenu === menu.key
+                  ? '#e0f2fe'
+                  : '#f8fafc',
+              }}
             >
               {menu.label}
             </button>
@@ -131,15 +145,17 @@ export function Toolbar({
               <div
                 style={{
                   position: 'absolute',
-                  top: 42,
+                  top: 44,
                   left: 0,
-                  minWidth: menu.key === 'project' ? 256 : 220,
-                  padding: 10,
-                  borderRadius: 16,
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  background: 'rgba(7, 12, 22, 0.98)',
-                  boxShadow: '0 18px 42px rgba(0,0,0,0.36)',
+                  minWidth: menu.key === 'project' ? 280 : 240,
+                  padding: 12,
+                  borderRadius: 18,
+                  border: '1px solid rgba(148, 163, 184, 0.16)',
+                  background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(2, 6, 23, 0.96) 100%)',
+                  boxShadow: '0 24px 80px rgba(0, 0, 0, 0.65)',
                   zIndex: 10,
+                  backdropFilter: 'blur(24px)',
+                  WebkitBackdropFilter: 'blur(24px)',
                 }}
               >
                 {menu.items.map(([label, shortcut, handler]) => {
@@ -164,17 +180,19 @@ export function Toolbar({
                       }}
                       style={{
                         width: '100%',
-                        minHeight: 38,
-                        padding: '0 10px',
+                        minHeight: 42,
+                        padding: '0 12px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        gap: 12,
-                        borderRadius: 10,
+                        gap: 14,
+                        borderRadius: 12,
                         border: 'none',
-                        background: disabled ? 'transparent' : 'rgba(255,255,255,0.03)',
-                        color: disabled ? '#526379' : '#f5f7fb',
+                        background: disabled ? 'transparent' : 'rgba(148, 163, 184, 0.06)',
+                        color: disabled ? '#475569' : '#f8fafc',
                         cursor: disabled ? 'not-allowed' : 'pointer',
+                        fontWeight: disabled ? 500 : 600,
+                        transition: 'all 120ms ease-out',
                       }}
                     >
                       <span>{label}</span>
@@ -184,8 +202,15 @@ export function Toolbar({
                 })}
 
                 {menu.key === 'project' && recentProjects.length > 0 ? (
-                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                    <div style={{ padding: '0 10px 6px', fontSize: 11, letterSpacing: '0.14em', color: '#7bd5ff' }}>
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(148, 163, 184, 0.14)' }}>
+                    <div style={{
+                      padding: '0 12px 8px',
+                      fontSize: 11,
+                      letterSpacing: '0.16em',
+                      color: '#38bdf8',
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                    }}>
                       打开最近项目
                     </div>
                     {recentProjects.map((project) => (
@@ -198,22 +223,24 @@ export function Toolbar({
                         }}
                         style={{
                           width: '100%',
-                          minHeight: 40,
-                          padding: '8px 10px',
-                          borderRadius: 10,
+                          minHeight: 44,
+                          padding: '10px 12px',
+                          borderRadius: 12,
                           border: 'none',
-                          background: 'rgba(255,255,255,0.03)',
-                          color: '#f5f7fb',
+                          background: 'rgba(148, 163, 184, 0.06)',
+                          color: '#f8fafc',
                           cursor: 'pointer',
                           textAlign: 'left',
+                          transition: 'all 120ms ease-out',
                         }}
                       >
-                        <div style={{ fontSize: 13, fontWeight: 600 }}>{project.name}</div>
+                        <div style={{ fontSize: 13, fontWeight: 700 }}>{project.name}</div>
                         <div
                           style={{
-                            marginTop: 2,
-                            color: '#6f829d',
+                            marginTop: 3,
+                            color: '#64748b',
                             fontSize: 11,
+                            fontWeight: 500,
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -236,34 +263,46 @@ export function Toolbar({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: 18,
+          gap: 20,
         }}
       >
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 11, letterSpacing: '0.18em', color: '#7bd5ff' }}>
+          <div style={{
+            fontSize: 11,
+            letterSpacing: '0.20em',
+            color: '#38bdf8',
+            fontWeight: 800,
+            textTransform: 'uppercase',
+          }}>
             VIDEO WEB MASTER
           </div>
-          <div style={{ marginTop: 2, fontSize: compact ? 16 : 17, fontWeight: 700 }}>
+          <div style={{ marginTop: 3, fontSize: compact ? 17 : 18, fontWeight: 800, color: '#f8fafc' }}>
             播客视频编辑器
           </div>
           <div
             style={{
-              marginTop: 4,
+              marginTop: 5,
               display: 'flex',
               alignItems: 'center',
-              gap: 8,
-              color: '#91a2bc',
+              gap: 10,
+              color: '#94a3b8',
               fontSize: 12,
             }}
           >
-            <span>{visibleProjectName}</span>
+            <span style={{ fontWeight: 500 }}>{visibleProjectName}</span>
             <span
               style={{
-                padding: '3px 8px',
+                padding: '4px 10px',
                 borderRadius: 999,
                 background:
-                  saveStatus === 'error' ? 'rgba(255,110,110,0.16)' : 'rgba(255,255,255,0.06)',
-                color: saveStatus === 'error' ? '#ff8b8b' : '#b7c3d6',
+                  saveStatus === 'error'
+                    ? 'rgba(239, 68, 68, 0.18)'
+                    : 'rgba(148, 163, 184, 0.10)',
+                color: saveStatus === 'error' ? '#fca5a5' : '#cbd5e1',
+                fontWeight: 600,
+                border: saveStatus === 'error'
+                  ? '1px solid rgba(239, 68, 68, 0.35)'
+                  : '1px solid rgba(148, 163, 184, 0.15)',
               }}
             >
               {saveStatusLabel}
@@ -272,12 +311,13 @@ export function Toolbar({
         </div>
         <div
           style={{
-            color: '#91a2bc',
+            color: '#64748b',
             fontSize: 12,
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             textAlign: 'right',
+            fontWeight: 500,
           }}
         >
           {helperText}
@@ -287,21 +327,29 @@ export function Toolbar({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 10,
-          color: '#91a2bc',
+          gap: 12,
+          color: '#94a3b8',
           fontSize: 12,
           WebkitAppRegion: 'no-drag',
         }}
       >
-        <div style={{ whiteSpace: 'nowrap' }}>{page === 'editor' ? '编辑中' : '准备导入'}</div>
+        <div style={{ whiteSpace: 'nowrap', fontWeight: 500 }}>
+          {page === 'editor' ? '编辑中' : '准备导入'}
+        </div>
         <button
           type="button"
           disabled={page !== 'editor'}
           onClick={() => onCommand('export')}
           style={{
             ...baseMenuButtonStyle,
-            color: page === 'editor' ? '#f5f7fb' : '#526379',
+            color: page === 'editor' ? '#f8fafc' : '#475569',
             cursor: page === 'editor' ? 'pointer' : 'not-allowed',
+            background: page === 'editor'
+              ? 'linear-gradient(135deg, rgba(249, 115, 22, 0.22) 0%, rgba(234, 88, 12, 0.14) 100%)'
+              : 'rgba(15, 23, 42, 0.6)',
+            borderColor: page === 'editor'
+              ? 'rgba(249, 115, 22, 0.35)'
+              : 'rgba(148, 163, 184, 0.16)',
           }}
         >
           导出 MP4

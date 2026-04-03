@@ -86,6 +86,7 @@ const mockModules = vi.hoisted(() => {
       srtEntries: [{ index: 1, startMs: 0, endMs: 2_000, text: 'hello' }],
       timeline: buildTimeline(),
       addAICardsToTimeline: () => undefined,
+      removeAICardOverlaysBySourceIds: () => undefined,
     },
   };
 });
@@ -123,12 +124,16 @@ describe('AIPanel', () => {
     const html = renderToStaticMarkup(<AIPanel compact={false} />);
 
     expect(html).toContain('AI 助手');
+    expect(html).toContain('title="AI 分析与生成助手"');
     expect(html).toContain('内容卡片');
     expect(html).toContain('封面');
     expect(html).toContain('应用到时间线');
     expect(html).toContain('重新分析');
+    expect(html).toContain('根据当前字幕和提示词重新生成内容卡片');
     expect(html).toContain('已在轨道 1');
     expect(html).toContain('整体创作提示词');
+    expect(html).toContain('删除已选');
+    expect(html).toContain('全选');
   });
 
   it('shows explicit loading feedback while analyzing content', () => {
@@ -142,6 +147,30 @@ describe('AIPanel', () => {
     expect(html).toContain('正在拆解字幕与生成卡片');
     expect(html).toContain('解析字幕');
     expect(html).toContain('aria-busy="true"');
+  });
+
+  it('shows a visible loading overlay while reanalyzing existing cards', () => {
+    mockModules.aiStoreState.isAnalyzing = true;
+
+    const html = renderToStaticMarkup(<AIPanel compact={false} />);
+
+    expect(html).toContain('AI 正在重新生成当前内容卡片');
+    expect(html).toContain('当前卡片区会暂时锁定');
+    expect(html).toContain('重新分析中');
+  });
+
+  it('keeps a regenerate entry visible after all cards are deleted', () => {
+    mockModules.aiStoreState.analysisResult = {
+      ...mockModules.buildAnalysisResult(),
+      cards: [],
+    };
+
+    const html = renderToStaticMarkup(<AIPanel compact={false} />);
+
+    expect(html).toContain('卡片已清空');
+    expect(html).toContain('内容卡片已全部删除');
+    expect(html).toContain('重新生成卡片');
+    expect(html).not.toContain('应用到时间线');
   });
 
   it('keeps the compact assistant footer action visible', () => {

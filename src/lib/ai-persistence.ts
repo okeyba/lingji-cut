@@ -28,7 +28,7 @@ function isWebCardPayload(value: unknown): value is NonNullable<AICard['webCard'
   }
 
   return (
-    typeof value.srcDoc === 'string' &&
+    (typeof value.src === 'string' || typeof value.srcDoc === 'string') &&
     (value.runtimeStatus === undefined ||
       value.runtimeStatus === 'idle' ||
       value.runtimeStatus === 'loading' ||
@@ -139,6 +139,20 @@ export function toggleCardEnabledInResult(
   };
 }
 
+export function setAllCardsEnabledInResult(
+  result: AIAnalysisResult | null,
+  enabled: boolean,
+): AIAnalysisResult | null {
+  if (!result) {
+    return null;
+  }
+
+  return {
+    ...result,
+    cards: result.cards.map((card) => ({ ...card, enabled })),
+  };
+}
+
 export function updateCardInResult(
   result: AIAnalysisResult | null,
   cardId: string,
@@ -154,6 +168,29 @@ export function updateCardInResult(
       card.id === cardId ? { ...card, ...updates, id: cardId } : card,
     ),
   };
+}
+
+export function removeCardsInResult(
+  result: AIAnalysisResult | null,
+  cardIds: string[],
+): AIAnalysisResult | null {
+  if (!result || cardIds.length === 0) {
+    return result;
+  }
+
+  const cardIdSet = new Set(cardIds);
+
+  return {
+    ...result,
+    cards: result.cards.filter((card) => !cardIdSet.has(card.id)),
+  };
+}
+
+export function removeCardInResult(
+  result: AIAnalysisResult | null,
+  cardId: string,
+): AIAnalysisResult | null {
+  return removeCardsInResult(result, [cardId]);
 }
 
 export function selectCoverCandidate(

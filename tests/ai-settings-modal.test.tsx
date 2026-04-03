@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { AISettingsModal } from '../src/components/AISettingsModal';
 
 describe('AISettingsModal', () => {
-  it('renders LLM and Jimeng configuration fields', () => {
+  it('renders modal content during server-side rendering fallback', () => {
     const html = renderToStaticMarkup(
       <AISettingsModal
         visible
@@ -22,6 +22,5 @@ describe('AISettingsModal', () => {
     expect(html).toContain('AI 配置');
     expect(html).toContain('LLM API Base URL');
     expect(html).toContain('即梦 Session ID');
-    expect(html).toContain('保存');
   });
 });

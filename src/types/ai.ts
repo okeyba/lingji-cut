@@ -18,7 +18,8 @@ export interface CardStyle {
 }
 
 export interface WebCardPayload {
-  srcDoc: string;
+  src?: string;
+  srcDoc?: string;
   runtimeStatus?: 'idle' | 'loading' | 'ready' | 'error';
   lastGeneratedAt?: number;
 }
@@ -114,6 +115,10 @@ export function isDataContent(value: unknown): value is DataContent {
   }
 
   return Array.isArray(value.items);
+}
+
+export function hasWebCardSource(webCard?: WebCardPayload | null): boolean {
+  return Boolean(webCard?.src || webCard?.srcDoc);
 }
 
 export function buildAICardOverlayData(card: AICard): AICardOverlayData {

@@ -88,6 +88,20 @@ export function prepareTimelineForRemotionRender(timeline: TimelineData): {
       overlays: timeline.overlays.map((overlay) => ({
         ...overlay,
         assetPath: registerAsset(overlay.assetPath, overlay.id),
+        aiCardData: overlay.aiCardData
+          ? {
+              ...overlay.aiCardData,
+              webCard: overlay.aiCardData.webCard?.src
+                ? {
+                    ...overlay.aiCardData.webCard,
+                    src: registerAsset(
+                      overlay.aiCardData.webCard.src,
+                      `${overlay.aiCardData.sourceCardId ?? overlay.id}-web-card`,
+                    ),
+                  }
+                : overlay.aiCardData.webCard,
+            }
+          : overlay.aiCardData,
       })),
     },
     assets,

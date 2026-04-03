@@ -11,6 +11,7 @@ interface AICardListProps {
   cards: AICard[];
   placements?: Record<string, AICardPlacement>;
   onToggleEnabled: (cardId: string) => void;
+  onDeleteCard: (cardId: string) => void;
   onEditCard: (cardId: string) => void;
 }
 
@@ -22,7 +23,13 @@ const CARD_TYPE_META: Record<AICardType, { label: string; color: string; icon: A
   quote: { label: '金句', color: '#ec4899', icon: 'quote' },
 };
 
-export function AICardList({ cards, placements = {}, onToggleEnabled, onEditCard }: AICardListProps) {
+export function AICardList({
+  cards,
+  placements = {},
+  onToggleEnabled,
+  onDeleteCard,
+  onEditCard,
+}: AICardListProps) {
   return (
     <div style={listStyle}>
       {cards.map((card) => {
@@ -36,7 +43,8 @@ export function AICardList({ cards, placements = {}, onToggleEnabled, onEditCard
             style={{
               ...cardStyle,
               borderLeft: `3px solid ${meta.color}`,
-              opacity: card.enabled ? 1 : 0.45,
+              boxShadow: card.enabled ? '0 0 0 1px rgba(99,102,241,0.4)' : 'none',
+              opacity: card.enabled ? 1 : 0.58,
             }}
           >
             <div style={cardRowStyle}>
@@ -44,7 +52,24 @@ export function AICardList({ cards, placements = {}, onToggleEnabled, onEditCard
                 <AppIcon name={meta.icon} size={14} />
               </div>
               <div style={cardContentStyle}>
-                <div style={cardTitleStyle}>{card.title}</div>
+                <div style={cardHeaderStyle}>
+                  <button
+                    type="button"
+                    aria-label={card.enabled ? `取消选择卡片 ${card.title}` : `选择卡片 ${card.title}`}
+                    title={card.enabled ? '已选' : '未选'}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onToggleEnabled(card.id);
+                    }}
+                    style={{
+                      ...selectionToggleStyle,
+                      color: card.enabled ? '#22c55e' : '#64748b',
+                    }}
+                  >
+                    <AppIcon name={card.enabled ? 'circle-check-big' : 'circle'} size={15} />
+                  </button>
+                  <div style={cardTitleStyle}>{card.title}</div>
+                </div>
                 <div style={cardMetaStyle}>
                   {formatTime(card.startMs)} - {formatTime(card.endMs)}
                 </div>
@@ -59,21 +84,15 @@ export function AICardList({ cards, placements = {}, onToggleEnabled, onEditCard
               </div>
               <button
                 type="button"
-                aria-label={card.enabled ? '禁用卡片' : '启用卡片'}
-                title={card.enabled ? '已启用' : '未启用'}
+                aria-label={`删除卡片 ${card.title}`}
+                title="删除卡片"
                 onClick={(event) => {
                   event.stopPropagation();
-                  onToggleEnabled(card.id);
+                  onDeleteCard(card.id);
                 }}
-                style={{
-                  ...toggleStyle,
-                  color: card.enabled ? '#22c55e' : '#64748b',
-                }}
+                style={deleteButtonStyle}
               >
-                <AppIcon
-                  name={card.enabled ? 'circle-check-big' : 'circle'}
-                  size={16}
-                />
+                删除
               </button>
             </div>
           </div>
@@ -118,6 +137,13 @@ const cardContentStyle = {
   minWidth: 0,
 };
 
+const cardHeaderStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  minWidth: 0,
+};
+
 const cardTitleStyle = {
   color: '#f4f7fb',
   fontSize: 12,
@@ -142,15 +168,32 @@ const cardPlacementStyle = {
   letterSpacing: '0.01em',
 };
 
-const toggleStyle = {
-  width: 26,
+const selectionToggleStyle = {
+  width: 22,
+  height: 22,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  background: 'rgba(255,255,255,0.04)',
+  border: '1px solid rgba(255,255,255,0.08)',
+  borderRadius: 999,
+  cursor: 'pointer',
+  padding: 0,
+  flexShrink: 0,
+};
+
+const deleteButtonStyle = {
+  minWidth: 38,
   height: 26,
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
-  background: 'transparent',
-  border: 'none',
+  borderRadius: 8,
+  border: '1px solid rgba(248,113,113,0.22)',
+  background: 'rgba(127,29,29,0.24)',
+  color: '#fda4af',
   cursor: 'pointer',
-  padding: 0,
-  gap: 8,
+  padding: '0 8px',
+  fontSize: 11,
+  fontWeight: 600,
 };

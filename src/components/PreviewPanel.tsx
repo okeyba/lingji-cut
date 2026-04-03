@@ -70,13 +70,16 @@ function PreviewPanelComponent({
       style={{
         height: '100%',
         minHeight: 0,
-        borderRadius: 26,
-        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: 24,
+        border: '1px solid rgba(148, 163, 184, 0.12)',
         background:
-          'linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)',
+          'linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.85) 100%)',
         overflow: 'hidden',
         display: 'grid',
         gridTemplateRows: 'auto minmax(0, 1fr) auto',
+        boxShadow: '0 24px 80px rgba(15, 23, 42, 0.75)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
       }}
     >
       <div
@@ -84,28 +87,51 @@ function PreviewPanelComponent({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          padding: '14px 18px',
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
-          background: 'rgba(9, 17, 31, 0.92)',
+          padding: '16px 20px',
+          borderBottom: '1px solid rgba(148, 163, 184, 0.10)',
+          background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.9) 0%, rgba(15, 23, 42, 0.7) 100%)',
         }}
       >
         <div>
-          <div style={{ fontSize: 11, letterSpacing: '0.14em', color: '#91a2bc' }}>PREVIEW</div>
-          <div style={{ marginTop: 4, fontSize: 16, fontWeight: 700 }}>Remotion Player</div>
+          <div style={{
+            fontSize: 11,
+            letterSpacing: '0.16em',
+            color: '#38bdf8',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+          }}>
+            PREVIEW
+          </div>
+          <div style={{
+            marginTop: 4,
+            fontSize: 16,
+            fontWeight: 700,
+            color: '#f8fafc',
+          }}>
+            播客预览
+          </div>
         </div>
-        <div style={{ fontSize: 12, color: '#91a2bc' }}>
-          {timeline.width} × {timeline.height} / {fps}fps
+        <div style={{
+          fontSize: 12,
+          color: '#94a3b8',
+          background: 'rgba(15, 23, 42, 0.5)',
+          padding: '6px 12px',
+          borderRadius: 999,
+          border: '1px solid rgba(148, 163, 184, 0.15)',
+        }}>
+          {timeline.width} × {timeline.height} · {fps}fps
         </div>
       </div>
 
       <div
         ref={previewAreaRef}
         style={{
-          padding: compact ? 14 : 18,
+          padding: compact ? 16 : 24,
           display: 'grid',
           placeItems: 'center',
           minHeight: 0,
           overflow: 'hidden',
+          background: 'radial-gradient(circle at 50% 50%, rgba(15, 23, 42, 0.4) 0%, rgba(2, 6, 23, 0.95) 100%)',
         }}
       >
         <div
@@ -114,11 +140,12 @@ function PreviewPanelComponent({
             height: Math.max(0, stageSize.height),
             maxWidth: '100%',
             maxHeight: '100%',
-            borderRadius: 18,
+            borderRadius: 20,
             overflow: 'hidden',
-            background: '#000',
-            boxShadow: '0 22px 50px rgba(0,0,0,0.32)',
-            border: '1px solid rgba(255,255,255,0.06)',
+            background: '#020617',
+            boxShadow: '0 28px 80px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(148, 163, 184, 0.12) inset',
+            border: '1px solid rgba(15, 23, 42, 0.8)',
+            position: 'relative',
           }}
         >
           <Player
@@ -146,10 +173,10 @@ function PreviewPanelComponent({
           alignItems: compact ? 'stretch' : 'center',
           justifyContent: 'space-between',
           flexDirection: compact ? 'column' : 'row',
-          gap: compact ? 10 : 14,
-          padding: compact ? '12px 14px 14px' : '12px 18px 18px',
-          borderTop: '1px solid rgba(255,255,255,0.08)',
-          background: 'rgba(8, 14, 25, 0.94)',
+          gap: compact ? 12 : 16,
+          padding: compact ? '14px 18px 18px' : '16px 24px 24px',
+          borderTop: '1px solid rgba(148, 163, 184, 0.10)',
+          background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%)',
         }}
       >
         <div
@@ -157,24 +184,30 @@ function PreviewPanelComponent({
             display: 'flex',
             alignItems: compact ? 'stretch' : 'center',
             flexDirection: compact ? 'column' : 'row',
-            gap: 10,
+            gap: 12,
             minWidth: 0,
           }}
         >
           <button
             onClick={onTogglePlay}
             style={{
-              height: 42,
-              padding: '0 18px',
-              borderRadius: 14,
-              border: '1px solid rgba(255,255,255,0.12)',
+              height: 48,
+              padding: '0 24px',
+              borderRadius: 16,
+              border: isPlaying
+                ? '1px solid rgba(56, 189, 248, 0.4)'
+                : '1px solid rgba(148, 163, 184, 0.18)',
               background: isPlaying
-                ? 'linear-gradient(90deg, rgba(123,213,255,0.24) 0%, rgba(123,213,255,0.14) 100%)'
-                : 'rgba(255,255,255,0.05)',
-              color: '#f5f7fb',
+                ? 'linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(56, 189, 248, 0.15) 100%)'
+                : 'linear-gradient(135deg, rgba(148, 163, 184, 0.15) 0%, rgba(148, 163, 184, 0.08) 100%)',
+              color: '#f8fafc',
               cursor: 'pointer',
-              fontSize: 14,
+              fontSize: 15,
               fontWeight: 700,
+              transition: 'all 200ms ease-out',
+              boxShadow: isPlaying
+                ? '0 0 20px rgba(56, 189, 248, 0.25)'
+                : 'none',
             }}
           >
             {isPlaying ? '⏸ 暂停' : '▶ 播放'}
@@ -184,33 +217,42 @@ function PreviewPanelComponent({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 10,
+              gap: 12,
               flexWrap: 'wrap',
             }}
           >
             <div
               style={{
-                padding: '8px 12px',
-                borderRadius: 12,
-                background: 'rgba(255,255,255,0.05)',
-                color: '#edf2fb',
-                fontSize: 13,
+                padding: '10px 16px',
+                borderRadius: 14,
+                background: 'rgba(15, 23, 42, 0.6)',
+                color: '#f1f5f9',
+                fontSize: 14,
                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                fontWeight: 600,
+                border: '1px solid rgba(148, 163, 184, 0.15)',
+                boxShadow: '0 4px 12px rgba(15, 23, 42, 0.4)',
               }}
             >
               {formatTime(currentTimeMs)} / {formatTime(durationMs)}
             </div>
             <div
               style={{
-                padding: '7px 11px',
+                padding: '8px 14px',
                 borderRadius: 999,
-                background: isPlaying ? 'rgba(123,213,255,0.14)' : 'rgba(255,255,255,0.05)',
-                color: isPlaying ? '#7bd5ff' : '#91a2bc',
+                background: isPlaying
+                  ? 'linear-gradient(135deg, rgba(56, 189, 248, 0.2) 0%, rgba(56, 189, 248, 0.1) 100%)'
+                  : 'rgba(15, 23, 42, 0.4)',
+                color: isPlaying ? '#38bdf8' : '#94a3b8',
                 fontSize: 12,
-                fontWeight: 600,
+                fontWeight: 700,
+                border: isPlaying
+                  ? '1px solid rgba(56, 189, 248, 0.35)'
+                  : '1px solid rgba(148, 163, 184, 0.12)',
+                transition: 'all 200ms ease-out',
               }}
             >
-              {isPlaying ? '播放中' : '已暂停'}
+              {isPlaying ? '● 播放中' : '⏸ 已暂停'}
             </div>
           </div>
         </div>
@@ -218,16 +260,18 @@ function PreviewPanelComponent({
         <button
           onClick={onExport}
           style={{
-            height: 42,
-            padding: '0 20px',
-            borderRadius: 14,
+            height: 48,
+            padding: '0 28px',
+            borderRadius: 16,
             border: 'none',
-            background: 'linear-gradient(90deg, #ffb547 0%, #ff8f5f 100%)',
-            color: '#241200',
+            background: 'linear-gradient(135deg, #f97316 0%, #ea580c 50%, #dc2626 100%)',
+            color: '#0f172a',
             cursor: 'pointer',
-            fontSize: 14,
+            fontSize: 15,
             fontWeight: 800,
             alignSelf: compact ? 'stretch' : 'auto',
+            boxShadow: '0 12px 32px rgba(249, 115, 22, 0.45)',
+            transition: 'all 200ms ease-out',
           }}
         >
           导出 MP4

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { AICard, AICardType } from '../types/ai';
 import { WebCardPreview } from './WebCardPreview';
 
@@ -82,7 +83,7 @@ export function AICardEditModal({
     template: `${type}-default`,
   };
 
-  return (
+  const modalContent = (
     <div style={overlayStyle}>
       <div style={modalStyle}>
         <div style={eyebrowStyle}>EDIT CARD</div>
@@ -142,7 +143,7 @@ export function AICardEditModal({
           <div>
             <div style={fieldLabelStyle}>网页卡片预览</div>
             <WebCardPreview
-              srcDoc={card.webCard?.srcDoc}
+              webCard={card.webCard}
               stageWidth={previewWidth}
               stageHeight={previewHeight}
             />
@@ -216,6 +217,12 @@ export function AICardEditModal({
       </div>
     </div>
   );
+
+  if (typeof document === 'undefined' || !document.body) {
+    return modalContent;
+  }
+
+  return createPortal(modalContent, document.body);
 }
 
 const overlayStyle = {
@@ -224,14 +231,13 @@ const overlayStyle = {
   background: 'rgba(0,0,0,0.68)',
   display: 'grid',
   placeItems: 'center',
-  zIndex: 120,
+  zIndex: 160,
   padding: 20,
 };
 
 const modalStyle = {
-  width: 600,
-  maxWidth: '100%',
-  maxHeight: '80vh',
+  width: 'min(760px, calc(100vw - 40px))',
+  maxHeight: '88vh',
   overflowY: 'auto' as const,
   borderRadius: 26,
   border: '1px solid rgba(255,255,255,0.08)',

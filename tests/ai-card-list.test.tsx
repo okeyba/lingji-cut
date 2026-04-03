@@ -32,6 +32,7 @@ describe('AICardList', () => {
           },
         }}
         onToggleEnabled={() => undefined}
+        onDeleteCard={() => undefined}
         onEditCard={() => undefined}
       />,
     );
@@ -39,6 +40,8 @@ describe('AICardList', () => {
     expect(html).toContain('本期要点');
     expect(html).toContain('00:00 - 00:45');
     expect(html).toContain('已在轨道 1');
-    expect(html).toContain('已启用');
+    expect(html).toContain('已选');
+    expect(html).toContain('删除');
+    expect(html).not.toContain('type="checkbox"');
   });
 });

@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import {
   createPersistedAIState,
+  parsePersistedAIState,
+  removeCardsInResult,
+  setAllCardsEnabledInResult,
   selectCoverCandidate,
   toggleCardEnabledInResult,
   updateCardInResult,
@@ -32,8 +35,46 @@ const TAB_META: Record<'cards' | 'cover', { label: string; shortLabel: string; i
   cover: { label: '封面', shortLabel: '封面', icon: 'image' },
 };
 
+interface HoverHintProps {
+  label: string;
+  children: ReactNode;
+}
+
+function HoverHint({ label, children }: HoverHintProps) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <span
+      style={hoverHintWrapStyle}
+      onMouseEnter={() => setVisible(true)}
+      onMouseLeave={() => setVisible(false)}
+      onFocus={() => setVisible(true)}
+      onBlur={() => setVisible(false)}
+    >
+      {children}
+      <span
+        role="tooltip"
+        aria-hidden={!visible}
+        style={{
+          ...hoverHintBubbleStyle,
+          opacity: visible ? 1 : 0,
+          transform: visible ? 'translate(-50%, 0)' : 'translate(-50%, -4px)',
+        }}
+      >
+        {label}
+      </span>
+    </span>
+  );
+}
+
 export function AIPanel({ compact, railHeight }: AIPanelProps) {
-  const { srtEntries, timeline, addAICardsToTimeline, setGlobalBackground } = useTimelineStore();
+  const {
+    srtEntries,
+    timeline,
+    addAICardsToTimeline,
+    removeAICardOverlaysBySourceIds,
+    setGlobalBackground,
+  } = useTimelineStore();
   const {
     analysisResult,
     isAnalyzing,
@@ -44,8 +85,6 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
     setAnalysisResult,
     setAnalyzing,
     setAnalysisError,
-    toggleCardEnabled,
-    updateCard,
     setCoverCandidates,
     selectCover,
     setGeneratingCovers,
@@ -57,6 +96,9 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
   const [globalPromptDraft, setGlobalPromptDraft] = useState('');
   const editingCard = analysisResult?.cards.find((card) => card.id === editingCardId) ?? null;
   const enabledCount = analysisResult?.cards.filter((card) => card.enabled).length ?? 0;
+  const enabledCardIds =
+    analysisResult?.cards.filter((card) => card.enabled).map((card) => card.id) ?? [];
+  const selectedCount = enabledCardIds.length;
   const selectedCoverCandidate =
     coverCandidates.find((candidate) => candidate.selected) ?? coverCandidates[0] ?? null;
   const cardPlacements = (timeline.overlays ?? []).reduce<Record<string, AICardPlacement>>(
@@ -90,15 +132,22 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
 
   const persistAIState = useCallback(
     async (result: AIAnalysisResult | null, candidates: CoverCandidate[]) => {
+      const fallbackState = createPersistedAIState(result, candidates);
       const projectDir = getProjectDir();
       if (!projectDir) {
-        return;
+        return fallbackState;
       }
 
-      await window.electronAPI.saveAIAnalysis(
+      const savedState = await window.electronAPI.saveAIAnalysis(
         projectDir,
-        JSON.stringify(createPersistedAIState(result, candidates), null, 2),
+        JSON.stringify(fallbackState, null, 2),
       );
+
+      try {
+        return parsePersistedAIState(JSON.parse(savedState)) ?? fallbackState;
+      } catch {
+        return fallbackState;
+      }
     },
     [],
   );
@@ -110,10 +159,15 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
         return;
       }
 
-      toggleCardEnabled(cardId);
-      void persistAIState(nextResult, coverCandidates);
+      setAnalysisResult(nextResult);
+      void persistAIState(nextResult, coverCandidates).then((persistedState) => {
+        if (persistedState.analysisResult) {
+          setAnalysisResult(persistedState.analysisResult);
+        }
+        setCoverCandidates(persistedState.coverCandidates);
+      });
     },
-    [analysisResult, coverCandidates, persistAIState, toggleCardEnabled],
+    [analysisResult, coverCandidates, persistAIState, setAnalysisResult, setCoverCandidates],
   );
 
   const handleSaveCard = useCallback(
@@ -123,31 +177,43 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
         return;
       }
 
-      updateCard(cardId, updates);
-      const updatedCard = nextResult.cards.find((card) => card.id === cardId);
-      if (updatedCard && cardPlacements[cardId]) {
-        addAICardsToTimeline([buildAICardTimelineDraft(updatedCard)]);
-      }
-      void persistAIState(nextResult, coverCandidates);
+      setAnalysisResult(nextResult);
+      void persistAIState(nextResult, coverCandidates).then((persistedState) => {
+        const persistedResult = persistedState.analysisResult ?? nextResult;
+        setAnalysisResult(persistedResult);
+        setCoverCandidates(persistedState.coverCandidates);
+        const updatedCard = persistedResult.cards.find((card) => card.id === cardId);
+        if (updatedCard && cardPlacements[cardId]) {
+          addAICardsToTimeline([buildAICardTimelineDraft(updatedCard)]);
+        }
+      });
     },
-    [addAICardsToTimeline, analysisResult, cardPlacements, coverCandidates, persistAIState, updateCard],
+    [addAICardsToTimeline, analysisResult, cardPlacements, coverCandidates, persistAIState, setAnalysisResult, setCoverCandidates],
   );
 
   const handleSelectCover = useCallback(
     (candidateId: string) => {
       const nextCandidates = selectCoverCandidate(coverCandidates, candidateId);
       selectCover(candidateId);
-      void persistAIState(analysisResult, nextCandidates);
+      void persistAIState(analysisResult, nextCandidates).then((persistedState) => {
+        if (persistedState.analysisResult) {
+          setAnalysisResult(persistedState.analysisResult);
+        }
+        setCoverCandidates(persistedState.coverCandidates);
+      });
     },
-    [analysisResult, coverCandidates, persistAIState, selectCover],
+    [analysisResult, coverCandidates, persistAIState, selectCover, setAnalysisResult, setCoverCandidates],
   );
 
   const handlePersistedCovers = useCallback(
     async (candidates: CoverCandidate[]) => {
-      setCoverCandidates(candidates);
-      await persistAIState(analysisResult, candidates);
+      const persistedState = await persistAIState(analysisResult, candidates);
+      if (persistedState.analysisResult) {
+        setAnalysisResult(persistedState.analysisResult);
+      }
+      setCoverCandidates(persistedState.coverCandidates);
     },
-    [analysisResult, persistAIState, setCoverCandidates],
+    [analysisResult, persistAIState, setAnalysisResult, setCoverCandidates],
   );
 
   const handleAddCoverToTimeline = useCallback(
@@ -191,9 +257,9 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
         globalPrompt: globalPromptDraft.trim() || undefined,
       })) as AIAnalysisResult;
       const nextCandidates: CoverCandidate[] = [];
-      setAnalysisResult(result);
-      setCoverCandidates(nextCandidates);
-      await persistAIState(result, nextCandidates);
+      const persistedState = await persistAIState(result, nextCandidates);
+      setAnalysisResult(persistedState.analysisResult ?? result);
+      setCoverCandidates(persistedState.coverCandidates);
     } catch (error) {
       console.error('[ai-analysis] 分析失败', error);
       setAnalysisError(error instanceof Error ? error.message : '分析失败');
@@ -291,14 +357,14 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
         return;
       }
 
-      updateCard(editingCard.id, {
-        ...draftUpdates,
-        ...regeneratedCard,
-      });
-      if (cardPlacements[editingCard.id]) {
-        addAICardsToTimeline([buildAICardTimelineDraft(regeneratedCard)]);
+      const persistedState = await persistAIState(nextResult, coverCandidates);
+      const persistedResult = persistedState.analysisResult ?? nextResult;
+      setAnalysisResult(persistedResult);
+      setCoverCandidates(persistedState.coverCandidates);
+      const persistedCard = persistedResult.cards.find((card) => card.id === editingCard.id);
+      if (persistedCard && cardPlacements[editingCard.id]) {
+        addAICardsToTimeline([buildAICardTimelineDraft(persistedCard)]);
       }
-      await persistAIState(nextResult, coverCandidates);
     } catch (error) {
       console.error('单卡重生成失败:', error);
       setAnalysisError(error instanceof Error ? error.message : '单卡重生成失败');
@@ -315,7 +381,8 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
     persistAIState,
     setAnalysisError,
     srtEntries,
-    updateCard,
+    setAnalysisResult,
+    setCoverCandidates,
   ]);
   const handleGlobalPromptBlur = useCallback(() => {
     const normalizedPrompt = globalPromptDraft.trim();
@@ -333,19 +400,100 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
       globalPrompt: normalizedPrompt || undefined,
     };
     setAnalysisResult(nextResult);
-    void persistAIState(nextResult, coverCandidates);
-  }, [analysisResult, coverCandidates, globalPromptDraft, persistAIState, setAnalysisResult]);
+    void persistAIState(nextResult, coverCandidates).then((persistedState) => {
+      if (persistedState.analysisResult) {
+        setAnalysisResult(persistedState.analysisResult);
+      }
+      setCoverCandidates(persistedState.coverCandidates);
+    });
+  }, [analysisResult, coverCandidates, globalPromptDraft, persistAIState, setAnalysisResult, setCoverCandidates]);
+  const handleSelectAllCards = useCallback(() => {
+    if (!analysisResult?.cards.length) {
+      return;
+    }
+
+    const shouldEnableAll = analysisResult.cards.some((card) => !card.enabled);
+    const nextResult = setAllCardsEnabledInResult(analysisResult, shouldEnableAll);
+    if (!nextResult) {
+      return;
+    }
+
+    setAnalysisResult(nextResult);
+    void persistAIState(nextResult, coverCandidates).then((persistedState) => {
+      if (persistedState.analysisResult) {
+        setAnalysisResult(persistedState.analysisResult);
+      }
+      setCoverCandidates(persistedState.coverCandidates);
+    });
+  }, [analysisResult, coverCandidates, persistAIState, setAnalysisResult, setCoverCandidates]);
+  const handleDeleteCards = useCallback(
+    (cardIds: string[]) => {
+      const nextResult = removeCardsInResult(analysisResult, cardIds);
+      if (!nextResult) {
+        return;
+      }
+
+      setAnalysisResult(nextResult);
+      if (editingCardId && cardIds.includes(editingCardId)) {
+        setEditingCardId(null);
+      }
+      removeAICardOverlaysBySourceIds(cardIds);
+      void persistAIState(nextResult, coverCandidates).then((persistedState) => {
+        if (persistedState.analysisResult) {
+          setAnalysisResult(persistedState.analysisResult);
+        }
+        setCoverCandidates(persistedState.coverCandidates);
+      });
+    },
+    [
+      analysisResult,
+      coverCandidates,
+      editingCardId,
+      persistAIState,
+      removeAICardOverlaysBySourceIds,
+      setAnalysisResult,
+      setCoverCandidates,
+    ],
+  );
   const panelSettings = loadAISettings();
   const aiSettingsIssue = getAISettingsIssue(panelSettings);
   const hasSrtEntries = srtEntries.length > 0;
   const analyzeButtonDisabled = !hasSrtEntries || isAnalyzing;
   const analyzeButtonCursor = !hasSrtEntries ? 'not-allowed' : isAnalyzing ? 'wait' : 'pointer';
   const analyzeButtonOpacity = !hasSrtEntries ? 0.55 : isAnalyzing ? 0.72 : 1;
-  const showInitialState = !analysisResult;
+  const hasGeneratedCards = (analysisResult?.cards.length ?? 0) > 0;
+  const isCardListEmpty = Boolean(analysisResult && !hasGeneratedCards);
+  const showCardGenerationState = !analysisResult || !hasGeneratedCards;
+  const allCardsSelected = hasGeneratedCards && enabledCount === (analysisResult?.cards.length ?? 0);
   const analysisHeadline = analysisResult ? '正在重新分析内容卡片' : '正在拆解字幕与生成卡片';
   const analysisDescription = analysisResult
     ? '正在根据最新字幕和提示词重新组织结构，完成后会自动刷新当前卡片列表。'
     : '正在解析字幕、提炼重点并生成可编辑卡片，这通常需要几十秒。';
+  const analysisOverlayTitle = analysisResult
+    ? 'AI 正在重新生成当前内容卡片'
+    : 'AI 正在生成首批内容卡片';
+  const analysisOverlayText = analysisResult
+    ? '当前卡片区会暂时锁定，分析完成后将自动替换成新的卡片结果。'
+    : '请稍候，AI 会先解析字幕，再提炼重点并生成可编辑卡片。';
+  const generationStateBadgeLabel = isAnalyzing
+    ? 'AI 正在工作'
+    : isCardListEmpty
+    ? '卡片已清空'
+    : '准备生成内容卡片';
+  const generationStateText = isAnalyzing
+    ? `已载入 ${srtEntries.length} 条字幕，正在为你拆解结构与重点`
+    : srtEntries.length === 0
+    ? '请先导入 SRT 字幕文件'
+    : isCardListEmpty
+    ? `内容卡片已全部删除，当前仍有 ${srtEntries.length} 条字幕可重新分析生成`
+    : `已加载 ${srtEntries.length} 条字幕，点击分析`;
+  const analyzeButtonLabel = isAnalyzing
+    ? '分析中...'
+    : aiSettingsIssue
+    ? '先配置 AI'
+    : isCardListEmpty
+    ? '重新生成卡片'
+    : '分析内容';
 
   return (
     <aside
@@ -365,18 +513,22 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
       <div style={{ ...headerStyle, gap: compact ? 6 : 8 }}>
         <div style={{ ...headerInfoStyle, gap: compact ? 6 : 8 }}>
           <div style={{ ...headerTitleWrapStyle, gap: compact ? 6 : 8 }}>
-            <span
-              style={{
-                ...headerIconWrapStyle,
-                width: compact ? 20 : 22,
-                height: compact ? 20 : 22,
-              }}
-            >
-              <AppIcon name="sparkles" size={14} />
-            </span>
+            <HoverHint label="AI 分析与生成助手">
+              <span
+                style={{
+                  ...headerIconWrapStyle,
+                  width: compact ? 20 : 22,
+                  height: compact ? 20 : 22,
+                }}
+                title="AI 分析与生成助手"
+                aria-label="AI 分析与生成助手"
+              >
+                <AppIcon name="sparkles" size={14} />
+              </span>
+            </HoverHint>
             <div style={headerTitleStyle}>AI 助手</div>
           </div>
-          {analysisResult && !compact ? (
+          {hasGeneratedCards && !compact ? (
             <div style={summaryChipStyle}>
               已选 {enabledCount}/{analysisResult.cards.length}
             </div>
@@ -384,32 +536,36 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
         </div>
         <div style={headerActionsStyle}>
           {analysisResult ? (
+            <HoverHint label={isAnalyzing ? 'AI 正在重新分析内容卡片' : '根据当前字幕和提示词重新生成内容卡片'}>
+              <button
+                type="button"
+                onClick={handleAnalyze}
+                disabled={isAnalyzing}
+                style={{
+                  ...iconButtonStyle,
+                  width: headerButtonSize,
+                  height: headerButtonSize,
+                  opacity: isAnalyzing ? 0.7 : 1,
+                  cursor: isAnalyzing ? 'wait' : 'pointer',
+                }}
+                title={isAnalyzing ? '分析中' : '重新分析'}
+                aria-label={isAnalyzing ? '分析中' : '重新分析'}
+              >
+                {isAnalyzing ? <LoadingSpinner size={14} color="#c7d2fe" /> : <AppIcon name="refresh-cw" size={14} />}
+              </button>
+            </HoverHint>
+          ) : null}
+          <HoverHint label="打开 AI 全局设置">
             <button
               type="button"
-              onClick={handleAnalyze}
-              disabled={isAnalyzing}
-              style={{
-                ...iconButtonStyle,
-                width: headerButtonSize,
-                height: headerButtonSize,
-                opacity: isAnalyzing ? 0.7 : 1,
-                cursor: isAnalyzing ? 'wait' : 'pointer',
-              }}
-              title={isAnalyzing ? '分析中' : '重新分析'}
-              aria-label={isAnalyzing ? '分析中' : '重新分析'}
+              onClick={() => setIsSettingsOpen(true)}
+              style={{ ...iconButtonStyle, width: headerButtonSize, height: headerButtonSize }}
+              title="打开 AI 全局设置"
+              aria-label="打开 AI 全局设置"
             >
-              {isAnalyzing ? <LoadingSpinner size={14} color="#c7d2fe" /> : <AppIcon name="refresh-cw" size={14} />}
+              <AppIcon name="settings-2" size={14} />
             </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => setIsSettingsOpen(true)}
-            style={{ ...iconButtonStyle, width: headerButtonSize, height: headerButtonSize }}
-            title="AI 设置"
-            aria-label="AI 设置"
-          >
-            <AppIcon name="settings-2" size={14} />
-          </button>
+          </HoverHint>
         </div>
       </div>
 
@@ -458,7 +614,7 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
               />
             </div>
 
-            {showInitialState ? (
+            {showCardGenerationState ? (
               <div
                 style={{
                   ...emptyStateStyle,
@@ -468,15 +624,9 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
               >
                 <div style={emptyStateBadgeStyle}>
                   {isAnalyzing ? <LoadingSpinner size={14} color="#c7d2fe" /> : <AppIcon name="sparkles" size={14} />}
-                  {isAnalyzing ? 'AI 正在工作' : '准备生成内容卡片'}
+                  {generationStateBadgeLabel}
                 </div>
-                <div style={emptyStateTextStyle}>
-                  {isAnalyzing
-                    ? `已载入 ${srtEntries.length} 条字幕，正在为你拆解结构与重点`
-                    : srtEntries.length === 0
-                    ? '请先导入 SRT 字幕文件'
-                    : `已加载 ${srtEntries.length} 条字幕，点击分析`}
-                </div>
+                <div style={emptyStateTextStyle}>{generationStateText}</div>
                 {aiSettingsIssue ? <div style={hintTextStyle}>{aiSettingsIssue}</div> : null}
                 <button
                   type="button"
@@ -498,7 +648,7 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
                     ) : (
                       <AppIcon name={aiSettingsIssue ? 'settings-2' : 'sparkles'} size={14} />
                     )}
-                    {isAnalyzing ? '分析中...' : aiSettingsIssue ? '先配置 AI' : '分析内容'}
+                    {analyzeButtonLabel}
                   </span>
                 </button>
 
@@ -522,7 +672,7 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
               </div>
             ) : null}
 
-            {analysisResult && isAnalyzing ? (
+            {analysisResult && hasGeneratedCards && isAnalyzing ? (
               <div style={analysisBannerStyle} role="status" aria-live="polite">
                 <div style={analysisBannerHeaderStyle}>
                   <span style={analysisBannerBadgeStyle}>
@@ -535,20 +685,67 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
               </div>
             ) : null}
             {analysisError ? <div style={errorStyle}>{analysisError}</div> : null}
-            {analysisResult ? (
-              <div
-                style={{
-                  opacity: isAnalyzing ? 0.68 : 1,
-                  pointerEvents: isAnalyzing ? 'none' : 'auto',
-                  transition: 'opacity 180ms ease',
-                }}
-              >
-                <AICardList
-                  cards={analysisResult.cards}
-                  placements={cardPlacements}
-                  onToggleEnabled={handleToggleEnabled}
-                  onEditCard={setEditingCardId}
-                />
+            {hasGeneratedCards ? (
+              <div style={analysisWorkspaceStyle}>
+                <div
+                  style={{
+                    opacity: isAnalyzing ? 0.38 : 1,
+                    transition: 'opacity 180ms ease',
+                  }}
+                >
+                  <div style={bulkActionBarStyle}>
+                    <button
+                      type="button"
+                      onClick={handleSelectAllCards}
+                      style={selectionActionButtonStyle}
+                    >
+                      {allCardsSelected ? '取消全选' : '全选'}
+                    </button>
+                    <div style={selectionSummaryStyle}>
+                      已选 {selectedCount}/{analysisResult?.cards.length ?? 0}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCards(enabledCardIds)}
+                      disabled={selectedCount === 0 || isAnalyzing}
+                      style={{
+                        ...deleteSelectionButtonStyle,
+                        opacity: selectedCount === 0 || isAnalyzing ? 0.5 : 1,
+                        cursor:
+                          selectedCount === 0 || isAnalyzing ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      删除已选
+                    </button>
+                  </div>
+                  <AICardList
+                    cards={analysisResult?.cards ?? []}
+                    placements={cardPlacements}
+                    onToggleEnabled={handleToggleEnabled}
+                    onDeleteCard={(cardId) => handleDeleteCards([cardId])}
+                    onEditCard={setEditingCardId}
+                  />
+                </div>
+                {isAnalyzing ? (
+                  <div style={analysisOverlayStyle} role="status" aria-live="polite">
+                    <div style={analysisOverlayCardStyle}>
+                      <span style={analysisBannerBadgeStyle}>
+                        <LoadingSpinner size={12} color="#ffffff" />
+                        重新分析中
+                      </span>
+                      <div style={analysisOverlayTitleStyle}>{analysisOverlayTitle}</div>
+                      <div style={analysisOverlayTextStyle}>{analysisOverlayText}</div>
+                      <div style={analysisStepRowStyle}>
+                        {['解析字幕', '提炼重点', '生成卡片'].map((label) => (
+                          <span key={label} style={analysisStepChipStyle}>
+                            <LoadingSpinner size={12} color="#94a3b8" />
+                            {label}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </>
@@ -565,7 +762,7 @@ export function AIPanel({ compact, railHeight }: AIPanelProps) {
         )}
       </div>
 
-      {activeTab === 'cards' && analysisResult ? (
+      {activeTab === 'cards' && hasGeneratedCards ? (
         <div style={footerStyle}>
           <button
             type="button"
@@ -646,6 +843,31 @@ const headerTitleStyle = {
   color: '#f4f7fb',
 };
 
+const hoverHintWrapStyle = {
+  position: 'relative' as const,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+};
+
+const hoverHintBubbleStyle = {
+  position: 'absolute' as const,
+  top: 'calc(100% + 8px)',
+  left: '50%',
+  zIndex: 8,
+  padding: '6px 9px',
+  borderRadius: 8,
+  background: 'rgba(15,23,42,0.96)',
+  border: '1px solid rgba(148,163,184,0.18)',
+  color: '#e2e8f0',
+  fontSize: 11,
+  lineHeight: 1.35,
+  whiteSpace: 'nowrap' as const,
+  pointerEvents: 'none' as const,
+  boxShadow: '0 10px 30px rgba(2,6,23,0.28)',
+  transition: 'opacity 140ms ease, transform 140ms ease',
+};
+
 const summaryChipStyle = {
   padding: '3px 8px',
   borderRadius: 999,
@@ -711,6 +933,48 @@ const bodyStyle = {
 
 const promptSectionStyle = {
   marginBottom: 12,
+};
+
+const bulkActionBarStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  marginBottom: 10,
+};
+
+const analysisWorkspaceStyle = {
+  position: 'relative' as const,
+  minHeight: 220,
+};
+
+const selectionActionButtonStyle = {
+  height: 28,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: 8,
+  border: '1px solid rgba(255,255,255,0.08)',
+  background: 'rgba(255,255,255,0.04)',
+  color: '#cbd5e1',
+  cursor: 'pointer',
+  padding: '0 10px',
+  fontSize: 11,
+  fontWeight: 600,
+};
+
+const deleteSelectionButtonStyle = {
+  ...selectionActionButtonStyle,
+  border: '1px solid rgba(248,113,113,0.22)',
+  background: 'rgba(127,29,29,0.24)',
+  color: '#fda4af',
+};
+
+const selectionSummaryStyle = {
+  flex: 1,
+  minWidth: 0,
+  color: '#94a3b8',
+  fontSize: 11,
+  fontWeight: 600,
 };
 
 const emptyStateStyle = {
@@ -842,6 +1106,43 @@ const analysisStepChipStyle = {
   color: '#cbd5e1',
   fontSize: 11,
   fontWeight: 600,
+};
+
+const analysisOverlayStyle = {
+  position: 'absolute' as const,
+  inset: 0,
+  display: 'grid',
+  placeItems: 'center',
+  padding: 18,
+  borderRadius: 16,
+  background: 'linear-gradient(180deg, rgba(2,6,23,0.18) 0%, rgba(2,6,23,0.72) 100%)',
+  cursor: 'wait',
+};
+
+const analysisOverlayCardStyle = {
+  width: '100%',
+  maxWidth: 340,
+  padding: '18px 16px',
+  borderRadius: 18,
+  border: '1px solid rgba(129,140,248,0.24)',
+  background: 'rgba(15,23,42,0.94)',
+  boxShadow: '0 20px 50px rgba(2,6,23,0.38)',
+  boxSizing: 'border-box' as const,
+  textAlign: 'center' as const,
+};
+
+const analysisOverlayTitleStyle = {
+  marginTop: 12,
+  color: '#eef2ff',
+  fontSize: 14,
+  fontWeight: 700,
+};
+
+const analysisOverlayTextStyle = {
+  marginTop: 8,
+  color: '#cbd5e1',
+  fontSize: 12,
+  lineHeight: 1.6,
 };
 
 const errorStyle = {
