@@ -58,7 +58,7 @@ describe('Editor', () => {
       <Editor onAddAsset={async () => undefined} exportRequestToken={0} />,
     );
 
-    expect(html).toContain('overflow:hidden');
-    expect(html).toContain('padding:0 16px 16px');
+    expect(html).toContain('data-editor-region="timeline-wrap"');
+    expect(html).toContain('data-editor-region="sidebar-shell"');
   });
 });

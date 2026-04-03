@@ -7,10 +7,13 @@ import {
   Field,
   IconButton,
   Input,
+  MediaPlaceholder,
   ModalShell,
   ProgressBar,
+  SurfaceCard,
   Textarea,
 } from '../src/ui/primitives';
+import { FileDropCard, SelectionCard } from '../src/ui/patterns';
 
 describe('ui primitives', () => {
   it('renders a loading button with disabled busy state', () => {
@@ -96,5 +99,47 @@ describe('ui primitives', () => {
     expect(html).toContain('极速低码率');
     expect(html).toContain('aria-valuenow="42"');
     expect(html).toContain('role="dialog"');
+  });
+
+  it('renders surface cards, selection cards and file drop cards', () => {
+    const html = renderToStaticMarkup(
+      <SurfaceCard variant="brand" padding="lg">
+        <SelectionCard
+          title="1080p"
+          description="更清晰但导出更慢"
+          meta="1920 x 1080"
+          selected
+          tone="brand"
+        />
+        <FileDropCard
+          eyebrow="AUDIO"
+          heading="拖入 MP3"
+          placeholder="把文件拖到这里"
+          value="demo.mp3"
+          accentColor="#7bd5ff"
+          action={<span>选择文件</span>}
+        />
+      </SurfaceCard>,
+    );
+
+    expect(html).toContain('data-variant="brand"');
+    expect(html).toContain('1080p');
+    expect(html).toContain('data-selected="true"');
+    expect(html).toContain('拖入 MP3');
+    expect(html).toContain('demo.mp3');
+  });
+
+  it('renders media placeholders for non-visual assets', () => {
+    const html = renderToStaticMarkup(
+      <>
+        <MediaPlaceholder variant="audio" label="AUDIO" />
+        <MediaPlaceholder variant="srt" label="SRT" />
+        <MediaPlaceholder variant="generic" label="PDF" />
+      </>,
+    );
+
+    expect(html).toContain('AUDIO');
+    expect(html).toContain('SRT');
+    expect(html).toContain('PDF');
   });
 });

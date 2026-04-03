@@ -1,0 +1,11 @@
+.status {
+  margin-top: 14px;
+  color: #8da0bb;
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
+  word-break: break-all;
+}
+
+.statusError {
+  color: #ffb2b2;
+}

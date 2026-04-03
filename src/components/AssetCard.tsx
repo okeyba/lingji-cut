@@ -3,6 +3,7 @@ import { formatTime } from '../lib/utils';
 import type { AssetItem, AssetType } from '../types';
 import { Badge, IconButton } from '../ui/primitives';
 import { AssetThumbnail } from './AssetThumbnail';
+import styles from './AssetCard.module.css';
 
 interface AssetCardProps {
   asset: AssetItem;
@@ -60,141 +61,47 @@ export function AssetCard({ asset, compact, usageCount, onDragStart, onRemove }:
     <div
       draggable={isDraggable}
       onDragStart={onDragStart}
+      className={[
+        styles.root,
+        compact ? styles.compact : styles.regular,
+        isDraggable ? styles.draggable : '',
+      ].filter(Boolean).join(' ')}
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        minWidth: compact ? 138 : 0,
-        width: compact ? 138 : '100%',
-        cursor: isDraggable ? 'grab' : 'default',
+        ['--asset-accent' as string]: theme.accent,
+        ['--asset-badge-bg' as string]: theme.background,
       }}
     >
-      <div
-        style={{
-          position: 'relative',
-          aspectRatio: '16 / 9',
-          minHeight: compact ? 76 : 72,
-          borderRadius: 16,
-          overflow: 'hidden',
-          border: '1px solid rgba(255,255,255,0.08)',
-          background: '#0b1320',
-          boxShadow: '0 16px 28px rgba(0,0,0,0.22)',
-        }}
-      >
+      <div className={styles.mediaFrame}>
         <AssetThumbnail asset={asset} />
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background:
-              'linear-gradient(180deg, rgba(0,0,0,0.48) 0%, rgba(0,0,0,0.1) 42%, rgba(0,0,0,0.22) 100%)',
-            pointerEvents: 'none',
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            top: 8,
-            left: 8,
-            padding: '3px 8px',
-            borderRadius: 999,
-            background: 'rgba(0,0,0,0.62)',
-            color: '#f7faff',
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: '0.03em',
-          }}
-        >
-          已添加
-        </div>
-        <div
-          style={{
-            position: 'absolute',
-            top: 8,
-            right: 8,
-            padding: '3px 7px',
-            borderRadius: 999,
-            background: 'rgba(0,0,0,0.48)',
-            color: '#f7faff',
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: '0.02em',
-          }}
-        >
-          {formatTime(asset.durationMs)}
-        </div>
+        <div className={styles.mediaOverlay} />
+        <div className={styles.flag}>已添加</div>
+        <div className={styles.duration}>{formatTime(asset.durationMs)}</div>
       </div>
 
-      <div style={{ minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 12,
-            lineHeight: 1.35,
-            fontWeight: 600,
-            color: '#eef4ff',
-            display: '-webkit-box',
-            WebkitBoxOrient: 'vertical',
-            WebkitLineClamp: compact ? 1 : 2,
-            overflow: 'hidden',
-            wordBreak: 'break-word',
-          }}
-        >
-          {asset.name}
-        </div>
-        <div
-          style={{
-            marginTop: 6,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 8,
-          }}
-        >
+      <div className={styles.content}>
+        <div className={styles.title}>{asset.name}</div>
+        <div className={styles.metaRow}>
           <Badge
             variant="neutral"
-            style={{
-              background: theme.background,
-              color: theme.accent,
-            }}
+            className={styles.typeBadge}
           >
             {theme.label}
           </Badge>
           {asset.locked ? (
-            <span
-              style={{
-                color: '#93a4bb',
-                fontSize: 11,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              锁定
-            </span>
+            <span className={styles.locked}>锁定</span>
           ) : (
             <IconButton
               aria-label={`删除 ${asset.name}`}
               onClick={() => onRemove(asset.path)}
               variant="subtle"
               size="sm"
-              style={{ lineHeight: 1, flex: '0 0 auto' }}
+              className={styles.removeButton}
             >
               ×
             </IconButton>
           )}
         </div>
-        <div
-          style={{
-            marginTop: 6,
-            color: '#8593a7',
-            fontSize: 11,
-            lineHeight: 1.4,
-            display: '-webkit-box',
-            WebkitBoxOrient: 'vertical',
-            WebkitLineClamp: compact ? 1 : 2,
-            overflow: 'hidden',
-          }}
-        >
-          {statusText}
-        </div>
+        <div className={styles.status}>{statusText}</div>
       </div>
     </div>
   );

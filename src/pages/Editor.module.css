@@ -1,0 +1,71 @@
+.root {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  background: linear-gradient(135deg, #020617 0%, #020617 50%, #020617 100%);
+}
+
+.workspace {
+  min-height: 0;
+  display: grid;
+  overflow: hidden;
+  gap: 16px;
+  padding: 16px;
+}
+
+.previewWrap {
+  min-width: 0;
+  min-height: 0;
+}
+
+.sidebarShell {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tabStrip {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  flex-shrink: 0;
+  padding: 6px 8px 0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.6) 0%, rgba(15, 23, 42, 0.3) 100%);
+}
+
+.panelBody {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+.resizeHandle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  background: linear-gradient(180deg, rgba(2, 6, 23, 0.98), rgba(15, 23, 42, 0.96));
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  cursor: ns-resize;
+}
+
+.resizeThumb {
+  width: 80px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.25);
+  transition: all 200ms ease-out;
+}
+
+.resizeActive .resizeThumb {
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.9), rgba(129, 140, 248, 0.9));
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.35);
+}
+
+.timelineWrap {
+  min-height: 0;
+  padding: 0 16px 16px;
+  box-sizing: border-box;
+  overflow: hidden;
+}

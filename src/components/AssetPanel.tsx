@@ -4,6 +4,7 @@ import { useTimelineStore } from '../store/timeline';
 import { Button, EmptyState } from '../ui/primitives';
 import { SearchField } from '../ui/patterns';
 import { AssetCard } from './AssetCard';
+import styles from './AssetPanel.module.css';
 
 type AssetFilterKey = 'all' | AssetType;
 
@@ -82,43 +83,17 @@ export function AssetPanel({
 
   return (
     <aside
-      style={{
-        flex: 1,
-        minHeight: 0,
-        borderLeft: compact ? 'none' : '1px solid rgba(255,255,255,0.08)',
-        borderTop: compact ? '1px solid rgba(255,255,255,0.08)' : 'none',
-        background: 'rgba(21, 23, 28, 0.98)',
-        padding: compact ? 12 : 14,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: compact ? 10 : 12,
-        maxHeight: '100%',
-        overflow: 'hidden',
-      }}
+      className={[
+        styles.root,
+        compact ? styles.compact : styles.regular,
+      ].join(' ')}
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          minWidth: 0,
-        }}
-      >
+      <div className={styles.header}>
         <Button onClick={() => void handleAddAsset()} variant="secondary">
           + 导入
         </Button>
         {compact ? (
-          <div
-            style={{
-              minWidth: 0,
-              flex: 1,
-              color: '#a8b3c2',
-              fontSize: 12,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
+          <div className={styles.compactSummary}>
             素材库 · {visibleAssets.length} 项
           </div>
         ) : (
@@ -132,24 +107,8 @@ export function AssetPanel({
       </div>
 
       {!compact ? (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 8,
-            minWidth: 0,
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              overflowX: 'auto',
-              paddingBottom: 2,
-            }}
-          >
+        <div className={styles.filterRow}>
+          <div className={styles.filterList}>
             {FILTER_OPTIONS.map((option) => {
               const isActive = option.key === activeFilter;
 
@@ -165,34 +124,21 @@ export function AssetPanel({
               );
             })}
           </div>
-          <div
-            style={{
-              color: '#7f8ca0',
-              fontSize: 11,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {visibleAssets.length} 项
-          </div>
+          <div className={styles.count}>{visibleAssets.length} 项</div>
         </div>
       ) : null}
 
       <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: compact ? 'hidden' : 'auto',
-          overflowX: compact ? 'auto' : 'hidden',
-          display: compact ? 'flex' : 'grid',
-          gridTemplateColumns: compact ? undefined : 'repeat(2, minmax(0, 1fr))',
-          gap: compact ? 12 : 14,
-          alignContent: 'start',
-          paddingBottom: compact ? 4 : 0,
-          paddingRight: compact ? 0 : 4,
-        }}
+        className={[
+          styles.content,
+          compact ? styles.contentCompact : styles.contentRegular,
+        ].join(' ')}
       >
         {visibleAssets.length === 0 ? (
-          <div style={{ minWidth: compact ? 220 : 'auto', gridColumn: compact ? undefined : '1 / -1' }}>
+          <div className={[
+            styles.emptyWrap,
+            compact ? '' : styles.emptyWrapRegular,
+          ].filter(Boolean).join(' ')}>
             <EmptyState title="暂无素材" description={emptyMessage} />
           </div>
         ) : null}

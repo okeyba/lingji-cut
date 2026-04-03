@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { type PlayerRef } from '@remotion/player';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AIPanel } from '../components/AIPanel';
@@ -13,7 +13,9 @@ import { getEditorLayoutMode, getTimelinePanelBounds } from '../lib/layout';
 import { shouldUpdatePlaybackTime } from '../lib/playback';
 import { frameToMs, msToFrame } from '../lib/utils';
 import { useTimelineStore } from '../store/timeline';
+import { SurfaceCard } from '../ui/primitives';
 import { TabBar } from '../ui/patterns';
+import styles from './Editor.module.css';
 
 interface EditorProps {
   onAddAsset: () => Promise<void>;
@@ -226,28 +228,23 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
 
   return (
     <div
+      className={styles.root}
+      data-editor-region="root"
       style={{
-        display: 'grid',
         gridTemplateRows: `minmax(0, 1fr) ${TIMELINE_RESIZE_HANDLE_HEIGHT}px ${timelinePanelHeight}px`,
-        height: '100%',
-        minHeight: 0,
-        background: 'linear-gradient(135deg, #020617 0%, #020617 50%, #020617 100%)',
       }}
     >
       <div
+        className={styles.workspace}
+        data-editor-region="workspace"
         style={{
-          minHeight: 0,
-          display: 'grid',
           gridTemplateColumns: layout.stackSidebar ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(260px, 300px)',
           gridTemplateRows: layout.stackSidebar
             ? `minmax(0, 1fr) ${layout.sidebarRailHeight}px`
             : 'minmax(0, 1fr)',
-          overflow: 'hidden',
-          gap: 16,
-          padding: 16,
         }}
       >
-        <div style={{ minWidth: 0, minHeight: 0 }}>
+        <div className={styles.previewWrap}>
           <PreviewPanel
             playerRef={playerRef}
             isPlaying={isPlaying}
@@ -258,28 +255,13 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
             compact={layout.compactToolbar}
           />
         </div>
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            minHeight: 0,
-            overflow: 'hidden',
-            background: 'rgba(15, 23, 42, 0.85)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
-            borderRadius: 20,
-            border: '1px solid rgba(148, 163, 184, 0.12)',
-            boxShadow: '0 24px 60px rgba(15, 23, 42, 0.65)',
-          }}
+        <SurfaceCard
+          variant="elevated"
+          padding="none"
+          className={styles.sidebarShell}
+          data-editor-region="sidebar-shell"
         >
-          <div
-            style={{
-              borderBottom: '1px solid rgba(148, 163, 184, 0.10)',
-              flexShrink: 0,
-              padding: '6px 8px 0',
-              background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.6) 0%, rgba(15, 23, 42, 0.3) 100%)',
-            }}
-          >
+          <div className={styles.tabStrip}>
             <TabBar
               items={[
                 { value: 'assets', label: '素材' },
@@ -289,7 +271,7 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
               onChange={setActivePanel}
             />
           </div>
-          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex' }}>
+          <div className={styles.panelBody}>
             {activePanel === 'assets' ? (
               <AssetPanel
                 compact={layout.stackSidebar}
@@ -300,40 +282,21 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
               <AIPanel compact={layout.stackSidebar} railHeight={layout.sidebarRailHeight} />
             )}
           </div>
-        </div>
+        </SurfaceCard>
       </div>
 
       <div
         onMouseDown={handleTimelineResizeStart}
-        style={{
-          ...timelineResizeHandleStyle,
-          cursor: 'ns-resize',
-        }}
+        className={[
+          styles.resizeHandle,
+          isResizingTimeline ? styles.resizeActive : '',
+        ].filter(Boolean).join(' ')}
+        data-editor-region="resize-handle"
       >
-        <div
-          style={{
-            width: 80,
-            height: 5,
-            borderRadius: 999,
-            background: isResizingTimeline
-              ? 'linear-gradient(90deg, rgba(56, 189, 248, 0.9), rgba(129, 140, 248, 0.9))'
-              : 'rgba(148, 163, 184, 0.25)',
-            boxShadow: isResizingTimeline
-              ? '0 0 20px rgba(56, 189, 248, 0.35)'
-              : 'none',
-            transition: 'all 200ms ease-out',
-          }}
-        />
+        <div className={styles.resizeThumb} />
       </div>
 
-      <div
-        style={{
-          minHeight: 0,
-          padding: '0 16px 16px',
-          boxSizing: 'border-box',
-          overflow: 'hidden',
-        }}
-      >
+      <div className={styles.timelineWrap} data-editor-region="timeline-wrap">
         <Timeline currentTimeMs={currentTimeMs} onSeek={handleSeek} compact={layout.compactTimeline} />
       </div>
 
@@ -358,13 +321,3 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
     </div>
   );
 }
-
-const timelineResizeHandleStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  userSelect: 'none',
-  background: 'linear-gradient(180deg, rgba(2, 6, 23, 0.98), rgba(15, 23, 42, 0.96))',
-  borderTop: '1px solid rgba(148, 163, 184, 0.10)',
-  borderBottom: '1px solid rgba(148, 163, 184, 0.08)',
-};

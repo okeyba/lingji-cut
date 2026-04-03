@@ -2,6 +2,7 @@ import { AppIcon, type AppIconName } from './AppIcon';
 import type { MenuAction } from '../lib/electron-api';
 import type { SaveStatus } from '../store/timeline';
 import { Badge, Button } from '../ui/primitives';
+import styles from './Toolbar.module.css';
 
 interface ToolbarProps {
   compact: boolean;
@@ -42,84 +43,34 @@ export function Toolbar({
 
   return (
     <div
-      style={{
-        minHeight: compact ? 50 : 54,
-        display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr)',
-        alignItems: 'center',
-        gap: 12,
-        padding: compact ? '8px 16px' : '9px 18px',
-        borderBottom: '1px solid rgba(148, 163, 184, 0.12)',
-        background: 'linear-gradient(180deg, rgba(2, 6, 23, 0.98) 0%, rgba(15, 23, 42, 0.92) 100%)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        WebkitAppRegion: 'drag',
-        userSelect: 'none',
-      }}
-      >
+      className={[styles.root, compact ? styles.compact : ''].filter(Boolean).join(' ')}
+    >
       <div
-        style={{
-          minWidth: chromeSpacerWidth,
-          height: controlHeight,
-          display: 'flex',
-          alignItems: 'center',
-          justifySelf: 'start',
-        }}
+        className={styles.spacer}
+        style={{ minWidth: chromeSpacerWidth, height: controlHeight }}
       />
       <div
+        className={[
+          styles.projectChip,
+          compact ? styles.projectChipCompact : '',
+        ].filter(Boolean).join(' ')}
         style={{
           minWidth: 0,
           maxWidth: compact ? 'min(58vw, 480px)' : 'min(54vw, 560px)',
           height: controlHeight,
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifySelf: 'center',
-          gap: 10,
-          padding: compact ? '0 12px' : '0 14px',
-          borderRadius: controlRadius,
-          border: '1px solid rgba(148, 163, 184, 0.16)',
-          background: 'rgba(15, 23, 42, 0.48)',
-          boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.04)',
         }}
         title={saveStatusLabel}
       >
         <span
           aria-label={saveStatusLabel}
-          style={{
-            width: 16,
-            height: 16,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: saveStatusMeta.color,
-            flexShrink: 0,
-          }}
+          className={styles.statusIcon}
+          style={{ color: saveStatusMeta.color }}
         >
           <AppIcon name={saveStatusMeta.icon} size={14} />
         </span>
-        <span
-          style={{
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            fontSize: controlFontSize,
-            fontWeight: 700,
-            color: '#f8fafc',
-            letterSpacing: '0.01em',
-          }}
-        >
-          {visibleProjectName}
-        </span>
+        <span className={styles.projectName}>{visibleProjectName}</span>
       </div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifySelf: 'end',
-          WebkitAppRegion: 'no-drag',
-        }}
-      >
+      <div className={styles.actions}>
         {!compact ? <Badge variant={saveStatus === 'error' ? 'danger' : saveStatus === 'saved' ? 'success' : 'neutral'}>{saveStatusLabel}</Badge> : null}
         <Button
           disabled={page !== 'editor'}

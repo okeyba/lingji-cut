@@ -4,8 +4,9 @@ import { fitPreviewStage } from '../lib/preview';
 import { formatTime, msToFrame } from '../lib/utils';
 import { PodcastComposition } from '../remotion/PodcastComposition';
 import { useTimelineStore } from '../store/timeline';
-import { Badge, Button } from '../ui/primitives';
+import { Badge, Button, SurfaceCard } from '../ui/primitives';
 import { PanelHeader } from '../ui/patterns';
+import styles from './PreviewPanel.module.css';
 
 interface PreviewPanelProps {
   playerRef: RefObject<PlayerRef | null>;
@@ -68,29 +69,8 @@ function PreviewPanelComponent({
   }, [timeline.height, timeline.width]);
 
   return (
-    <div
-      style={{
-        height: '100%',
-        minHeight: 0,
-        borderRadius: 24,
-        border: '1px solid rgba(148, 163, 184, 0.12)',
-        background:
-          'linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.85) 100%)',
-        overflow: 'hidden',
-        display: 'grid',
-        gridTemplateRows: 'auto minmax(0, 1fr) auto',
-        boxShadow: '0 24px 80px rgba(15, 23, 42, 0.75)',
-        backdropFilter: 'blur(24px)',
-        WebkitBackdropFilter: 'blur(24px)',
-      }}
-    >
-      <div
-        style={{
-          padding: '16px 20px',
-          borderBottom: '1px solid rgba(148, 163, 184, 0.10)',
-          background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.9) 0%, rgba(15, 23, 42, 0.7) 100%)',
-        }}
-      >
+    <SurfaceCard variant="elevated" padding="none" className={styles.root}>
+      <div className={styles.header}>
         <PanelHeader
           eyebrow="PREVIEW"
           title="播客预览"
@@ -100,27 +80,14 @@ function PreviewPanelComponent({
 
       <div
         ref={previewAreaRef}
-        style={{
-          padding: compact ? 16 : 24,
-          display: 'grid',
-          placeItems: 'center',
-          minHeight: 0,
-          overflow: 'hidden',
-          background: 'radial-gradient(circle at 50% 50%, rgba(15, 23, 42, 0.4) 0%, rgba(2, 6, 23, 0.95) 100%)',
-        }}
+        className={styles.stageArea}
+        style={{ padding: compact ? 16 : 24 }}
       >
         <div
+          className={styles.stageFrame}
           style={{
             width: Math.max(0, stageSize.width),
             height: Math.max(0, stageSize.height),
-            maxWidth: '100%',
-            maxHeight: '100%',
-            borderRadius: 20,
-            overflow: 'hidden',
-            background: '#020617',
-            boxShadow: '0 28px 80px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(148, 163, 184, 0.12) inset',
-            border: '1px solid rgba(15, 23, 42, 0.8)',
-            position: 'relative',
           }}
         >
           <Player
@@ -143,61 +110,33 @@ function PreviewPanelComponent({
       </div>
 
       <div
-        style={{
-          display: 'flex',
-          alignItems: compact ? 'stretch' : 'center',
-          justifyContent: 'space-between',
-          flexDirection: compact ? 'column' : 'row',
-          gap: compact ? 12 : 16,
-          padding: compact ? '14px 18px 18px' : '16px 24px 24px',
-          borderTop: '1px solid rgba(148, 163, 184, 0.10)',
-          background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%)',
-        }}
+        className={[
+          styles.footer,
+          compact ? styles.footerCompact : '',
+        ].filter(Boolean).join(' ')}
       >
         <div
-          style={{
-            display: 'flex',
-            alignItems: compact ? 'stretch' : 'center',
-            flexDirection: compact ? 'column' : 'row',
-            gap: 12,
-            minWidth: 0,
-          }}
+          className={[
+            styles.footerCluster,
+            compact ? styles.footerClusterCompact : '',
+          ].filter(Boolean).join(' ')}
         >
           <Button
             onClick={onTogglePlay}
             variant={isPlaying ? 'tint' : 'secondary'}
             size="lg"
-            style={{ height: 48, padding: '0 24px', borderRadius: 16, fontSize: 15 }}
+            className={styles.playButton}
           >
             {isPlaying ? '⏸ 暂停' : '▶ 播放'}
           </Button>
 
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              flexWrap: 'wrap',
-            }}
-          >
-            <div
-              style={{
-                padding: '10px 16px',
-                borderRadius: 14,
-                background: 'rgba(15, 23, 42, 0.6)',
-                color: '#f1f5f9',
-                fontSize: 14,
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                fontWeight: 600,
-                border: '1px solid rgba(148, 163, 184, 0.15)',
-                boxShadow: '0 4px 12px rgba(15, 23, 42, 0.4)',
-              }}
-            >
+          <div className={styles.statusRow}>
+            <div className={styles.timeBadge}>
               {formatTime(currentTimeMs)} / {formatTime(durationMs)}
             </div>
             <div>
               <Badge variant={isPlaying ? 'info' : 'neutral'}>
-              {isPlaying ? '● 播放中' : '⏸ 已暂停'}
+                {isPlaying ? '● 播放中' : '⏸ 已暂停'}
               </Badge>
             </div>
           </div>
@@ -207,12 +146,15 @@ function PreviewPanelComponent({
           onClick={onExport}
           variant="danger"
           size="lg"
-          style={{ height: 48, padding: '0 28px', borderRadius: 16, fontSize: 15, alignSelf: compact ? 'stretch' : 'auto' }}
+          className={[
+            styles.exportButton,
+            compact ? styles.exportButtonCompact : '',
+          ].filter(Boolean).join(' ')}
         >
           导出 MP4
         </Button>
       </div>
-    </div>
+    </SurfaceCard>
   );
 }
 

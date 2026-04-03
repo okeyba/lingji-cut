@@ -1,4 +1,5 @@
 import { Button, ModalShell, ProgressBar } from '../ui/primitives';
+import styles from './ExportProgress.module.css';
 
 interface ExportProgressProps {
   visible: boolean;
@@ -45,7 +46,12 @@ export function ExportProgress({
     >
       <ProgressBar value={progress * 100} tone={errorMessage ? 'danger' : 'info'} />
 
-      <div style={{ marginTop: 14, color: errorMessage ? '#ffb2b2' : '#8da0bb', fontSize: 14 }}>
+      <div
+        className={[
+          styles.status,
+          errorMessage ? styles.statusError : '',
+        ].filter(Boolean).join(' ')}
+      >
         {errorMessage || (isDone ? outputPath : `${Math.round(progress * 100)}%`)}
       </div>
     </ModalShell>

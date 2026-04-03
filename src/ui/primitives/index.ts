@@ -4,6 +4,8 @@ export * from './EmptyState';
 export * from './Field';
 export * from './IconButton';
 export * from './Input';
+export * from './MediaPlaceholder';
 export * from './ModalShell';
 export * from './ProgressBar';
+export * from './SurfaceCard';
 export * from './Textarea';

@@ -1,0 +1,100 @@
+.root {
+  width: 100%;
+  min-height: 220px;
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transition:
+    transform var(--motion-fast),
+    border-color var(--motion-base),
+    background var(--motion-base),
+    box-shadow var(--motion-base);
+}
+
+.root:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 30px rgba(2, 6, 23, 0.2);
+}
+
+.filled {
+  border-color: color-mix(in srgb, var(--drop-accent, #7bd5ff) 70%, white 30%);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--drop-accent, #7bd5ff) 14%, transparent) 0%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+}
+
+.compact {
+  min-height: 184px;
+  padding: 18px;
+  gap: 12px;
+}
+
+.icon {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-lg);
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--drop-accent, #7bd5ff) 16%, transparent);
+  color: color-mix(in srgb, var(--drop-accent, #7bd5ff) 86%, white 14%);
+  font-size: 26px;
+}
+
+.compact .icon {
+  width: 44px;
+  height: 44px;
+  font-size: 22px;
+}
+
+.eyebrow {
+  color: var(--drop-accent, #7bd5ff);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.16em;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 8px 0 0;
+  color: var(--color-text-primary);
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.compact .title {
+  font-size: 20px;
+}
+
+.value {
+  margin-top: auto;
+  border-radius: var(--radius-lg);
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  padding: 16px 18px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-md);
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  word-break: break-all;
+}
+
+.compact .value {
+  min-height: 46px;
+  padding: 12px 14px;
+  font-size: var(--font-size-sm);
+}
+
+.filled .value {
+  color: var(--color-text-primary);
+}
+
+.action {
+  display: flex;
+}

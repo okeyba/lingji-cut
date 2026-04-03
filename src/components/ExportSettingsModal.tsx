@@ -7,7 +7,9 @@ import {
   type ExportQuality,
   type ExportResolution,
 } from '../lib/export-settings';
-import { Badge, Button, ModalShell } from '../ui/primitives';
+import { Badge, Button, ModalShell, SurfaceCard } from '../ui/primitives';
+import { SelectionCard } from '../ui/patterns';
+import styles from './ExportSettingsModal.module.css';
 
 interface ExportSettingsModalProps {
   visible: boolean;
@@ -106,32 +108,14 @@ export function ExportSettingsModal({
         </>
       }
     >
-      <div
-        style={{
-          padding: 16,
-          borderRadius: 18,
-          background: 'rgba(255,255,255,0.04)',
-          border: '1px solid rgba(255,255,255,0.06)',
-        }}
-      >
-        <div style={{ fontSize: 12, letterSpacing: '0.12em', color: '#91a2bc' }}>输出路径</div>
-        <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+      <SurfaceCard variant="subtle" padding="md" className={styles.pathCard}>
+        <div className={styles.sectionLabel}>输出路径</div>
+        <div className={styles.pathRow}>
           <div
-            style={{
-              flex: 1,
-              minHeight: 44,
-              borderRadius: 12,
-              border: '1px solid rgba(255,255,255,0.08)',
-              background: 'rgba(255,255,255,0.03)',
-              color: outputPath ? '#f5f7fb' : '#70839f',
-              fontSize: 13,
-              display: 'flex',
-              alignItems: 'center',
-              padding: '0 12px',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
+            className={[
+              styles.pathValue,
+              outputPath ? styles.pathValueFilled : '',
+            ].filter(Boolean).join(' ')}
           >
             {outputPath || '还未选择导出位置'}
           </div>
@@ -139,12 +123,12 @@ export function ExportSettingsModal({
             选择位置
           </Button>
         </div>
-      </div>
+      </SurfaceCard>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 18 }}>
-        <div>
-          <div style={sectionTitleStyle}>分辨率</div>
-          <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
+      <div className={styles.grid}>
+        <div className={styles.column}>
+          <div className={styles.sectionLabel}>分辨率</div>
+          <div className={styles.column}>
             {EXPORT_RESOLUTION_OPTIONS.map((option) => {
               const dimensions = buildExportRenderConfig({
                 timelineWidth,
@@ -155,102 +139,60 @@ export function ExportSettingsModal({
               const isActive = resolution === option.value;
 
               return (
-                <button
+                <SelectionCard
                   key={option.value}
                   onClick={() => setResolution(option.value)}
-                  style={{
-                    ...optionButtonStyle,
-                    borderColor: isActive ? 'rgba(123,213,255,0.4)' : 'rgba(255,255,255,0.08)',
-                    background: isActive ? 'rgba(123,213,255,0.12)' : 'rgba(255,255,255,0.03)',
-                  }}
+                  selected={isActive}
+                  tone="brand"
+                  title={option.label}
+                  meta={`${dimensions.renderWidth} × ${dimensions.renderHeight}`}
+                  description={option.description}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                    <span style={{ color: '#f5f7fb', fontWeight: 700 }}>{option.label}</span>
-                    <span style={{ color: '#7bd5ff', fontSize: 12 }}>
-                      {dimensions.renderWidth} × {dimensions.renderHeight}
-                    </span>
-                  </div>
-                  <div style={{ marginTop: 6, color: '#8da0bb', fontSize: 12, lineHeight: 1.6 }}>
-                    {option.description}
-                  </div>
-                </button>
+                </SelectionCard>
               );
             })}
           </div>
         </div>
 
-        <div>
-          <div style={sectionTitleStyle}>导出速度</div>
-          <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
+        <div className={styles.column}>
+          <div className={styles.sectionLabel}>导出速度</div>
+          <div className={styles.column}>
             {EXPORT_QUALITY_OPTIONS.map((option) => {
               const isActive = quality === option.value;
 
               return (
-                <button
+                <SelectionCard
                   key={option.value}
                   onClick={() => setQuality(option.value)}
-                  style={{
-                    ...optionButtonStyle,
-                    borderColor: isActive ? 'rgba(255,181,71,0.4)' : 'rgba(255,255,255,0.08)',
-                    background: isActive ? 'rgba(255,181,71,0.1)' : 'rgba(255,255,255,0.03)',
-                  }}
+                  selected={isActive}
+                  tone="warm"
+                  title={option.label}
+                  meta={
+                    buildExportRenderConfig({
+                      timelineWidth,
+                      timelineHeight,
+                      resolution,
+                      quality: option.value,
+                    }).videoBitrate
+                  }
+                  description={option.description}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                    <span style={{ color: '#f5f7fb', fontWeight: 700 }}>{option.label}</span>
-                    <span style={{ color: '#ffb547', fontSize: 12 }}>
-                      {
-                        buildExportRenderConfig({
-                          timelineWidth,
-                          timelineHeight,
-                          resolution,
-                          quality: option.value,
-                        }).videoBitrate
-                      }
-                    </span>
-                  </div>
-                  <div style={{ marginTop: 6, color: '#8da0bb', fontSize: 12, lineHeight: 1.6 }}>
-                    {option.description}
-                  </div>
-                </button>
+                </SelectionCard>
               );
             })}
           </div>
         </div>
       </div>
 
-      <div
-        style={{
-          marginTop: 18,
-          padding: 16,
-          borderRadius: 18,
-          border: '1px solid rgba(255,255,255,0.06)',
-          background: 'rgba(255,255,255,0.03)',
-        }}
-      >
-        <div style={sectionTitleStyle}>本次导出摘要</div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+      <SurfaceCard variant="subtle" padding="md" style={{ marginTop: 18 }}>
+        <div className={styles.sectionLabel}>本次导出摘要</div>
+        <div className={styles.summary}>
           <Badge variant="neutral">{renderConfig.renderWidth} × {renderConfig.renderHeight}</Badge>
           <Badge variant="neutral">{renderConfig.videoBitrate}</Badge>
           <Badge variant="neutral">{renderConfig.audioBitrate}</Badge>
           <Badge variant="neutral">{renderConfig.x264Preset}</Badge>
         </div>
-      </div>
+      </SurfaceCard>
     </ModalShell>
   );
 }
-
-const sectionTitleStyle = {
-  fontSize: 12,
-  letterSpacing: '0.12em',
-  color: '#91a2bc',
-} as const;
-
-const optionButtonStyle = {
-  width: '100%',
-  textAlign: 'left' as const,
-  padding: 14,
-  borderRadius: 16,
-  border: '1px solid rgba(255,255,255,0.08)',
-  background: 'rgba(255,255,255,0.03)',
-  cursor: 'pointer',
-} as const;
