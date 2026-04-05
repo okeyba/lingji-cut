@@ -71,3 +71,9 @@
   height: 100%;
   padding: 24px 16px;
 }
+
+.headerLabel {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-left: 4px;
+}
