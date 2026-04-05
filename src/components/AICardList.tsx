@@ -1,8 +1,7 @@
 import type { CSSProperties } from 'react';
 import { Trash2 } from 'lucide-react';
-import { formatTime } from '../lib/utils';
 import type { AICard, AICardType } from '../types/ai';
-import { Badge, Button, Card } from '../ui';
+import { Button, Card } from '../ui';
 import { AppIcon, type AppIconName } from './AppIcon';
 import styles from './AICardList.module.css';
 
@@ -17,6 +16,11 @@ interface AICardListProps {
   onToggleEnabled: (cardId: string) => void;
   onDeleteCard: (cardId: string) => void;
   onEditCard: (cardId: string) => void;
+}
+
+function getPreviewText(content: AICard['content']): string {
+  const text = typeof content === 'string' ? content : JSON.stringify(content);
+  return text.length > 80 ? text.slice(0, 80) + '…' : text;
 }
 
 const CARD_TYPE_META: Record<AICardType, { label: string; color: string; icon: AppIconName }> = {
@@ -50,37 +54,35 @@ export function AICardList({
             style={createCardAccentStyle(meta.color)}
           >
             <div className={styles.cardRow}>
-              <div className={styles.iconChip} title={meta.label}>
-                <AppIcon name={meta.icon} size={14} />
-              </div>
+              {/* Checkbox 圆圈 */}
+              <Button
+                aria-label={card.enabled ? `取消选择卡片 ${card.title}` : `选择卡片 ${card.title}`}
+                title={card.enabled ? '已选' : '未选'}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleEnabled(card.id);
+                }}
+                variant={card.enabled ? 'accent' : 'ghost'}
+                iconOnly
+                className={styles.toggleButton}
+                data-enabled={card.enabled}
+              >
+                <AppIcon name={card.enabled ? 'circle-check-big' : 'circle'} size={15} />
+              </Button>
 
+              {/* 内容区 */}
               <div className={styles.content}>
-                <div className={styles.header}>
-                  <Button
-                    aria-label={card.enabled ? `取消选择卡片 ${card.title}` : `选择卡片 ${card.title}`}
-                    title={card.enabled ? '已选' : '未选'}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onToggleEnabled(card.id);
-                    }}
-                    variant={card.enabled ? 'accent' : 'ghost'}
-                    iconOnly
-                    className={styles.toggleButton}
-                    data-enabled={card.enabled}
-                  >
-                    <AppIcon name={card.enabled ? 'circle-check-big' : 'circle'} size={15} />
-                  </Button>
-                  <div className={styles.title}>{card.title}</div>
-                </div>
-
-                <div className={styles.meta}>
-                  {formatTime(card.startMs)} - {formatTime(card.endMs)}
-                </div>
-                <div className={styles.placement}>
-                  <Badge variant={placement ? 'info' : 'secondary'}>{placementText}</Badge>
-                </div>
+                <span
+                  className={styles.typeBadge}
+                  style={{ '--badge-color': meta.color } as React.CSSProperties}
+                >
+                  {meta.label}
+                </span>
+                <div className={styles.title}>{card.title}</div>
+                <div className={styles.preview}>{getPreviewText(card.content)}</div>
               </div>
 
+              {/* 删除按钮（hover 显示）*/}
               <Button
                 aria-label={`删除卡片 ${card.title}`}
                 title="删除卡片"
