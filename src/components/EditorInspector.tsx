@@ -35,7 +35,7 @@ export function EditorInspector({
   /* ── eyebrow pill 内容 ── */
   const eyebrowLabel =
     selection.type === 'subtitle-style'
-      ? '字幕块'
+      ? 'SUBTITLE'
       : selection.type === 'ai-card'
       ? 'AI 卡片'
       : '检查器';
@@ -97,6 +97,9 @@ export function EditorInspector({
       <div className={styles.header}>
         <div className={styles.headerLeft}>
           <span className={styles.eyebrowPill}>{eyebrowLabel}</span>
+          {selection.type === 'subtitle-style' && (
+            <span className={styles.headerLabel}>字幕样式</span>
+          )}
         </div>
         <div className={styles.headerRight}>
           {indexLabel && (
