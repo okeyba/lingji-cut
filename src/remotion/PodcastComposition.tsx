@@ -6,6 +6,7 @@ import { resolveRemotionAssetSrc } from '../lib/remotion-assets';
 import { AICardOverlay } from './AICardOverlay';
 import { MediaOverlay } from './MediaOverlay';
 import { SubtitleTrack } from './SubtitleTrack';
+import { TextOverlay } from './TextOverlay';
 
 interface PodcastCompositionProps {
   timeline: TimelineData;
@@ -17,7 +18,10 @@ export function PodcastComposition({ timeline, srtEntries }: PodcastCompositionP
   const { width, height } = useVideoConfig();
   const previewScale = Math.min(width / timeline.width, height / timeline.height);
   const renderableOverlays = getRenderableOverlays(timeline);
-  const mediaOverlays = renderableOverlays.filter((overlay) => overlay.overlayType !== 'ai-card');
+  const mediaOverlays = renderableOverlays.filter(
+    (overlay) => overlay.overlayType !== 'ai-card' && overlay.type !== 'text',
+  );
+  const textOverlays = renderableOverlays.filter((overlay) => overlay.type === 'text');
   const aiCardOverlays = renderableOverlays.filter((overlay) => overlay.overlayType === 'ai-card');
 
   return (
@@ -49,6 +53,9 @@ export function PodcastComposition({ timeline, srtEntries }: PodcastCompositionP
               fps={timeline.fps}
               chapterIndex={index + 1}
             />
+          ))}
+          {textOverlays.map((overlay) => (
+            <TextOverlay key={overlay.id} overlay={overlay} fps={timeline.fps} />
           ))}
 
           <SubtitleTrack
