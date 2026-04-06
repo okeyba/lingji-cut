@@ -173,15 +173,90 @@ interface ScriptTemplate {
 
 ### 3.3 管理方式
 
-- 全局模板库，存放在 `src/lib/script-templates.ts`
-- 用户在步骤③右侧面板中选择
-- 选中状态高亮，单选
+- 内置模板存放在 `src/lib/script-templates.ts`（不可删除，仅可查看）
+- 用户自定义模板存储在 `localStorage: podcast-editor-custom-templates`（全局共享，跨项目）
+- 用户可在**全局设置页面**中增删改自定义模板
+- 步骤③右侧面板中展示"内置 + 自定义"合并列表，选中状态高亮，单选
+
+### 3.4 自定义模板数据结构
+
+```typescript
+interface CustomScriptTemplate {
+  id: string              // 自动生成 UUID
+  name: string
+  description: string
+  systemPrompt: string
+  createdAt: string       // ISO 8601
+  updatedAt: string
+}
+```
 
 ---
 
-## 4. 状态管理
+## 4. 全局设置页面
 
-### 4.1 Zustand Store
+### 4.1 入口
+
+- 在 Welcome 欢迎页底部或右上角新增"系统设置"入口
+- 路由新增 `'settings'` 状态，独立页面
+- 编辑器页面和写稿工作台均可通过菜单栏或返回 Welcome 进入
+
+### 4.2 页面结构
+
+左侧 Tab 导航 + 右侧内容区，全屏布局：
+
+| Tab | 内容 |
+|-----|------|
+| **AI 基础配置** | LLM Base URL、API Key、Model + 即梦 API URL、Session ID（迁移自现有 `AISettingsModal`） |
+| **口播模板管理** | 内置模板列表（只读查看）+ 用户自定义模板列表（增删改）+ 每个模板含名称/描述/System Prompt 编辑器 |
+| **审查规范配置** | 用户自定义审查要点（Textarea，追加到系统内置审查 prompt 之后）|
+| **TTS 配置** | MiniMax API Key、音色选择、语速设置（第二期使用，先展示配置 UI）|
+
+### 4.3 AI 基础配置 Tab
+
+迁移现有 `AISettingsModal` 中的全部字段，废弃原有 Modal 组件。共享同一个 `localStorage: podcast-editor-ai-settings` 存储。
+
+### 4.4 口播模板管理 Tab
+
+- **内置模板区**：展示预设模板卡片，显示名称 + 描述 + "查看 Prompt"展开按钮，不可编辑删除
+- **自定义模板区**：
+  - "新增模板"按钮 → 弹出编辑表单（名称、描述、System Prompt）
+  - 列表展示已有自定义模板，每项支持编辑 / 删除
+  - System Prompt 使用多行文本编辑器
+  - 存储到 `localStorage: podcast-editor-custom-templates`
+
+### 4.5 审查规范配置 Tab
+
+- **系统内置审查规则**：不展示给用户（含返回格式约束、批注结构要求等）
+- **用户自定义审查要点**：Textarea 编辑器，用户可输入额外的审查维度
+  - 预填示例：`"请重点关注：\n1. 数据引用是否标注来源\n2. 是否有过于书面化的表达\n3. 段落过渡是否自然"`
+  - 存储到 `localStorage: podcast-editor-review-criteria`
+- **Prompt 叠加逻辑**：`System Prompt = [系统内置审查规则] + "\n\n用户补充的审查要求：\n" + [用户自定义内容]`
+
+### 4.6 TTS 配置 Tab（第二期预留）
+
+- MiniMax API Key 输入框
+- 音色选择下拉（预设常用音色列表）
+- 语速滑块 [0.5 - 2.0]
+- 存储到 `localStorage: podcast-editor-tts-settings`
+- 第一期仅展示 UI，不接入功能
+
+### 4.7 数据存储
+
+所有设置项使用 `localStorage` 全局存储，键名规范：
+
+| 键 | 内容 |
+|----|------|
+| `podcast-editor-ai-settings` | AI 基础配置（复用现有） |
+| `podcast-editor-custom-templates` | 用户自定义口播模板 JSON 数组 |
+| `podcast-editor-review-criteria` | 用户自定义审查要点字符串 |
+| `podcast-editor-tts-settings` | TTS 配置 |
+
+---
+
+## 5. 状态管理
+
+### 5.1 Zustand Store
 
 ```typescript
 // src/store/script.ts
@@ -219,7 +294,7 @@ interface ScriptStore {
 }
 ```
 
-### 4.2 Annotation 类型
+### 5.2 Annotation 类型
 
 ```typescript
 interface Annotation {
@@ -236,9 +311,9 @@ interface Annotation {
 
 ---
 
-## 5. 数据持久化
+## 6. 数据持久化
 
-### 5.1 项目目录文件结构
+### 6.1 项目目录文件结构
 
 ```
 project-dir/
@@ -247,7 +322,7 @@ project-dir/
 └── script-state.json    # 工作台状态
 ```
 
-### 5.2 script-state.json
+### 6.2 script-state.json
 
 ```typescript
 {
@@ -260,14 +335,14 @@ project-dir/
 }
 ```
 
-### 5.3 持久化时机
+### 6.3 持久化时机
 
 - 编辑器内容变化：debounce 1s 自动保存 `original.md` / `script.md`
 - 步骤切换：更新 `script-state.json`
 - 批注操作（采纳/忽略）：立即保存状态
 - 关闭/返回：保存当前进度
 
-### 5.4 Electron IPC 新增
+### 6.4 Electron IPC 新增
 
 ```typescript
 // electron-api.ts 新增
@@ -280,9 +355,9 @@ loadScriptState(dir: string): Promise<string | null>
 
 ---
 
-## 6. 文件清单
+## 7. 文件清单
 
-### 6.1 修改文件
+### 7.1 修改文件
 
 | 文件 | 变更 |
 |------|------|
@@ -292,11 +367,13 @@ loadScriptState(dir: string): Promise<string | null>
 | `src/lib/electron-api.ts` | 新增 IPC 类型定义 |
 | `electron/preload.ts` | 暴露新 IPC 方法 |
 
-### 6.2 新增文件
+### 7.2 新增文件
 
 | 文件 | 用途 |
 |------|------|
 | `src/pages/ScriptWorkbench.tsx` | 写稿工作台主页面 |
+| `src/pages/Settings.tsx` | 全局设置页面 |
+| `src/pages/Settings.module.css` | 设置页面样式 |
 | `src/components/script/StepInitialize.tsx` | 步骤①：上传报告 + 选择目录 |
 | `src/components/script/StepReviewOriginal.tsx` | 步骤②：原稿审查编辑 |
 | `src/components/script/StepGenerate.tsx` | 步骤③：模板选择 + AI 生成 |
@@ -304,12 +381,17 @@ loadScriptState(dir: string): Promise<string | null>
 | `src/components/script/StepConfirm.tsx` | 步骤⑤：确认保存 |
 | `src/components/script/AnnotationList.tsx` | 批注列表组件 |
 | `src/components/script/AnnotationHighlight.tsx` | 编辑器内高亮标记 |
+| `src/components/settings/AIConfigTab.tsx` | 设置页 AI 基础配置 Tab |
+| `src/components/settings/TemplateManagerTab.tsx` | 设置页模板管理 Tab |
+| `src/components/settings/ReviewCriteriaTab.tsx` | 设置页审查规范 Tab |
+| `src/components/settings/TTSConfigTab.tsx` | 设置页 TTS 配置 Tab |
 | `src/store/script.ts` | Zustand 写稿状态 |
-| `src/lib/script-templates.ts` | 提示词模板库 |
+| `src/lib/script-templates.ts` | 提示词模板库（内置 + 自定义读写） |
 | `src/lib/script-review.ts` | AI 审查 prompt + 批注解析 |
 | `src/lib/script-persistence.ts` | 文件读写封装 |
+| `src/lib/settings-storage.ts` | 全局设置 localStorage 读写 |
 
-### 6.3 不修改的模块
+### 7.3 不修改的模块
 
 - `pages/Editor.tsx`
 - `store/timeline.ts`、`store/ai.ts`
@@ -318,18 +400,19 @@ loadScriptState(dir: string): Promise<string | null>
 
 ---
 
-## 7. 技术约束
+## 8. 技术约束
 
 - Markdown 编辑器复用 `@uiw/react-md-editor`
 - 批注高亮通过编辑器内容包裹 HTML 标记或 overlay 层实现
 - LLM 调用复用 `lib/llm-client.ts`
-- AI 设置复用 `AISettingsModal`
+- AI 设置迁移到全局设置页面，废弃 `AISettingsModal`，编辑器中的 AI 面板改为跳转设置页面
 - 文件操作走 Electron IPC，保持与现有项目管理一致
 - 暗色主题沿用现有 macOS Dark 设计令牌
+- 路由新增 `'settings'` 页面状态
 
 ---
 
-## 8. UI 设计参考
+## 9. UI 设计参考
 
 设计稿位于 `design.pen`，包含三个页面：
 
