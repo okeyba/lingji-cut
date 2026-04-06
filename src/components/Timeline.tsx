@@ -26,7 +26,7 @@ interface TimelineProps {
   onSeek: (ms: number) => void;
   compact: boolean;
   onOpenAICardInspector?: (cardId: string) => void;
-  onOpenTextInspector?: (overlayId: string) => void;
+  onOpenOverlayInspector?: (overlayId: string) => void;
   onOpenSubtitleInspector?: () => void;
 }
 
@@ -42,7 +42,7 @@ export function Timeline({
   onSeek,
   compact,
   onOpenAICardInspector,
-  onOpenTextInspector,
+  onOpenOverlayInspector,
   onOpenSubtitleInspector,
 }: TimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -400,17 +400,14 @@ export function Timeline({
 
   const renderTrackControls = (options: {
     tone: string;
-    title: string;
-    subtitle: string;
-    label: string;
+    name: string;
     actions?: ReactNode;
   }) => (
     <div className={styles.trackControls}>
       <div className={styles.trackControlsBody}>
-        <div className={styles.trackTypeLine} style={{ color: options.tone }}>
-          {options.title}
+        <div className={styles.trackNameLine} style={{ color: options.tone }}>
+          {options.name}
         </div>
-        <div className={styles.trackNameLine}>{options.subtitle}</div>
       </div>
       {options.actions ?? null}
     </div>
@@ -506,9 +503,7 @@ export function Timeline({
               audioTrackHeight,
               renderTrackControls({
                 tone: 'var(--color-track-audio)',
-                label: 'AUD',
-                title: '音频',
-                subtitle: '轨道 1',
+                name: '轨道 1',
               }),
               styles.lockedLane,
               {
@@ -537,9 +532,7 @@ export function Timeline({
               subtitleTrackHeight,
               renderTrackControls({
                 tone: 'var(--color-track-subtitle)',
-                label: 'TXT',
-                title: '字幕',
-                subtitle: '轨道 1',
+                name: '轨道 1',
               }),
               styles.lockedLane,
             )}
@@ -580,14 +573,17 @@ export function Timeline({
                     tone: isTopLayer
                       ? 'var(--color-track-primary)'
                       : 'var(--color-track-secondary)',
-                    label: `V${visualTracks.length - index}`,
-                    title: '视频',
-                    subtitle: `轨道 ${visualTracks.length - index}`,
+                    name: `轨道 ${visualTracks.length - index}`,
                     actions: (
                       <button
                         className={styles.trackDeleteButton}
                         onClick={(event) => {
                           event.stopPropagation();
+                          if (overlays.length > 0) {
+                            if (!window.confirm(`此轨道包含 ${overlays.length} 个素材，删除后将一并移除。确认删除？`)) {
+                              return;
+                            }
+                          }
                           removeTrack(track.id);
                         }}
                         aria-label={`删除${track.label}`}
@@ -634,14 +630,13 @@ export function Timeline({
                         onTrackHoverChange={setHoverTrackId}
                         onSelect={() => {
                           setSelectedOverlayId(overlay.id);
-                          if (overlay.type === 'text') {
-                            onOpenTextInspector?.(overlay.id);
-                            return;
-                          }
                           const sourceCardId = overlay.aiCardData?.sourceCardId;
                           if (overlay.overlayType === 'ai-card' && sourceCardId) {
                             onOpenAICardInspector?.(sourceCardId);
+                            return;
                           }
+                          // 所有视觉 overlay（文字/图片/视频）统一打开 Inspector
+                          onOpenOverlayInspector?.(overlay.id);
                         }}
                       />
                     ))}

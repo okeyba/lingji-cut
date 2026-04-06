@@ -65,17 +65,27 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
+  border-radius: 6px;
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
+  transition:
+    color var(--motion-fast, 120ms),
+    background var(--motion-fast, 120ms),
+    transform 80ms ease;
 }
 
 .iconButton:hover {
   color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
+}
+
+.iconButton:active {
+  transform: scale(0.88);
 }
 
 .subTabs {

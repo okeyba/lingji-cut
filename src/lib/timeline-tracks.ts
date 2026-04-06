@@ -10,6 +10,7 @@ import {
   type TimelineData,
   type TimelineTrack,
 } from '../types';
+import { resolveOverlayMotion } from './overlay-motion';
 
 function buildLockedTrack(id: string, label: string, kind: 'audio' | 'subtitle'): TimelineTrack {
   return {
@@ -100,6 +101,7 @@ export function normalizeTimelineData(timeline: TimelineData): TimelineData {
     overlays: sortOverlaysByStart(
       rawOverlays.map((overlay) => ({
         ...overlay,
+        motion: resolveOverlayMotion(overlay),
         trackId: visualTrackIds.has(overlay.trackId) ? overlay.trackId : fallbackTrackId,
       })),
     ),

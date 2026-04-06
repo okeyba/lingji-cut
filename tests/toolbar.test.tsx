@@ -18,12 +18,9 @@ describe('Toolbar', () => {
 
     expect(html).toContain('欢迎页');
     expect(html).toContain('未打开工程');
-    expect(html).toContain('aria-label="撤销"');
-    expect(html).toContain('aria-label="重做"');
     expect(html).toContain('aria-label="导出"');
-    expect(html).toContain('data-command="undo"');
-    expect(html).toContain('data-command="redo"');
-    expect(html).toContain('data-enabled="false"');
+    expect(html).not.toContain('aria-label="撤销"');
+    expect(html).not.toContain('aria-label="重做"');
     expect(html).not.toContain('播客视频编辑器');
   });
 

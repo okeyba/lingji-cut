@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { MenuAction } from '../src/lib/electron-api';
+import type { MenuAction, ProjectMetadata } from '../src/lib/electron-api';
 import { addAppLog, getAppLogFilePath, getAppLogs } from './app-logger';
 import { analyzeSrt, regenerateAICard, regenerateCoverPrompt } from '../src/lib/ai-analysis';
 import { buildExportRenderConfig, type ExportConfig } from '../src/lib/export-settings';
@@ -123,12 +123,50 @@ async function createRenderPublicDir(
   timeline: TimelineData,
 ): Promise<{ timeline: TimelineData; publicDir: string }> {
   const { timeline: renderTimeline, assets } = prepareTimelineForRemotionRender(timeline);
-  const publicDir = await fs.mkdtemp(path.join(os.tmpdir(), 'podcast-video-editor-public-'));
+  const publicDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lingjijianying-public-'));
   await materializeRenderAssets(publicDir, assets);
 
   return {
     timeline: renderTimeline,
     publicDir,
+  };
+}
+
+async function getDirectorySizeBytes(directoryPath: string): Promise<number> {
+  const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+  const sizes = await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = path.join(directoryPath, entry.name);
+
+      if (entry.isSymbolicLink()) {
+        return 0;
+      }
+
+      if (entry.isDirectory()) {
+        return getDirectorySizeBytes(entryPath);
+      }
+
+      if (entry.isFile()) {
+        const stats = await fs.stat(entryPath);
+        return stats.size;
+      }
+
+      return 0;
+    }),
+  );
+
+  return sizes.reduce((total, size) => total + size, 0);
+}
+
+async function readProjectMetadata(projectDir: string): Promise<ProjectMetadata> {
+  const stats = await fs.stat(projectDir);
+  const createdAtMs = Math.round(stats.birthtimeMs || stats.ctimeMs || stats.mtimeMs || Date.now());
+  const sizeBytes = await getDirectorySizeBytes(projectDir);
+
+  return {
+    projectDir,
+    sizeBytes,
+    createdAtMs,
   };
 }
 
@@ -305,6 +343,10 @@ ipcMain.handle('load-ai-analysis', async (_event, projectDir: string) => {
   } catch {
     return null;
   }
+});
+
+ipcMain.handle('get-project-metadata', async (_event, projectDir: string) => {
+  return readProjectMetadata(projectDir);
 });
 
 ipcMain.handle('select-project-directory', async () => {

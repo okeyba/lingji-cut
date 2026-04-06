@@ -8,13 +8,15 @@ import { ExportProgress } from '../components/ExportProgress';
 import { ExportSettingsModal } from '../components/ExportSettingsModal';
 import { PreviewPanel } from '../components/PreviewPanel';
 import { Timeline } from '../components/Timeline';
+import type { ProjectOverviewMeta } from '../components/ProjectOverviewPanel';
+import type { ProjectMetadata } from '../lib/electron-api';
 import type { ExportConfig } from '../lib/export-settings';
 import { createDefaultTextData } from '../lib/text-templates';
 import { DEFAULT_VISUAL_TRACK_ID, type OverlayPosition } from '../types';
 import { useViewportSize } from '../hooks/useViewportSize';
 import { getEditorLayoutMode, getTimelinePanelBounds } from '../lib/layout';
 import { shouldUpdatePlaybackTime } from '../lib/playback';
-import { frameToMs, msToFrame } from '../lib/utils';
+import { frameToMs, getFileNameFromPath, msToFrame } from '../lib/utils';
 import { useTimelineStore } from '../store/timeline';
 import { Button } from '../ui';
 import { AppIcon } from '../components/AppIcon';
@@ -23,6 +25,7 @@ import styles from './Editor.module.css';
 interface EditorProps {
   onAddAsset: () => Promise<void>;
   exportRequestToken: number;
+  projectDir?: string;
 }
 
 const TIMELINE_PANEL_HEIGHT_KEY = 'podcast-editor-timeline-panel-height';
@@ -42,7 +45,7 @@ function readStoredTimelinePanelHeight(): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
+export function Editor({ onAddAsset, exportRequestToken, projectDir = '' }: EditorProps) {
   const viewport = useViewportSize();
   const layout = getEditorLayoutMode(viewport.width, viewport.height);
   const panelBounds = getTimelinePanelBounds(viewport.height, layout.compactTimeline);
@@ -60,8 +63,54 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
   const [exportError, setExportError] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<'assets' | 'ai'>('assets');
   const [inspectorSelection, setInspectorSelection] = useState<InspectorSelection>({ type: 'empty' });
-  const { timeline } = useTimelineStore();
+  const [projectMeta, setProjectMeta] = useState<ProjectOverviewMeta | null>(null);
+  const [isProjectMetaLoading, setIsProjectMetaLoading] = useState(false);
+  const store = useTimelineStore();
+  const assets = store.assets ?? [];
+  const { timeline } = store;
+  const overlayCount = timeline.overlays?.length ?? 0;
+  const podcastAudioPath = timeline.podcast?.audioPath ?? '';
+  const podcastSrtPath = timeline.podcast?.srtPath ?? '';
   const fps = timeline.fps || 30;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!projectDir || !window.electronAPI?.getProjectMetadata) {
+      setProjectMeta(null);
+      setIsProjectMetaLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setIsProjectMetaLoading(true);
+
+    void window.electronAPI
+      .getProjectMetadata(projectDir)
+      .then((metadata: ProjectMetadata) => {
+        if (cancelled) {
+          return;
+        }
+
+        setProjectMeta(mapProjectMetadata(metadata));
+      })
+      .catch((error) => {
+        console.error('读取项目元数据失败:', error);
+        if (!cancelled) {
+          setProjectMeta(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsProjectMetaLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [overlayCount, podcastAudioPath, podcastSrtPath, projectDir]);
 
   useEffect(() => {
     setTimelinePanelHeight((currentHeight) => {
@@ -208,9 +257,9 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
     setInspectorSelection({ type: 'empty' });
   }, []);
 
-  const handleOpenTextInspector = useCallback(
+  const handleOpenOverlayInspector = useCallback(
     (overlayId: string) => {
-      setInspectorSelection({ type: 'text-overlay', overlayId });
+      setInspectorSelection({ type: 'overlay', overlayId });
     },
     [],
   );
@@ -241,16 +290,16 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
       textData: createDefaultTextData(),
     });
 
-    // 自动打开文字检查器
-    setInspectorSelection({ type: 'text-overlay', overlayId });
+    // 自动打开 overlay 检查器
+    setInspectorSelection({ type: 'overlay', overlayId });
   }, []);
 
   const handleSelectOverlayOnCanvas = useCallback(
     (overlayId: string | null) => {
       if (overlayId) {
         const overlay = timeline.overlays.find((o) => o.id === overlayId);
-        if (overlay?.type === 'text') {
-          setInspectorSelection({ type: 'text-overlay', overlayId });
+        if (overlay) {
+          setInspectorSelection({ type: 'overlay', overlayId });
           return;
         }
       }
@@ -333,7 +382,7 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
                 durationMs={timeline.podcast.durationMs}
                 compact={layout.compactToolbar}
                 selectedOverlayId={
-                  inspectorSelection.type === 'text-overlay' ? inspectorSelection.overlayId : null
+                  inspectorSelection.type === 'overlay' ? inspectorSelection.overlayId : null
                 }
                 onSelectOverlay={handleSelectOverlayOnCanvas}
                 onUpdateOverlayPosition={handleUpdateOverlayPosition}
@@ -341,7 +390,13 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
             </div>
             <div className={styles.inspectorWrap}>
               <EditorInspector
+                assetCount={assets.length}
+                isProjectMetaLoading={isProjectMetaLoading}
+                overlayCount={overlayCount}
+                projectDir={projectDir}
+                projectMeta={projectMeta}
                 selection={inspectorSelection}
+                timelineFps={fps}
                 timelineWidth={timeline.width}
                 timelineHeight={timeline.height}
                 onClose={handleCloseInspector}
@@ -369,7 +424,7 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
                     )}
                     onClick={() => setActivePanel('assets')}
                   >
-                    <AppIcon name="folder-open" size={13} className={styles.topTabIcon} />
+                    <AppIcon name="folder-open" size={14} className={styles.topTabIcon} />
                     <span>素材</span>
                   </Button>
                   <Button
@@ -383,7 +438,7 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
                     )}
                     onClick={() => setActivePanel('ai')}
                   >
-                    <AppIcon name="sparkles" size={13} className={styles.topTabIcon} />
+                    <AppIcon name="sparkles" size={14} className={styles.topTabIcon} />
                     <span>AI 助手</span>
                   </Button>
                 </div>
@@ -418,7 +473,7 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
                 durationMs={timeline.podcast.durationMs}
                 compact={layout.compactToolbar}
                 selectedOverlayId={
-                  inspectorSelection.type === 'text-overlay' ? inspectorSelection.overlayId : null
+                  inspectorSelection.type === 'overlay' ? inspectorSelection.overlayId : null
                 }
                 onSelectOverlay={handleSelectOverlayOnCanvas}
                 onUpdateOverlayPosition={handleUpdateOverlayPosition}
@@ -427,7 +482,13 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
             {!layout.stackSidebar ? (
               <div className={styles.inspectorWrap}>
                 <EditorInspector
+                  assetCount={assets.length}
+                  isProjectMetaLoading={isProjectMetaLoading}
+                  overlayCount={overlayCount}
+                  projectDir={projectDir}
+                  projectMeta={projectMeta}
                   selection={inspectorSelection}
+                  timelineFps={fps}
                   timelineWidth={timeline.width}
                   timelineHeight={timeline.height}
                   onClose={handleCloseInspector}
@@ -456,7 +517,7 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
           compact={layout.compactTimeline}
           onOpenAICardInspector={handleOpenAICardInspector}
           onOpenSubtitleInspector={handleOpenSubtitleInspector}
-          onOpenTextInspector={handleOpenTextInspector}
+          onOpenOverlayInspector={handleOpenOverlayInspector}
         />
       </div>
 
@@ -480,6 +541,15 @@ export function Editor({ onAddAsset, exportRequestToken }: EditorProps) {
       />
     </div>
   );
+}
+
+function mapProjectMetadata(metadata: ProjectMetadata): ProjectOverviewMeta {
+  return {
+    projectName: getFileNameFromPath(metadata.projectDir),
+    projectPath: metadata.projectDir,
+    createdAt: metadata.createdAtMs,
+    sizeBytes: metadata.sizeBytes,
+  };
 }
 
 function joinClassNames(...values: Array<string | undefined>): string {

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { AppLogEntry } from '../src/lib/app-log';
-import type { MenuAction } from '../src/lib/electron-api';
+import type { MenuAction, ProjectMetadata } from '../src/lib/electron-api';
 import type { ExportConfig } from '../src/lib/export-settings';
 import type { SrtEntry } from '../src/types';
 import type { AICard, AISettings } from '../src/types/ai';
@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveAIAnalysis: (projectDir: string, data: string) =>
     ipcRenderer.invoke('save-ai-analysis', projectDir, data),
   loadAIAnalysis: (projectDir: string) => ipcRenderer.invoke('load-ai-analysis', projectDir),
+  getProjectMetadata: (projectDir: string) =>
+    ipcRenderer.invoke('get-project-metadata', projectDir) as Promise<ProjectMetadata>,
   selectProjectDirectory: () => ipcRenderer.invoke('select-project-directory'),
   selectSetupFile: (kind: 'audio' | 'srt') => ipcRenderer.invoke('select-setup-file', kind),
   selectMediaFile: (kind: 'audio' | 'srt') => ipcRenderer.invoke('select-media-file', kind),

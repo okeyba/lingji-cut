@@ -34,6 +34,12 @@ export function isProjectRequiredCommand(command: MenuAction): boolean {
   return PROJECT_REQUIRED_COMMANDS.has(command);
 }
 
+export interface ProjectMetadata {
+  projectDir: string;
+  sizeBytes: number;
+  createdAtMs: number;
+}
+
 export interface ElectronAPI {
   parseSrtFile: (filePath: string) => Promise<{ entries: SrtEntry[]; durationMs: number }>;
   analyzeSrt: (args: {
@@ -64,6 +70,7 @@ export interface ElectronAPI {
   loadTimeline: (projectDir: string) => Promise<string | null>;
   saveAIAnalysis: (projectDir: string, data: string) => Promise<string>;
   loadAIAnalysis: (projectDir: string) => Promise<string | null>;
+  getProjectMetadata: (projectDir: string) => Promise<ProjectMetadata>;
   selectProjectDirectory: () => Promise<string | null>;
   selectSetupFile: (kind: ImportKind) => Promise<string | null>;
   selectMediaFile: (kind: 'audio' | 'srt') => Promise<string | null>;

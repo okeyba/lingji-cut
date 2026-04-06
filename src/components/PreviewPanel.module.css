@@ -124,6 +124,19 @@
   width: 32px;
   height: 32px;
   color: var(--color-text-primary);
+  border-radius: 8px;
+  transition:
+    background var(--motion-fast, 120ms),
+    color var(--motion-fast, 120ms),
+    transform 80ms ease;
+}
+
+.skipButton:hover {
+  background: color-mix(in srgb, var(--color-text-primary) 12%, transparent);
+}
+
+.skipButton:active {
+  transform: scale(0.9);
 }
 
 .playButton {
@@ -170,12 +183,34 @@
   font-size: var(--font-size-sm);
   font-weight: 600;
   line-height: 1;
+  border-radius: 6px;
+  transition:
+    background var(--motion-fast, 120ms),
+    color var(--motion-fast, 120ms);
+}
+
+.speedButton:hover {
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
 }
 
 .auxButton {
   width: 32px;
   height: 32px;
   color: var(--color-text-primary);
+  border-radius: 8px;
+  transition:
+    background var(--motion-fast, 120ms),
+    color var(--motion-fast, 120ms),
+    transform 80ms ease;
+}
+
+.auxButton:hover {
+  background: color-mix(in srgb, var(--color-text-primary) 12%, transparent);
+}
+
+.auxButton:active {
+  transform: scale(0.9);
 }
 
 /* 全屏模式 */

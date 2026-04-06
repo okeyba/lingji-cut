@@ -6,7 +6,20 @@ import type { OverlayItem } from '../src/types';
 
 vi.mock('remotion', () => ({
   Sequence: ({ children }: { children: unknown }) => children,
-  useCurrentFrame: () => 15,
+  useCurrentFrame: () => 0,
+  interpolate: (
+    value: number,
+    inputRange: [number, number],
+    outputRange: [number, number],
+  ) => {
+    const [inputStart, inputEnd] = inputRange;
+    const [outputStart, outputEnd] = outputRange;
+    if (inputEnd === inputStart) {
+      return outputEnd;
+    }
+    const progress = (value - inputStart) / (inputEnd - inputStart);
+    return outputStart + (outputEnd - outputStart) * progress;
+  },
 }));
 
 const mockOverlay: OverlayItem = {
@@ -17,6 +30,13 @@ const mockOverlay: OverlayItem = {
   startMs: 0,
   durationMs: 5000,
   position: { x: 100, y: 200, width: 800, height: 200 },
+  motion: {
+    enter: 'none',
+    enterDurationMs: 400,
+    exit: 'none',
+    exitDurationMs: 400,
+    loop: 'none',
+  },
   textData: createDefaultTextData({ content: '测试文字' }),
 };
 
@@ -63,5 +83,34 @@ describe('TextOverlay', () => {
       <TextOverlay overlay={strokeOverlay} fps={30} />,
     );
     expect(html).toContain('2px #FF0000');
+  });
+
+  it('prefers overlay motion over legacy text animation fields', () => {
+    const animatedOverlay: OverlayItem = {
+      ...mockOverlay,
+      motion: {
+        enter: 'slideInLeft',
+        enterDurationMs: 500,
+        exit: 'none',
+        exitDurationMs: 400,
+        loop: 'none',
+      },
+      textData: createDefaultTextData({
+        content: 'Motion First',
+        animation: {
+          enter: 'none',
+          enterDurationMs: 500,
+          exit: 'none',
+          exitDurationMs: 500,
+          loop: 'none',
+        },
+      }),
+    };
+
+    const html = renderToStaticMarkup(
+      <TextOverlay overlay={animatedOverlay} fps={30} />,
+    );
+
+    expect(html).toContain('translateX');
   });
 });

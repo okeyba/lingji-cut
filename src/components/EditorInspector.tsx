@@ -1,8 +1,9 @@
 import { Button, EmptyState } from '../ui';
 import { AICardInspector } from './AICardInspector';
 import { AppIcon } from './AppIcon';
+import { OverlayInspector } from './OverlayInspector';
+import { ProjectOverviewPanel, type ProjectOverviewMeta } from './ProjectOverviewPanel';
 import { SubtitleInspector } from './SubtitleInspector';
-import { TextInspector } from './TextInspector';
 import { useAICardInspector } from '../hooks/useAICardInspector';
 import { useTimelineStore } from '../store/timeline';
 import styles from './EditorInspector.module.css';
@@ -10,19 +11,31 @@ import styles from './EditorInspector.module.css';
 export type InspectorSelection =
   | { type: 'empty' }
   | { type: 'ai-card'; cardId: string }
-  | { type: 'subtitle-style' }
-  | { type: 'text-overlay'; overlayId: string };
+  | { type: 'overlay'; overlayId: string }
+  | { type: 'subtitle-style' };
 
 interface EditorInspectorProps {
+  assetCount?: number;
+  isProjectMetaLoading?: boolean;
+  overlayCount?: number;
+  projectDir?: string;
+  projectMeta?: ProjectOverviewMeta | null;
   selection: InspectorSelection;
   timelineWidth: number;
   timelineHeight: number;
+  timelineFps?: number;
   onClose: () => void;
 }
 
 export function EditorInspector({
+  assetCount = 0,
+  isProjectMetaLoading = false,
   selection,
+  overlayCount = 0,
+  projectDir = '',
+  projectMeta = null,
   timelineHeight,
+  timelineFps = 30,
   timelineWidth,
   onClose,
 }: EditorInspectorProps) {
@@ -42,8 +55,8 @@ export function EditorInspector({
       ? 'SUBTITLE'
       : selection.type === 'ai-card'
       ? 'AI CARD'
-      : selection.type === 'text-overlay'
-      ? 'TEXT'
+      : selection.type === 'overlay'
+      ? 'OVERLAY'
       : 'INSPECTOR';
 
   /* ── 右侧索引/状态标签 ── */
@@ -84,9 +97,9 @@ export function EditorInspector({
       );
     }
 
-    if (selection.type === 'text-overlay') {
+    if (selection.type === 'overlay') {
       return (
-        <TextInspector
+        <OverlayInspector
           overlayId={selection.overlayId}
           onDelete={() => {
             useTimelineStore.getState().removeOverlay(selection.overlayId);
@@ -97,12 +110,16 @@ export function EditorInspector({
     }
 
     return (
-      <div className={styles.emptyWrap}>
-        <EmptyState
-          title="右侧配置区"
-          description="从左侧 AI 内容卡片或底部时间轴中选择一个对象后，这里会显示对应的配置表单。"
-        />
-      </div>
+      <ProjectOverviewPanel
+        assetCount={assetCount}
+        isProjectMetaLoading={isProjectMetaLoading}
+        overlayCount={overlayCount}
+        projectDir={projectDir}
+        projectMeta={projectMeta}
+        timelineFps={timelineFps}
+        timelineHeight={timelineHeight}
+        timelineWidth={timelineWidth}
+      />
     );
   };
 

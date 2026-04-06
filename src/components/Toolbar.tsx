@@ -42,32 +42,34 @@ export function Toolbar({
         {/* macOS hiddenInset 模式下系统会在此区域渲染原生红绿灯，留出占位 */}
         <div className={styles.trafficLightSpacer} aria-hidden="true" />
 
-        <div className={styles.historyActions} data-toolbar-history="true">
-          <Button.Icon
-            variant="ghost"
-            aria-label="撤销"
-            title="撤销"
-            className={styles.historyButton}
-            data-command="undo"
-            data-enabled={isEditorPage && canUndo ? 'true' : 'false'}
-            disabled={!isEditorPage || !canUndo}
-            onClick={() => onCommand('undo')}
-          >
-            <AppIcon name="undo-2" size={14} />
-          </Button.Icon>
-          <Button.Icon
-            variant="ghost"
-            aria-label="重做"
-            title="重做"
-            className={styles.historyButton}
-            data-command="redo"
-            data-enabled={isEditorPage && canRedo ? 'true' : 'false'}
-            disabled={!isEditorPage || !canRedo}
-            onClick={() => onCommand('redo')}
-          >
-            <AppIcon name="redo-2" size={14} />
-          </Button.Icon>
-        </div>
+        {isEditorPage && (
+          <div className={styles.historyActions} data-toolbar-history="true">
+            <Button.Icon
+              variant="ghost"
+              aria-label="撤销"
+              title="撤销"
+              className={styles.historyButton}
+              data-command="undo"
+              data-enabled={canUndo ? 'true' : 'false'}
+              disabled={!canUndo}
+              onClick={() => onCommand('undo')}
+            >
+              <AppIcon name="undo-2" size={14} />
+            </Button.Icon>
+            <Button.Icon
+              variant="ghost"
+              aria-label="重做"
+              title="重做"
+              className={styles.historyButton}
+              data-command="redo"
+              data-enabled={canRedo ? 'true' : 'false'}
+              disabled={!canRedo}
+              onClick={() => onCommand('redo')}
+            >
+              <AppIcon name="redo-2" size={14} />
+            </Button.Icon>
+          </div>
+        )}
       </div>
 
       {/* 居中标题（absolute 定位，不参与 flex 流） */}

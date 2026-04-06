@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import { Sequence, useCurrentFrame } from 'remotion';
 import type { OverlayItem } from '../types';
+import { getOverlayMotionStyle, resolveOverlayMotion } from '../lib/overlay-motion';
 import { msToFrame } from '../lib/utils';
 import { getTextAnimationStyle } from '../lib/text-animations';
 
@@ -18,13 +19,22 @@ export function TextOverlay({ overlay, fps }: TextOverlayProps) {
   const durationFrames = Math.max(1, msToFrame(overlay.durationMs, fps));
   // useCurrentFrame() 在 Sequence 外调用，返回全局帧号，需要转换为本地帧号
   const localFrame = Math.max(0, globalFrame - startFrame);
-  const { style: animStyle, visibleText } = getTextAnimationStyle({
+  const motionStyle = getOverlayMotionStyle({
     frame: localFrame,
     fps,
     durationFrames,
-    animation: textData.animation,
-    content: textData.content,
+    motion: resolveOverlayMotion(overlay),
   });
+  const { visibleText } =
+    textData.animation?.loop === 'typewriter'
+      ? getTextAnimationStyle({
+          frame: localFrame,
+          fps,
+          durationFrames,
+          animation: textData.animation,
+          content: textData.content,
+        })
+      : { visibleText: undefined };
 
   const textStyle: CSSProperties = {
     position: 'absolute',
@@ -50,10 +60,10 @@ export function TextOverlay({ overlay, fps }: TextOverlayProps) {
         : undefined,
     letterSpacing: textData.letterSpacing,
     lineHeight: textData.lineHeight,
-    opacity: (textData.opacity ?? 1) * (animStyle.opacity ?? 1),
+    opacity: (textData.opacity ?? 1) * (motionStyle.opacity ?? 1),
     transform: [
       textData.rotation ? `rotate(${textData.rotation}deg)` : '',
-      animStyle.transform ?? '',
+      motionStyle.transform ?? '',
     ]
       .filter(Boolean)
       .join(' ') || undefined,

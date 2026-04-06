@@ -130,15 +130,34 @@
   justify-content: center;
   background: var(--color-surface-secondary);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--color-text-muted);
   cursor: pointer;
+  transition:
+    background var(--motion-fast, 120ms),
+    color var(--motion-fast, 120ms),
+    border-color var(--motion-fast, 120ms),
+    transform 80ms ease;
+}
+
+.toggleBtn:hover {
+  background: color-mix(in srgb, var(--color-selection-blue) 16%, var(--color-surface-secondary));
+  color: var(--color-text-primary);
+  border-color: color-mix(in srgb, var(--color-selection-blue) 32%, var(--color-border-subtle));
+}
+
+.toggleBtn:active {
+  transform: scale(0.92);
 }
 
 .toggleBtn.active {
   background: var(--color-selection-blue);
   color: #fff;
   border-color: var(--color-selection-blue);
+}
+
+.toggleBtn.active:hover {
+  background: color-mix(in srgb, var(--color-selection-blue) 88%, white);
 }
 
 .sliderRow {
@@ -254,17 +273,23 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 0;
+  padding: 4px 6px;
+  margin: 0 -6px;
   font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary);
   background: none;
   border: none;
+  border-radius: 6px;
   cursor: pointer;
+  transition:
+    color var(--motion-fast, 120ms),
+    background var(--motion-fast, 120ms);
 }
 
 .advancedToggle:hover {
   color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-text-primary) 8%, transparent);
 }
 
 .advancedContent {

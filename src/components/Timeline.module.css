@@ -47,10 +47,17 @@
 .addTrackButton {
   gap: var(--space-2);
   background: var(--color-control-bg);
+  transition:
+    background var(--motion-fast, 120ms),
+    transform 80ms ease;
 }
 
 .addTrackButton:hover {
   background: color-mix(in srgb, var(--color-control-bg) 80%, white 20%);
+}
+
+.addTrackButton:active {
+  transform: scale(0.96);
 }
 
 .addTrackIcon {
@@ -139,55 +146,55 @@
 .trackControls {
   z-index: 3;
   height: 100%;
-  padding: 0 10px;
-  position: relative;
+  padding: 0 6px 0 10px;
+  gap: 2px;
 }
 
 .trackDeleteButton {
-  position: absolute;
-  top: 50%;
-  right: 4px;
-  transform: translateY(-50%);
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border: none;
-  border-radius: 4px;
+  border-radius: 5px;
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
+  opacity: 0;
   transition:
-    color var(--motion-fast),
-    background var(--motion-fast);
+    color var(--motion-fast, 120ms),
+    background var(--motion-fast, 120ms),
+    opacity var(--motion-fast, 120ms),
+    transform 80ms ease;
+}
+
+.overlayRow:hover .trackDeleteButton,
+.trackDeleteButton:focus-visible {
+  opacity: 1;
 }
 
 .trackDeleteButton:hover {
   color: var(--color-error, #ef4444);
-  background: color-mix(in srgb, var(--color-error, #ef4444) 12%, transparent);
+  background: color-mix(in srgb, var(--color-error, #ef4444) 14%, transparent);
+}
+
+.trackDeleteButton:active {
+  transform: scale(0.88);
 }
 
 .trackControlsBody {
-  width: 100%;
+  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-}
-
-.trackTypeLine {
-  font-size: var(--font-size-sm);
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  justify-content: center;
 }
 
 .trackNameLine {
-  color: var(--color-text-muted);
-  font-size: 9px;
-  font-weight: 400;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -34,6 +34,7 @@ export interface OverlayItem {
   startMs: number;
   durationMs: number;
   position: OverlayPosition;
+  motion?: OverlayMotion;
   overlayType?: 'media' | 'ai-card';
   overlayRole?: OverlayRole;
   aiCardData?: AICardOverlayData;
@@ -73,6 +74,18 @@ export type TextExitAnimation =
 
 export type TextLoopAnimation =
   | 'none' | 'pulse' | 'float' | 'flicker' | 'typewriter';
+
+export type OverlayEnterAnimation = Exclude<TextEnterAnimation, never>;
+export type OverlayExitAnimation = Exclude<TextExitAnimation, never>;
+export type OverlayLoopAnimation = Exclude<TextLoopAnimation, 'typewriter'>;
+
+export interface OverlayMotion {
+  enter: OverlayEnterAnimation;
+  enterDurationMs: number;
+  exit: OverlayExitAnimation;
+  exitDurationMs: number;
+  loop: OverlayLoopAnimation;
+}
 
 export interface TextAnimation {
   enter: TextEnterAnimation;

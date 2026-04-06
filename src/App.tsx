@@ -404,7 +404,11 @@ export default function App() {
             onComplete={handleSetupComplete}
           />
         ) : (
-          <Editor onAddAsset={handleAddAsset} exportRequestToken={exportRequestToken} />
+          <Editor
+            onAddAsset={handleAddAsset}
+            exportRequestToken={exportRequestToken}
+            projectDir={currentProjectDir}
+          />
         )}
       </div>
     </div>

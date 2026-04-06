@@ -72,17 +72,22 @@
   height: 20px;
   margin-right: 2px;
   border: none;
-  border-radius: 4px;
+  border-radius: 5px;
   background: color-mix(in srgb, var(--color-error, #ef4444) 14%, transparent);
   color: var(--color-error, #ef4444);
   cursor: pointer;
   transition:
-    background var(--motion-fast),
-    color var(--motion-fast);
+    background var(--motion-fast, 120ms),
+    color var(--motion-fast, 120ms),
+    transform 80ms ease;
 }
 
 .deleteButton:hover {
   background: color-mix(in srgb, var(--color-error, #ef4444) 28%, transparent);
+}
+
+.deleteButton:active {
+  transform: scale(0.88);
 }
 
 .resizeHandle {

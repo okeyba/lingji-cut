@@ -1,5 +1,6 @@
 {
-  "name": "podcast-video-editor",
+  "name": "lingjijianying",
+  "productName": "灵机剪影",
   "version": "1.0.0",
   "main": "dist-electron/main.js",
   "scripts": {

@@ -216,7 +216,7 @@ export function OverlayBlock({
           aria-label="删除"
           title="删除"
         >
-          <AppIcon name="trash-2" size={11} />
+          <AppIcon name="trash-2" size={12} />
         </button>
       ) : null}
 

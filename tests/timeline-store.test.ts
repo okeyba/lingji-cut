@@ -262,6 +262,76 @@ describe('useTimelineStore', () => {
     ]);
   });
 
+  it('migrates legacy text overlay animation into overlay motion', () => {
+    useTimelineStore.getState().setTimeline({
+      version: 1,
+      fps: 30,
+      width: 1920,
+      height: 1080,
+      podcast: {
+        audioPath: '',
+        srtPath: '',
+        durationMs: 12000,
+      },
+      tracks: [],
+      overlays: [
+        {
+          id: 'legacy-text-overlay',
+          type: 'text',
+          assetPath: '',
+          startMs: 1000,
+          durationMs: 5000,
+          position: { x: 100, y: 200, width: 800, height: 200 },
+          textData: {
+            content: '旧文字',
+            fontFamily: 'PingFang SC',
+            fontSize: 64,
+            fontColor: '#FFFFFF',
+            bold: false,
+            italic: false,
+            underline: false,
+            textAlign: 'center',
+            backgroundColor: 'transparent',
+            strokeColor: '#000000',
+            strokeWidth: 0,
+            shadowColor: '#000000',
+            shadowOffsetX: 0,
+            shadowOffsetY: 2,
+            shadowBlur: 0,
+            letterSpacing: 0,
+            lineHeight: 1.5,
+            opacity: 1,
+            rotation: 0,
+            animation: {
+              enter: 'slideInLeft',
+              enterDurationMs: 600,
+              exit: 'fadeOut',
+              exitDurationMs: 700,
+              loop: 'flicker',
+            },
+          },
+        },
+      ],
+      subtitle: {
+        fontSize: 48,
+        color: '#FFFFFF',
+        position: 'bottom',
+      },
+    } as never);
+
+    const overlay = useTimelineStore.getState().timeline.overlays[0];
+
+    expect(overlay?.motion).toEqual({
+      enter: 'slideInLeft',
+      enterDurationMs: 600,
+      exit: 'fadeOut',
+      exitDurationMs: 700,
+      loop: 'flicker',
+    });
+    expect(overlay?.textData?.content).toBe('旧文字');
+    expect(overlay?.textData?.fontFamily).toBe('PingFang SC');
+  });
+
   it('adds visual tracks and attaches overlays to the chosen track', () => {
     const store = useTimelineStore.getState();
     const newTrackId = store.addTrack();
@@ -602,5 +672,211 @@ describe('useTimelineStore', () => {
       durationMs: 18_000,
       overlayRole: 'default-background',
     });
+  });
+
+  it('repositions a new overlay when the requested track slot overlaps', () => {
+    const store = useTimelineStore.getState();
+    store.addOverlay({
+      type: 'image',
+      assetPath: '/tmp/a.png',
+      trackId: DEFAULT_VISUAL_TRACK_ID,
+      startMs: 0,
+      durationMs: 5000,
+      position: { x: 0, y: 0, width: 1920, height: 1080 },
+    });
+
+    // 新增一个 overlay，起始时间与已有 overlay 重叠
+    store.addOverlay({
+      type: 'image',
+      assetPath: '/tmp/b.png',
+      trackId: DEFAULT_VISUAL_TRACK_ID,
+      startMs: 2000,
+      durationMs: 3000,
+      position: { x: 0, y: 0, width: 1920, height: 1080 },
+    });
+
+    const overlays = useTimelineStore.getState().timeline.overlays;
+    expect(overlays).toHaveLength(2);
+
+    // 第二个 overlay 应该被推移到不重叠位置
+    const first = overlays.find((o) => o.assetPath === '/tmp/a.png')!;
+    const second = overlays.find((o) => o.assetPath === '/tmp/b.png')!;
+    expect(second.startMs).toBeGreaterThanOrEqual(first.startMs + first.durationMs);
+  });
+
+  it('snaps an overlapping overlay to the nearest gap on the same track', () => {
+    const store = useTimelineStore.getState();
+
+    // 先放一个 0-10000ms 的 overlay
+    store.addOverlay({
+      type: 'image',
+      assetPath: '/tmp/a.png',
+      trackId: DEFAULT_VISUAL_TRACK_ID,
+      startMs: 0,
+      durationMs: 10000,
+      position: { x: 0, y: 0, width: 1920, height: 1080 },
+    });
+
+    // 放第二个 20000-25000ms
+    store.addOverlay({
+      type: 'image',
+      assetPath: '/tmp/b.png',
+      trackId: DEFAULT_VISUAL_TRACK_ID,
+      startMs: 20000,
+      durationMs: 5000,
+      position: { x: 0, y: 0, width: 1920, height: 1080 },
+    });
+
+    // 在中间 5000ms 处放入一个 12000ms 的 overlay → 10000-20000 间隙只有 10000ms，放不下
+    // 应该被推到 25000ms 后面（最近的能放下 12000ms 的位置）
+    store.addOverlay({
+      type: 'video',
+      assetPath: '/tmp/c.mp4',
+      trackId: DEFAULT_VISUAL_TRACK_ID,
+      startMs: 5000,
+      durationMs: 12000,
+      position: { x: 0, y: 0, width: 1920, height: 1080 },
+    });
+
+    const overlay = useTimelineStore.getState().timeline.overlays.find(
+      (o) => o.assetPath === '/tmp/c.mp4',
+    );
+    // 最近的合法位置应该在 10000ms（间隙 10000-20000 放不下 12000）或 25000ms
+    expect(overlay?.startMs).toBe(25000);
+    expect(overlay?.trackId).toBe(DEFAULT_VISUAL_TRACK_ID);
+  });
+
+  it('adjusts overlay position when moved to a conflicting slot via updateOverlay', () => {
+    const store = useTimelineStore.getState();
+    const id1 = store.addOverlay({
+      type: 'image',
+      assetPath: '/tmp/a.png',
+      trackId: DEFAULT_VISUAL_TRACK_ID,
+      startMs: 0,
+      durationMs: 5000,
+      position: { x: 0, y: 0, width: 1920, height: 1080 },
+    });
+
+    const id2 = store.addOverlay({
+      type: 'image',
+      assetPath: '/tmp/b.png',
+      trackId: DEFAULT_VISUAL_TRACK_ID,
+      startMs: 10000,
+      durationMs: 5000,
+      position: { x: 0, y: 0, width: 1920, height: 1080 },
+    });
+
+    // 尝试把第二个 overlay 移到与第一个重叠的位置 → 应被调整
+    store.updateOverlay(id2, { startMs: 2000 });
+
+    const overlay = useTimelineStore.getState().timeline.overlays.find((o) => o.id === id2);
+    expect(overlay?.startMs).toBeGreaterThanOrEqual(5000);
+  });
+
+  it('clamps resize duration to the next overlay boundary', () => {
+    const store = useTimelineStore.getState();
+    const id1 = store.addOverlay({
+      type: 'image',
+      assetPath: '/tmp/a.png',
+      trackId: DEFAULT_VISUAL_TRACK_ID,
+      startMs: 0,
+      durationMs: 5000,
+      position: { x: 0, y: 0, width: 1920, height: 1080 },
+    });
+
+    store.addOverlay({
+      type: 'image',
+      assetPath: '/tmp/b.png',
+      trackId: DEFAULT_VISUAL_TRACK_ID,
+      startMs: 8000,
+      durationMs: 5000,
+      position: { x: 0, y: 0, width: 1920, height: 1080 },
+    });
+
+    // 尝试把第一个 overlay 拉伸到 15000ms → 应被 clamp 到 8000ms
+    store.updateOverlay(id1, { durationMs: 15000 });
+
+    const overlay = useTimelineStore.getState().timeline.overlays.find((o) => o.id === id1);
+    expect(overlay?.durationMs).toBe(8000);
+  });
+
+  it('keeps ai-card and default background out of managed collision rules', () => {
+    const store = useTimelineStore.getState();
+    store.setPodcast('/tmp/audio.mp3', '/tmp/subtitles.srt', 60_000);
+    store.setGlobalBackground('/tmp/bg.png');
+
+    // 在默认背景占据的同一轨道同一时间段添加普通 overlay → 不应被碰撞规则阻止
+    const overlayId = store.addOverlay({
+      type: 'image',
+      assetPath: '/tmp/cover.png',
+      trackId: DEFAULT_VISUAL_TRACK_ID,
+      startMs: 0,
+      durationMs: 5000,
+      position: { x: 0, y: 0, width: 1920, height: 1080 },
+    });
+
+    const state = useTimelineStore.getState();
+    const overlay = state.timeline.overlays.find((o) => o.id === overlayId);
+    // 普通 overlay 应该放在原始位置，不被默认背景影响
+    expect(overlay?.startMs).toBe(0);
+    expect(overlay?.trackId).toBe(DEFAULT_VISUAL_TRACK_ID);
+
+    // AI 卡片也不参与碰撞
+    store.addAICardsToTimeline([{
+      sourceCardId: 'ai-card-test',
+      startMs: 0,
+      durationMs: 5000,
+      aiCardData: {
+        sourceCardId: 'ai-card-test',
+        cardType: 'summary',
+        title: '测试',
+        content: '内容',
+        template: 'summary-default',
+        displayMode: 'fullscreen',
+        style: { primaryColor: '#000', backgroundColor: '#fff', fontSize: 48 },
+      },
+    }]);
+
+    // 在 AI 卡片同时间段添加普通 overlay → 不应被阻止
+    const id2 = store.addOverlay({
+      type: 'text',
+      assetPath: '',
+      trackId: DEFAULT_VISUAL_TRACK_ID,
+      startMs: 0,
+      durationMs: 3000,
+      position: { x: 100, y: 200, width: 800, height: 200 },
+      textData: {
+        content: '文字',
+        fontFamily: 'PingFang SC',
+        fontSize: 64,
+        fontColor: '#FFFFFF',
+        bold: false,
+        italic: false,
+        underline: false,
+        textAlign: 'center',
+        backgroundColor: 'transparent',
+        strokeColor: '#000000',
+        strokeWidth: 0,
+        shadowColor: '#000000',
+        shadowOffsetX: 0,
+        shadowOffsetY: 2,
+        shadowBlur: 0,
+        letterSpacing: 0,
+        lineHeight: 1.5,
+        opacity: 1,
+        rotation: 0,
+        animation: {
+          enter: 'none',
+          enterDurationMs: 500,
+          exit: 'none',
+          exitDurationMs: 500,
+          loop: 'none',
+        },
+      },
+    });
+
+    // 文字 overlay 应与第一个普通图片 overlay 冲突，被推移
+    const textOverlay = useTimelineStore.getState().timeline.overlays.find((o) => o.id === id2);
+    expect(textOverlay?.startMs).toBeGreaterThanOrEqual(5000);
   });
 });
