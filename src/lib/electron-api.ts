@@ -92,6 +92,13 @@ export interface ElectronAPI {
   onAppLog: (callback: (entry: AppLogEntry) => void) => () => void;
   toggleDevTools: () => Promise<void>;
   showItemInFolder: (filePath: string) => void;
+  // Script workbench
+  saveScriptFile: (projectDir: string, filename: string, content: string) => Promise<void>;
+  loadScriptFile: (projectDir: string, filename: string) => Promise<string | null>;
+  saveScriptState: (projectDir: string, state: string) => Promise<void>;
+  loadScriptState: (projectDir: string) => Promise<string | null>;
+  selectTextFile: () => Promise<{ path: string; content: string } | null>;
+
   selectOutputPath: () => Promise<string | null>;
 }
 

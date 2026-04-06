@@ -417,6 +417,55 @@ ipcMain.handle('add-asset', async () => {
   };
 });
 
+ipcMain.handle(
+  'save-script-file',
+  async (_event, projectDir: string, filename: string, content: string) => {
+    await fs.mkdir(projectDir, { recursive: true });
+    await fs.writeFile(path.join(projectDir, filename), content, 'utf-8');
+  },
+);
+
+ipcMain.handle(
+  'load-script-file',
+  async (_event, projectDir: string, filename: string) => {
+    const filePath = path.join(projectDir, filename);
+    try {
+      return await fs.readFile(filePath, 'utf-8');
+    } catch {
+      return null;
+    }
+  },
+);
+
+ipcMain.handle('save-script-state', async (_event, projectDir: string, state: string) => {
+  await fs.mkdir(projectDir, { recursive: true });
+  await fs.writeFile(path.join(projectDir, 'script-state.json'), state, 'utf-8');
+});
+
+ipcMain.handle('load-script-state', async (_event, projectDir: string) => {
+  const filePath = path.join(projectDir, 'script-state.json');
+  try {
+    return await fs.readFile(filePath, 'utf-8');
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle('select-text-file', async () => {
+  if (!mainWindow) return null;
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '选择报告文件',
+    filters: [{ name: '文本文件', extensions: ['txt', 'md'] }],
+    properties: ['openFile'],
+  });
+
+  if (result.canceled || result.filePaths.length === 0) return null;
+
+  const filePath = result.filePaths[0];
+  const content = await fs.readFile(filePath, 'utf-8');
+  return { path: filePath, content };
+});
+
 ipcMain.handle('select-output-path', async () => {
   const result = await dialog.showSaveDialog({
     defaultPath: 'podcast-export.mp4',

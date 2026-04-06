@@ -63,5 +63,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   toggleDevTools: () => ipcRenderer.invoke('toggle-devtools'),
   showItemInFolder: (filePath: string) => ipcRenderer.send('show-item-in-folder', filePath),
+  saveScriptFile: (projectDir: string, filename: string, content: string) =>
+    ipcRenderer.invoke('save-script-file', projectDir, filename, content),
+  loadScriptFile: (projectDir: string, filename: string) =>
+    ipcRenderer.invoke('load-script-file', projectDir, filename),
+  saveScriptState: (projectDir: string, state: string) =>
+    ipcRenderer.invoke('save-script-state', projectDir, state),
+  loadScriptState: (projectDir: string) =>
+    ipcRenderer.invoke('load-script-state', projectDir),
+  selectTextFile: () =>
+    ipcRenderer.invoke('select-text-file') as Promise<{ path: string; content: string } | null>,
   selectOutputPath: () => ipcRenderer.invoke('select-output-path'),
 });
