@@ -63,3 +63,32 @@ export const SCRIPT_TEMPLATES: ScriptTemplate[] = [
 export function getTemplateById(id: string): ScriptTemplate | undefined {
   return SCRIPT_TEMPLATES.find((t) => t.id === id);
 }
+
+import { loadCustomTemplates } from './settings-storage';
+
+export interface MergedTemplate {
+  id: string;
+  name: string;
+  description: string;
+  systemPrompt: string;
+  isBuiltin: boolean;
+}
+
+export function getAllTemplates(): MergedTemplate[] {
+  const builtins: MergedTemplate[] = SCRIPT_TEMPLATES.map((t) => ({
+    ...t,
+    isBuiltin: true,
+  }));
+  const customs: MergedTemplate[] = loadCustomTemplates().map((t) => ({
+    id: t.id,
+    name: t.name,
+    description: t.description,
+    systemPrompt: t.systemPrompt,
+    isBuiltin: false,
+  }));
+  return [...builtins, ...customs];
+}
+
+export function getAnyTemplateById(id: string): MergedTemplate | undefined {
+  return getAllTemplates().find((t) => t.id === id);
+}
