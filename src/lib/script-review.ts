@@ -2,6 +2,7 @@
 import type { AISettings } from '../types/ai';
 import { callLLM, parseLLMJsonResponse } from './llm-client';
 import type { Annotation, AnnotationSeverity } from '../store/script';
+import { loadReviewCriteria } from './settings-storage';
 
 const REVIEW_SYSTEM_PROMPT = `你是一位专业的口播稿审查编辑。请审查用户提供的口播稿，从以下维度给出批注：
 
@@ -78,6 +79,11 @@ export async function reviewScript(
   settings: AISettings,
   scriptText: string,
 ): Promise<Annotation[]> {
-  const response = await callLLM(settings, REVIEW_SYSTEM_PROMPT, scriptText);
+  const userCriteria = loadReviewCriteria();
+  const fullPrompt = userCriteria.trim()
+    ? `${REVIEW_SYSTEM_PROMPT}\n\n用户补充的审查要求：\n${userCriteria}`
+    : REVIEW_SYSTEM_PROMPT;
+
+  const response = await callLLM(settings, fullPrompt, scriptText);
   return parseAnnotations(response, scriptText);
 }
