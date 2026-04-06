@@ -85,3 +85,45 @@ export async function callLLM(
 
   return content;
 }
+
+/**
+ * 调用 LLM 返回纯文本（不使用 JSON mode），适用于口播稿生成等场景
+ */
+export async function callLLMText(
+  settings: AISettings,
+  systemPrompt: string,
+  userMessage: string,
+): Promise<string> {
+  const baseUrl = settings.llmBaseUrl.replace(/\/+$/, '');
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${settings.llmApiKey}`,
+    },
+    body: JSON.stringify({
+      model: settings.llmModel,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+      temperature: 0.3,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(`LLM API error ${response.status}: ${errorText}`);
+  }
+
+  const payload = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string | null } | null } | null>;
+  };
+  const content = payload.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error('LLM 返回空内容');
+  }
+
+  return content;
+}
