@@ -27,10 +27,11 @@ describe('findAnnotationAtPos', () => {
     expect(findAnnotationAtPos([ann], 8)).toBe(ann);
   });
 
-  it('returns annotation at boundary positions', () => {
+  it('returns annotation at boundary positions (half-open range)', () => {
     const ann = makeAnnotation({ startOffset: 6, endOffset: 11 });
-    expect(findAnnotationAtPos([ann], 6)).toBe(ann);
-    expect(findAnnotationAtPos([ann], 11)).toBe(ann);
+    expect(findAnnotationAtPos([ann], 6)).toBe(ann);    // start is inclusive
+    expect(findAnnotationAtPos([ann], 10)).toBe(ann);   // last char is inclusive
+    expect(findAnnotationAtPos([ann], 11)).toBeNull();   // endOffset is exclusive
   });
 
   it('returns null when pos is outside all annotations', () => {

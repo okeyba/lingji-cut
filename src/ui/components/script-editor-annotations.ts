@@ -5,7 +5,7 @@ import {
   EditorView,
   hoverTooltip,
 } from '@codemirror/view';
-import type { Annotation } from '../../store/script';
+import type { Annotation, AnnotationSeverity } from '../../store/script';
 
 // --- StateEffect: push annotations from React into CM6 ---
 
@@ -13,7 +13,7 @@ export const setAnnotationsEffect = StateEffect.define<Annotation[]>();
 
 // --- Decoration builders ---
 
-const SEVERITY_CLASS: Record<string, string> = {
+const SEVERITY_CLASS: Record<AnnotationSeverity, string> = {
   error: 'cm-annotation-error',
   warning: 'cm-annotation-warning',
   info: 'cm-annotation-info',
@@ -33,7 +33,7 @@ function buildDecorations(
     .sort((a, b) => a.startOffset - b.startOffset)
     .map((a) =>
       Decoration.mark({
-        class: SEVERITY_CLASS[a.severity] ?? SEVERITY_CLASS.info,
+        class: SEVERITY_CLASS[a.severity],
         attributes: { 'data-annotation-id': a.id },
       }).range(a.startOffset, a.endOffset),
     );
@@ -87,7 +87,7 @@ export function findAnnotationAtPos(
       (a) =>
         a.status === 'pending' &&
         pos >= a.startOffset &&
-        pos <= a.endOffset,
+        pos < a.endOffset,
     ) ?? null
   );
 }
@@ -137,15 +137,13 @@ export function createAnnotationClickHandler(
 
       if (ann) {
         const coords = view.coordsAtPos(ann.startOffset);
-        if (coords) {
-          onAnnotationClick({
-            id: ann.id,
-            annotation: ann,
-            x: coords.left,
-            y: coords.bottom,
-          });
-          return true;
-        }
+        onAnnotationClick({
+          id: ann.id,
+          annotation: ann,
+          x: coords?.left ?? event.clientX,
+          y: coords?.bottom ?? event.clientY,
+        });
+        return true;
       }
 
       onAnnotationClick(null);
