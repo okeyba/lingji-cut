@@ -46,6 +46,7 @@ export { Image } from "./image";
 export type { InputProps, TextAreaProps as TextareaProps } from "./input";
 export { Input, Textarea, SearchInput } from "./input";
 export { MdEditor } from "./md-editor";
+export { ScriptEditor } from "./script-editor";
 export { Modal } from "./modal";
 export { default as Reveal } from "./reveal";
 export type { SelectOption, SelectProps } from "./select";
