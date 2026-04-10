@@ -5,6 +5,7 @@ import {
   toggleCardEnabledInResult,
   updateCardInResult,
 } from '../lib/ai-persistence';
+import { migrateToProviders } from '../lib/llm/provider-utils';
 import type { AIAnalysisResult, AICard, AISettings, CoverCandidate } from '../types/ai';
 import type { SaveStatus } from './timeline';
 import { getCurrentProjectDir } from './timeline';
@@ -102,8 +103,14 @@ export async function loadAISettings(): Promise<AISettings | null> {
       const raw = await window.electronAPI.loadGlobalSettings();
       if (raw) {
         const file = JSON.parse(raw) as { aiSettings: AISettings };
-        return {
+        const hadProviders =
+          Array.isArray(file.aiSettings.llmProviders) &&
+          file.aiSettings.llmProviders.length > 0;
+        const settings: AISettings = {
           ...file.aiSettings,
+          llmProviders: file.aiSettings.llmProviders ?? [],
+          defaultProviderId: file.aiSettings.defaultProviderId ?? null,
+          defaultModel: file.aiSettings.defaultModel ?? null,
           enableThinking: file.aiSettings.enableThinking ?? true,
           minimaxApiKey: file.aiSettings.minimaxApiKey ?? '',
           minimaxVoiceId: file.aiSettings.minimaxVoiceId ?? 'male-qn-qingse',
@@ -113,6 +120,12 @@ export async function loadAISettings(): Promise<AISettings | null> {
           minimaxEmotion: file.aiSettings.minimaxEmotion ?? '',
           minimaxModel: file.aiSettings.minimaxModel ?? 'speech-2.8-hd',
         };
+        const migrated = migrateToProviders(settings);
+        // 迁移产生了新 provider，持久化
+        if (!hadProviders && migrated.llmProviders.length > 0) {
+          void saveAISettings(migrated);
+        }
+        return migrated;
       }
     } catch {
       // fallthrough to legacy
@@ -125,8 +138,11 @@ export async function loadAISettings(): Promise<AISettings | null> {
     if (rawValue) {
       try {
         const parsed = JSON.parse(rawValue) as AISettings;
-        const settings: AISettings = {
+        const raw: AISettings = {
           ...parsed,
+          llmProviders: parsed.llmProviders ?? [],
+          defaultProviderId: parsed.defaultProviderId ?? null,
+          defaultModel: parsed.defaultModel ?? null,
           enableThinking: parsed.enableThinking ?? true,
           minimaxApiKey: parsed.minimaxApiKey ?? '',
           minimaxVoiceId: parsed.minimaxVoiceId ?? 'male-qn-qingse',
@@ -136,6 +152,7 @@ export async function loadAISettings(): Promise<AISettings | null> {
           minimaxEmotion: parsed.minimaxEmotion ?? '',
           minimaxModel: parsed.minimaxModel ?? 'speech-2.8-hd',
         };
+        const settings = migrateToProviders(raw);
         // 自动迁移到 Electron 全局存储
         await saveAISettings(settings);
         window.localStorage.removeItem(AI_SETTINGS_LEGACY_KEY);
