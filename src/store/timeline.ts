@@ -27,12 +27,6 @@ type TimelineCommitState = Pick<TimelineStore, 'timeline' | 'assets' | 'historyP
 type OverlayClipboardMode = 'copy' | 'cut';
 type OverlayClipboardItem = OverlayDraft & { mode: OverlayClipboardMode };
 
-export interface RecentProject {
-  path: string;
-  name: string;
-  lastOpenedAt: number;
-}
-
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 export interface TimelineStore {
@@ -69,7 +63,6 @@ export interface TimelineStore {
 }
 
 const PROJECT_DIR_KEY = 'podcast-editor-project-dir';
-const RECENT_PROJECTS_KEY = 'podcast-editor-recent-projects';
 const MAX_TIMELINE_HISTORY = 40;
 let currentSaveStatus: SaveStatus = 'idle';
 const saveStatusListeners = new Set<(status: SaveStatus) => void>();
@@ -313,10 +306,6 @@ function removeStorageItem(key: string): void {
   }
 
   window.localStorage.removeItem(key);
-}
-
-function persistRecentProjects(projects: RecentProject[]): void {
-  setStorageItem(RECENT_PROJECTS_KEY, JSON.stringify(projects));
 }
 
 export function getCurrentSaveStatus(): SaveStatus {
@@ -831,48 +820,12 @@ export function getProjectDir(): string {
   return getCurrentProjectDir();
 }
 
-export function getRecentProjects(): RecentProject[] {
-  const raw = getStorageItem(RECENT_PROJECTS_KEY);
-  if (!raw) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as RecentProject[];
-    return parsed.filter((project) => Boolean(project?.path));
-  } catch {
-    return [];
-  }
-}
-
-export function rememberRecentProject(projectDir: string): RecentProject[] {
-  const now = Date.now();
-  const nextProjects = [
-    {
-      path: projectDir,
-      name: getFileNameFromPath(projectDir),
-      lastOpenedAt: now,
-    },
-    ...getRecentProjects().filter((project) => project.path !== projectDir),
-  ].slice(0, 5);
-
-  persistRecentProjects(nextProjects);
-  return nextProjects;
-}
-
-export function removeRecentProject(projectDir: string): RecentProject[] {
-  const nextProjects = getRecentProjects().filter((project) => project.path !== projectDir);
-  persistRecentProjects(nextProjects);
-  return nextProjects;
-}
-
 export function setCurrentProjectDir(projectDir: string): void {
   setStorageItem(PROJECT_DIR_KEY, projectDir);
 }
 
 export function setProjectDir(projectDir: string): void {
   setCurrentProjectDir(projectDir);
-  rememberRecentProject(projectDir);
 }
 
 export function clearCurrentProject(): void {

@@ -241,4 +241,34 @@ describe('script store', () => {
       expect(state.activeStream.kind).toBeNull();
     });
   });
+
+  describe('clearProjectSession', () => {
+    it('fully clears the active project and transient editor state', () => {
+      useScriptStore.setState({
+        projectDir: '/tmp/old-project',
+        currentStep: 2,
+        originalText: '旧原稿',
+        scriptText: '旧口播稿',
+        openedFile: 'script.md',
+        fileEntries: [{ name: 'script.md', type: 'file' }],
+        workspaceFiles: { hasOriginalFile: true, hasScriptFile: true },
+        reviewState: 'issues',
+      });
+
+      useScriptStore.getState().clearProjectSession();
+
+      const state = useScriptStore.getState();
+      expect(state.projectDir).toBeNull();
+      expect(state.currentStep).toBe(0);
+      expect(state.originalText).toBe('');
+      expect(state.scriptText).toBe('');
+      expect(state.openedFile).toBeNull();
+      expect(state.fileEntries).toEqual([]);
+      expect(state.workspaceFiles).toEqual({
+        hasOriginalFile: false,
+        hasScriptFile: false,
+      });
+      expect(state.reviewState).toBe('idle');
+    });
+  });
 });

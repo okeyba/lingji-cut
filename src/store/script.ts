@@ -153,6 +153,7 @@ interface ScriptActions {
     scriptDocVersion?: number;
   }) => void;
   reset: () => void;
+  clearProjectSession: () => void;
   // --- 新增 actions ---
   setWorkspaceFiles: (state: Partial<WorkspaceFilesState>) => void;
   setAgentOperation: (state: Partial<AgentOperationState>) => void;
@@ -396,6 +397,11 @@ export const useScriptStore = create<ScriptState & ScriptActions>((set, get) => 
     const { projectDir, selectedRole } = get();
     // 重置脚本内容但保留工作目录（与 Editor 共享）
     set({ ...initialState, projectDir, selectedRole });
+  },
+
+  clearProjectSession: () => {
+    const { selectedRole } = get();
+    set({ ...initialState, projectDir: null, selectedRole });
   },
 
   // --- 新增 actions ---

@@ -30,6 +30,8 @@ import styles from './Editor.module.css';
 
 interface EditorProps {
   onAddAsset: () => Promise<void>;
+  initialActivePanel?: 'assets' | 'ai';
+  onOpenSettings: () => void;
   onUseAsPodcastAudio: (path: string, durationMs: number) => Promise<void>;
   onUseAsPodcastSrt: (path: string) => Promise<void>;
   exportRequestToken: number;
@@ -56,6 +58,8 @@ function readStoredTimelinePanelHeight(): number | null {
 
 export function Editor({
   onAddAsset,
+  initialActivePanel = 'assets',
+  onOpenSettings,
   onUseAsPodcastAudio,
   onUseAsPodcastSrt,
   exportRequestToken,
@@ -78,7 +82,7 @@ export function Editor({
   const [exportProgress, setExportProgress] = useState(0);
   const [outputPath, setOutputPath] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [activePanel, setActivePanel] = useState<'assets' | 'ai'>('assets');
+  const [activePanel, setActivePanel] = useState<'assets' | 'ai'>(initialActivePanel);
   const [inspectorSelection, setInspectorSelection] = useState<InspectorSelection>({ type: 'empty' });
   const [projectMeta, setProjectMeta] = useState<ProjectOverviewMeta | null>(null);
   const [isProjectMetaLoading, setIsProjectMetaLoading] = useState(false);
@@ -633,6 +637,7 @@ export function Editor({
                     inspectedCardId={inspectorSelection.type === 'ai-card' ? inspectorSelection.cardId : null}
                     onClearInspector={handleCloseInspector}
                     onOpenCardInspector={handleOpenAICardInspector}
+                    onOpenSettings={onOpenSettings}
                   />
                 )}
               </div>

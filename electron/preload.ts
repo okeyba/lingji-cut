@@ -56,6 +56,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('scan-project-assets', projectDir) as Promise<
       { path: string; type: 'video' | 'image' | 'audio' | 'srt'; durationMs: number }[]
     >,
+  scanImportDirectory: (dir: string) =>
+    ipcRenderer.invoke('scan-import-directory', dir) as Promise<{
+      audioFiles: string[];
+      srtFiles: string[];
+    }>,
   renderVideo: (args: { timeline: string; outputPath: string; exportConfig: ExportConfig }) =>
     ipcRenderer.invoke('render-video', args),
   onRenderProgress: (callback: (progress: number) => void) => {
@@ -122,6 +127,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cancelTTS: (requestId: string) => ipcRenderer.invoke('cancel-tts', requestId),
   selectOutputPath: () => ipcRenderer.invoke('select-output-path'),
   showEditorContextMenu: () => ipcRenderer.invoke('show-editor-context-menu'),
+  loadRecentProjects: () => ipcRenderer.invoke('load-recent-projects'),
+  addRecentProject: (projectDir: string, projectName?: string) =>
+    ipcRenderer.invoke('add-recent-project', projectDir, projectName),
+  removeRecentProject: (projectDir: string) =>
+    ipcRenderer.invoke('remove-recent-project', projectDir),
+  refreshRecentProjects: () => ipcRenderer.invoke('refresh-recent-projects'),
 });
 
 // ─── Agent API ────────────────────────────────────────────

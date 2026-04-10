@@ -8,18 +8,16 @@ import {
   toggleCardEnabledInResult,
 } from '../lib/ai-persistence';
 import { getAISettingsIssue } from '../lib/ai-settings';
-import { useAIStore, loadAISettings, saveAISettings } from '../store/ai';
+import { useAIStore, loadAISettings } from '../store/ai';
 import { getProjectDir, useTimelineStore } from '../store/timeline';
 import {
   buildAICardTimelineDraft,
   type AIAnalysisResult,
-  type AISettings,
   type CoverCandidate,
 } from '../types/ai';
 import { AICardList, type AICardPlacement } from './AICardList';
 import { AppIcon } from './AppIcon';
 import { AICoverPanel } from './AICoverPanel';
-import { AISettingsModal } from './AISettingsModal';
 import { Alert, Button, Spinner, StepIndicator, Textarea } from '../ui';
 import styles from './AIPanel.module.css';
 
@@ -29,6 +27,7 @@ interface AIPanelProps {
   inspectedCardId?: string | null;
   onClearInspector?: () => void;
   onOpenCardInspector?: (cardId: string) => void;
+  onOpenSettings?: () => void;
 }
 
 const TAB_META: Record<'cards' | 'cover', { label: string; shortLabel: string }> = {
@@ -42,6 +41,7 @@ export function AIPanel({
   inspectedCardId = null,
   onClearInspector,
   onOpenCardInspector,
+  onOpenSettings,
 }: AIPanelProps) {
   const {
     srtEntries,
@@ -66,13 +66,30 @@ export function AIPanel({
     setActiveTab,
   } = useAIStore();
 
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isRegeneratingCoverPrompt, setIsRegeneratingCoverPrompt] = useState(false);
   const [globalPromptDraft, setGlobalPromptDraft] = useState('');
-  const [panelSettings, setPanelSettings] = useState<import('../types/ai').AISettings | null>(null);
+  const [aiSettingsIssue, setAISettingsIssue] = useState<string | null>(() =>
+    getAISettingsIssue(null),
+  );
 
   useEffect(() => {
-    void loadAISettings().then(setPanelSettings);
+    let cancelled = false;
+
+    void loadAISettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setAISettingsIssue(getAISettingsIssue(settings));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAISettingsIssue(getAISettingsIssue(null));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const enabledCount = analysisResult?.cards.filter((card) => card.enabled).length ?? 0;
@@ -188,15 +205,19 @@ export function AIPanel({
     const settings = await loadAISettings();
     const settingsIssue = getAISettingsIssue(settings);
     if (settingsIssue) {
+      setAISettingsIssue(settingsIssue);
       setAnalysisError(settingsIssue);
-      setIsSettingsOpen(true);
+      onOpenSettings?.();
       return;
     }
     if (!settings) {
+      setAISettingsIssue(getAISettingsIssue(null));
       setAnalysisError('请先完成 AI 配置');
-      setIsSettingsOpen(true);
+      onOpenSettings?.();
       return;
     }
+
+    setAISettingsIssue(null);
 
     if (!timeline.podcast.srtPath) {
       setAnalysisError('请先导入 SRT 字幕文件');
@@ -248,7 +269,7 @@ export function AIPanel({
       const settings = await loadAISettings();
       if (!settings?.jimengSessionId) {
         setAnalysisError('请先在 AI 配置中填写即梦 Session ID');
-        setIsSettingsOpen(true);
+        onOpenSettings?.();
         return;
       }
 
@@ -282,15 +303,19 @@ export function AIPanel({
     const settings = await loadAISettings();
     const settingsIssue = getAISettingsIssue(settings);
     if (settingsIssue) {
+      setAISettingsIssue(settingsIssue);
       setAnalysisError(settingsIssue);
-      setIsSettingsOpen(true);
+      onOpenSettings?.();
       return;
     }
     if (!settings) {
+      setAISettingsIssue(getAISettingsIssue(null));
       setAnalysisError('请先完成 AI 配置');
-      setIsSettingsOpen(true);
+      onOpenSettings?.();
       return;
     }
+
+    setAISettingsIssue(null);
 
     if (srtEntries.length === 0) {
       setAnalysisError('当前没有可用于生成封面提示词的字幕内容');
@@ -400,7 +425,6 @@ export function AIPanel({
     ],
   );
 
-  const aiSettingsIssue = getAISettingsIssue(panelSettings);
   const hasSrtEntries = srtEntries.length > 0;
   const analyzeButtonDisabled = !hasSrtEntries || isAnalyzing;
   const hasGeneratedCards = (analysisResult?.cards.length ?? 0) > 0;
@@ -437,7 +461,7 @@ export function AIPanel({
   const analyzeButtonLabel = isAnalyzing
     ? '分析中...'
     : aiSettingsIssue
-      ? '先配置 AI'
+      ? '前往系统设置'
       : isCardListEmpty
         ? '重新生成卡片'
         : '分析内容';
@@ -472,7 +496,7 @@ export function AIPanel({
           <Button.Icon
             variant="ghost"
             className={styles.iconButton}
-            onClick={() => setIsSettingsOpen(true)}
+            onClick={onOpenSettings}
             aria-label="打开 AI 全局设置"
             title="打开 AI 全局设置"
           >
@@ -637,17 +661,6 @@ export function AIPanel({
           </Button>
         </div>
       ) : null}
-
-      <AISettingsModal
-        visible={isSettingsOpen}
-        settings={panelSettings}
-        onClose={() => setIsSettingsOpen(false)}
-        onSave={(settings: AISettings) => {
-          void saveAISettings(settings).then(() => {
-            setPanelSettings(settings);
-          });
-        }}
-      />
     </aside>
   );
 }

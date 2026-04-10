@@ -72,6 +72,15 @@ export interface ProjectMetadata {
   createdAtMs: number;
 }
 
+export interface RecentProjectEntry {
+  path: string;
+  name: string;
+  lastOpenedAt: number;
+  createdAt?: string;
+  updatedAt?: string;
+  coverImageUrl?: string;
+}
+
 export interface ElectronAPI {
   parseSrtFile: (filePath: string) => Promise<{ entries: SrtEntry[]; durationMs: number }>;
   getAudioDuration: (filePath: string) => Promise<number>;
@@ -120,6 +129,10 @@ export interface ElectronAPI {
   scanProjectAssets: (projectDir: string) => Promise<
     { path: string; type: 'video' | 'image' | 'audio' | 'srt'; durationMs: number }[]
   >;
+  scanImportDirectory: (dir: string) => Promise<{
+    audioFiles: string[];
+    srtFiles: string[];
+  }>;
   renderVideo: (args: {
     timeline: string;
     outputPath: string;
@@ -160,6 +173,11 @@ export interface ElectronAPI {
   cancelTTS: (requestId: string) => Promise<void>;
   selectOutputPath: () => Promise<string | null>;
   showEditorContextMenu: () => Promise<void>;
+  // 最近项目管理
+  loadRecentProjects: () => Promise<RecentProjectEntry[]>;
+  addRecentProject: (projectDir: string, projectName?: string) => Promise<RecentProjectEntry[]>;
+  removeRecentProject: (projectDir: string) => Promise<RecentProjectEntry[]>;
+  refreshRecentProjects: () => Promise<RecentProjectEntry[]>;
 }
 
 declare global {
