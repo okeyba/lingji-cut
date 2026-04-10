@@ -5,6 +5,11 @@ import {
 } from '../lib/script-persistence';
 import { loadSelectedRole, saveSelectedRole } from '../lib/settings-storage';
 import type { FileEntry } from '../lib/electron-api';
+import type {
+  VideoImportProgress,
+  VideoImportResult,
+  VideoImportStatus,
+} from '../lib/video-import-types';
 
 // --- 保留旧类型供外部未迁移文件暂时使用 ---
 /** @deprecated 将在集成阶段移除，请勿新增使用 */
@@ -114,6 +119,26 @@ interface ScriptState {
   reviewBreathing: boolean;
   /** 写稿工作台是否已挂载 */
   workbenchMounted: boolean;
+  videoImportStatus: VideoImportStatus | null;
+  videoImportProgress: VideoImportProgress | null;
+  lastVideoImport: VideoImportResult | null;
+  historyPreview: {
+    active: boolean;
+    versionId: number | null;
+    content: string | null;
+    versionMeta: {
+      id: number;
+      fileName: string;
+      source: string;
+      providerName: string | null;
+      modelName: string | null;
+      label: string | null;
+      byteSize: number;
+      createdAt: string;
+    } | null;
+  };
+  selectedProviderId: string | null;
+  selectedModel: string | null;
 }
 
 interface ScriptActions {
@@ -177,6 +202,12 @@ interface ScriptActions {
   setReviewCursorPos: (pos: { x: number; y: number } | null) => void;
   setReviewBreathing: (active: boolean) => void;
   setWorkbenchMounted: (mounted: boolean) => void;
+  setVideoImportProgress: (progress: VideoImportProgress | null) => void;
+  setLastVideoImport: (result: VideoImportResult | null) => void;
+  clearVideoImportState: () => void;
+  enterHistoryPreview: (versionId: number, content: string, meta: ScriptState['historyPreview']['versionMeta']) => void;
+  exitHistoryPreview: () => void;
+  setSelectedProvider: (providerId: string | null, model: string | null) => void;
 }
 
 const initialState: ScriptState = {
@@ -236,6 +267,17 @@ const initialState: ScriptState = {
   reviewCursorPos: null,
   reviewBreathing: false,
   workbenchMounted: false,
+  videoImportStatus: null,
+  videoImportProgress: null,
+  lastVideoImport: null,
+  historyPreview: {
+    active: false,
+    versionId: null,
+    content: null,
+    versionMeta: null,
+  },
+  selectedProviderId: null,
+  selectedModel: null,
 };
 
 export const useScriptStore = create<ScriptState & ScriptActions>((set, get) => ({
@@ -495,6 +537,33 @@ export const useScriptStore = create<ScriptState & ScriptActions>((set, get) => 
   setReviewCursorPos: (pos) => set({ reviewCursorPos: pos }),
   setReviewBreathing: (active) => set({ reviewBreathing: active }),
   setWorkbenchMounted: (mounted) => set({ workbenchMounted: mounted }),
+  setVideoImportProgress: (progress) =>
+    set({
+      videoImportStatus: progress?.status ?? null,
+      videoImportProgress: progress,
+    }),
+  setLastVideoImport: (result) => set({ lastVideoImport: result }),
+  clearVideoImportState: () =>
+    set({
+      videoImportStatus: null,
+      videoImportProgress: null,
+      lastVideoImport: null,
+    }),
+
+  enterHistoryPreview: (versionId, content, meta) =>
+    set({
+      historyPreview: { active: true, versionId, content, versionMeta: meta },
+      editorAgent: { readOnly: true, virtualCursorPos: null, streamingActive: false },
+    }),
+
+  exitHistoryPreview: () =>
+    set({
+      historyPreview: { active: false, versionId: null, content: null, versionMeta: null },
+      editorAgent: { readOnly: false, virtualCursorPos: null, streamingActive: false },
+    }),
+
+  setSelectedProvider: (providerId, model) =>
+    set({ selectedProviderId: providerId, selectedModel: model }),
 }));
 
 // 自动保存：当 reviewState / scriptDocVersion / template / annotations 变化时，
@@ -506,7 +575,9 @@ useScriptStore.subscribe((state, prevState) => {
     state.reviewState !== prevState.reviewState ||
     state.scriptDocVersion !== prevState.scriptDocVersion ||
     state.selectedTemplate !== prevState.selectedTemplate ||
-    state.annotations !== prevState.annotations;
+    state.annotations !== prevState.annotations ||
+    state.selectedProviderId !== prevState.selectedProviderId ||
+    state.selectedModel !== prevState.selectedModel;
 
   if (!changed) return;
 
@@ -515,6 +586,8 @@ useScriptStore.subscribe((state, prevState) => {
     annotations: state.annotations,
     reviewState: state.reviewState,
     lastReviewedDocVersion: state.scriptDocVersion,
+    selectedProviderId: state.selectedProviderId,
+    selectedModel: state.selectedModel,
   };
 
   debouncedSaveScriptSection(state.projectDir, scriptSection);
