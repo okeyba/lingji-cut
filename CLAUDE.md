@@ -253,3 +253,20 @@ TypeScript 严格模式，无独立 lint 命令（tsc 兼任类型检查）。
 - **禁止**在动画期间允许用户编辑（必须 `readOnly: true`）
 - **禁止**使用 `setInterval` 轮询光标位置，必须通过 CM6 Effect 系统驱动
 - **禁止**在清理路径中遗漏任何光标/高亮状态的重置
+
+---
+
+## 统一操作进度条规范（纲领）
+
+所有耗时操作（≥2 秒）的进度展示**必须**接入统一的底部进度系统，**禁止**新建独立的进度弹窗、顶部条或内联进度组件。
+
+完整规范见 **[PROGRESS-SPEC.md](./PROGRESS-SPEC.md)**，核心要点：
+
+- **进度汇聚到 AppStatusBar**：顶部叠加 2px 进度线，左侧显示任务摘要，点击展开浮动详情面板
+- **不增加高度**：AppStatusBar 保持 28px
+- **编辑器内动画保留**：打字机、审阅光标、虚拟光标属于内容反馈，不受影响
+- **被替代组件**：`AgentProgressBar`（编辑器上方）、`ExportProgress`（模态弹窗）由统一进度系统替代
+- **统一 Store**：`src/store/task-progress.ts`，所有耗时操作通过 `startTask` / `updateTask` / `completeTask` / `failTask` 接入
+- **分类颜色**：`ai-write` 紫色 / `ai-review` 绿色 / `import` 琥珀 / `export` 系统蓝 / `tts` 粉色 / `cover` 浅紫 / `io` 灰色
+
+**所有 AI Agent 在实现涉及耗时操作的功能时，必须遵循 PROGRESS-SPEC.md 的接入协议。**
