@@ -3,6 +3,8 @@ import { useAgentStore } from '../store/agent';
 import { useScriptStore } from '../store/script';
 import { getOriginalStats, getGeneratedScriptStats, getAnnotationSummary } from '../lib/script-utils';
 import styles from './AppStatusBar.module.css';
+import { StatusBarTaskSummary } from './StatusBarTaskSummary';
+import { TaskProgressPanel } from './TaskProgressPanel';
 
 // ─── 圆形进度图标常量 ──────────────────────────────────────
 const ICON_RADIUS = 6;
@@ -184,8 +186,10 @@ function WorkbenchStatsIndicator() {
 export function AppStatusBar() {
   return (
     <div className={styles.statusBar}>
+      <TaskProgressPanel />
       <div className={styles.left}>
         <WorkbenchStatsIndicator />
+        <StatusBarTaskSummary />
       </div>
       <div className={styles.right}>
         <ContextWindowIndicator />

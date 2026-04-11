@@ -12,7 +12,6 @@
   user-select: none;
   -webkit-app-region: no-drag;
   position: relative;
-  overflow: hidden;
 }
 
 .left {
@@ -132,13 +131,5 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 统一进度线 */
-.progressLine {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 1;
-  pointer-events: none;
-}
+
 
