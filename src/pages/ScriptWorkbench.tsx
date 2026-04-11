@@ -23,6 +23,7 @@ import {
 } from '../lib/script-utils';
 import { ReviewCursorAnimator } from '../lib/review-cursor-animator';
 import { useScriptStore } from '../store/script';
+import { useTaskProgressStore } from '../store/task-progress';
 import { loadAISettings } from '../store/ai';
 import { useTimelineStore } from '../store/timeline';
 import { resolveProvider } from '../lib/llm/provider-utils';
@@ -644,18 +645,44 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
 
   const waitForVideoImport = useCallback(
     async (importId: string, dir: string) => {
+      const importTaskId = `import-douyin-${Date.now()}`;
+      useTaskProgressStore.getState().startTask({
+        id: importTaskId,
+        category: 'import',
+        label: '抖音视频导入',
+        mode: 'determinate',
+        progress: 0,
+        phase: '下载中',
+        level: 2,
+        canCancel: false,
+      });
+
       for (let attempt = 0; attempt < 240; attempt += 1) {
         const status = await window.electronAPI.getVideoImportStatus(importId);
         if (status) {
           setVideoImportProgress(status);
+
+          const phaseLabels: Record<string, string> = {
+            downloading: '下载中',
+            extracting_audio: '提取音频',
+            transcribing: '转录字幕',
+            syncing: '同步到项目',
+          };
+          useTaskProgressStore.getState().updateTask(importTaskId, {
+            progress: status.progress ?? 0,
+            phase: phaseLabels[status.status] ?? status.status,
+          });
+
           if (status.status === 'done' && status.result) {
             setLastVideoImport(status.result);
             await finalizeVideoImport(dir);
+            useTaskProgressStore.getState().completeTask(importTaskId);
             setDouyinImportBusy(false);
             return;
           }
           if (status.status === 'error') {
             setDouyinImportError(status.error ?? '抖音导入失败');
+            useTaskProgressStore.getState().failTask(importTaskId, status.error ?? '导入失败');
             setDouyinImportBusy(false);
             return;
           }
@@ -664,6 +691,7 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
 
+      useTaskProgressStore.getState().failTask(importTaskId, '导入状态查询超时');
       setDouyinImportError('导入状态查询超时，请稍后重试');
       setDouyinImportBusy(false);
     },
@@ -738,9 +766,9 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
       canInterrupt?: boolean;
       replyChannel?: string;
     }) => {
+      const streamId = `mcp-generate-${Date.now()}`;
       try {
         const state = useScriptStore.getState();
-        const streamId = `mcp-generate-${Date.now()}`;
         const streamKind = operationType === 'rewrite' ? 'rewrite' : 'generate';
 
         // 抑制编辑器 onChange 触发的 dirty 标记
@@ -774,6 +802,17 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
         });
         state.setEditorAgent({ readOnly: true, virtualCursorPos: 0, streamingActive: true });
         state.setActiveStream({ streamId, filePath: 'script.md', kind: streamKind, phase: 'preparing' });
+        useTaskProgressStore.getState().startTask({
+          id: streamId,
+          category: 'ai-write',
+          label: operationType === 'rewrite' ? 'AI 重写稿件' : 'AI 生成稿件',
+          mode: 'streaming',
+          progress: 0,
+          phase: '准备中',
+          level: 2,
+          canCancel: canInterrupt,
+          onCancel: canInterrupt ? () => window.agentAPI?.cancelTurn() : undefined,
+        });
 
         stopActivePlayback();
         liveStreamingRef.current = null;
@@ -811,6 +850,7 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
         ensureGeneratePlayer(initialView);
         // 某些模型首包返回较慢，先切到 streaming，避免界面长时间停在 preparing。
         state.setActiveStream({ phase: 'streaming' });
+        useTaskProgressStore.getState().updateTask(streamId, { phase: '写入中' });
         let didEnqueueStreamText = false;
 
         // 解析当前选择的 Provider / Model
@@ -866,6 +906,7 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
         finalState.setCurrentStep(2);
         finalState.setWorkspaceFiles({ hasOriginalFile: true, hasScriptFile: true });
         finalState.stopAgentOperation();
+        useTaskProgressStore.getState().completeTask(streamId);
         finalState.setShowReviewBanner(true);
         liveStreamingRef.current = null;
         loadingFileRef.current = false;
@@ -919,6 +960,7 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
         currentState.stopAgentOperation({
           resetStream: currentState.activeStream.phase === 'stopped' ? false : true,
         });
+        useTaskProgressStore.getState().failTask(streamId, String(err));
         // 防御性清除光标
         if (editorViewRef.current) {
           editorViewRef.current.dispatch({ effects: clearVirtualCursor.of(null) });
@@ -974,6 +1016,7 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
     const state = useScriptStore.getState();
     if (!state.scriptText.trim()) return;
 
+    const reviewTaskId = `ai-review-${Date.now()}`;
     try {
       // 1. 准备状态
       state.setAnnotations([]);
@@ -989,6 +1032,17 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
         progress: 0,
         canInterrupt: true,
         backgrounded: false,
+      });
+      useTaskProgressStore.getState().startTask({
+        id: reviewTaskId,
+        category: 'ai-review',
+        label: 'AI 审稿',
+        mode: 'determinate',
+        progress: 0,
+        phase: '等待响应',
+        level: 2,
+        canCancel: true,
+        onCancel: () => window.agentAPI?.cancelTurn(),
       });
       state.setEditorAgent({ readOnly: true, virtualCursorPos: 0, streamingActive: false });
       state.setActiveStream({
@@ -1020,6 +1074,7 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
           if (phase === 'annotating') {
             s.setReviewBreathing(false);
             s.setActiveStream({ phase: 'finalizing' });
+            useTaskProgressStore.getState().updateTask(reviewTaskId, { phase: '标注中', progress: 70 });
           } else if (phase === 'complete') {
             s.setReviewBreathing(false);
           }
@@ -1057,6 +1112,7 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
       finalState.setAnnotations(annotations);
       finalState.setReviewState(annotations.length > 0 ? 'issues' : 'clean');
       finalState.stopAgentOperation();
+      useTaskProgressStore.getState().completeTask(reviewTaskId);
       finalState.setReviewCursorPos(null);
       finalState.setReviewBreathing(false);
       reviewAnimatorRef.current = null;
@@ -1070,6 +1126,7 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
 
       const currentState = useScriptStore.getState();
       currentState.stopAgentOperation();
+      useTaskProgressStore.getState().failTask(reviewTaskId, String(err));
       currentState.setReviewState('idle');
       currentState.setReviewCursorPos(null);
       currentState.setReviewBreathing(false);
