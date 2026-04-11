@@ -138,24 +138,7 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 2px;
   z-index: 1;
   pointer-events: none;
-}
-
-.progressFillLine {
-  height: 100%;
-  transition: width 0.3s ease;
-}
-
-.progressFillLine[data-mode="indeterminate"],
-.progressFillLine[data-mode="streaming"] {
-  width: 35% !important;
-  animation: indeterminateSweep 1.2s ease-in-out infinite;
-}
-
-@keyframes indeterminateSweep {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(388%); }
 }
 

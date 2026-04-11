@@ -1,5 +1,6 @@
 import { useTaskProgressStore } from '../store/task-progress';
 import type { TaskCategory, TaskProgressItem } from '../store/task-progress';
+import { Progress } from '../ui';
 import styles from './TaskProgressPanel.module.css';
 
 const CATEGORY_ICONS: Record<TaskCategory, string> = {
@@ -52,12 +53,17 @@ function TaskRow({ task }: { task: TaskProgressItem }) {
         <span className={styles.taskPhase}>{task.phase}</span>
       )}
 
-      <div className={styles.taskBar}>
-        <div
-          className={styles.taskBarFill}
-          style={{ width: `${barWidth}%`, background: barColor }}
-        />
-      </div>
+      <Progress
+        value={barWidth}
+        size="sm"
+        variant={
+          task.status === 'completed' ? 'success'
+            : task.status === 'error' ? 'danger'
+            : 'default'
+        }
+        indeterminate={task.status === 'active' && task.mode !== 'determinate'}
+        className={styles.taskBar}
+      />
 
       {task.status === 'active' && task.mode === 'determinate' && (
         <span className={styles.taskPct}>{task.progress}%</span>

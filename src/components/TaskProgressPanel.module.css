@@ -57,17 +57,7 @@
 
 .taskBar {
   width: 80px;
-  height: 3px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.08);
-  overflow: hidden;
   flex-shrink: 0;
-}
-
-.taskBarFill {
-  height: 100%;
-  border-radius: 2px;
-  transition: width 0.3s ease;
 }
 
 .taskPct {
