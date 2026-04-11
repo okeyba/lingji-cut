@@ -57,10 +57,27 @@ export interface AIAnalysisResult {
   globalPrompt?: string;
 }
 
+/** 单个 LLM Provider 配置 */
+export interface LLMProvider {
+  id: string;
+  name: string;
+  type: 'openai_compatible' | 'anthropic';
+  baseUrl: string;
+  apiKey: string;
+  models: string[];
+}
+
 export interface AISettings {
+  // 多 Provider
+  llmProviders: LLMProvider[];
+  defaultProviderId: string | null;
+  defaultModel: string | null;
   // OpenAI / OpenAI-compatible
+  /** @deprecated 迁移后由 llmProviders 替代 */
   llmBaseUrl: string;
+  /** @deprecated 迁移后由 llmProviders 替代 */
   llmApiKey: string;
+  /** @deprecated 迁移后由 llmProviders 替代 */
   llmModel: string;
   /** 是否开启模型思考模式，默认开启 */
   enableThinking?: boolean;

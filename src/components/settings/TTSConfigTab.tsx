@@ -64,6 +64,9 @@ export function TTSConfigTab() {
     void loadAISettings().then((current) => {
       void saveAISettings({
         ...(current ?? {
+          llmProviders: [],
+          defaultProviderId: null,
+          defaultModel: null,
           llmBaseUrl: '',
           llmApiKey: '',
           llmModel: '',

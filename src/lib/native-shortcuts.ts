@@ -9,6 +9,7 @@ interface EditableTargetLike {
 }
 
 interface KeyboardShortcutLike {
+  hasProject?: boolean;
   key: string;
   metaKey: boolean;
   ctrlKey: boolean;
@@ -40,7 +41,7 @@ export function isTextEditingTarget(target: EventTarget | null): boolean {
 
 export function getAppShortcutCommand(
   event: KeyboardShortcutLike,
-): Extract<MenuAction, 'undo' | 'redo'> | null {
+): Extract<MenuAction, 'undo' | 'redo' | 'close-project'> | null {
   const hasPrimaryModifier = event.metaKey || event.ctrlKey;
   if (!hasPrimaryModifier || event.altKey) {
     return null;
@@ -53,6 +54,10 @@ export function getAppShortcutCommand(
 
   if (key === 'y' && event.ctrlKey) {
     return 'redo';
+  }
+
+  if (key === 'w' && event.hasProject) {
+    return 'close-project';
   }
 
   return null;

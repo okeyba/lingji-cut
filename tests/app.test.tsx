@@ -45,22 +45,14 @@ describe('App welcome screen', () => {
         removeEventListener: () => undefined,
         dispatchEvent: () => false,
       }),
-      localStorage: createStorageMock({
-        'podcast-editor-recent-projects': JSON.stringify([
-          {
-            path: '/tmp/recent-project',
-            name: 'recent-project',
-            lastOpenedAt: new Date('2026-04-06T20:30:00+08:00').getTime(),
-          },
-        ]),
-      }),
+      localStorage: createStorageMock(),
     });
   });
 
-  it('shows recent project entries on the initial setup screen', () => {
+  it('renders the welcome screen without relying on legacy recent-project storage', () => {
     const html = renderToStaticMarkup(<App />);
 
-    expect(html).toContain('最近项目');
-    expect(html).toContain('recent-project');
+    expect(html).toContain('开始创作');
+    expect(html).not.toContain('recent-project');
   });
 });

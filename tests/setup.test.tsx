@@ -3,11 +3,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Setup } from '../src/pages/Setup';
 
 describe('Setup', () => {
-  it('renders import guidance and start action for the first-run flow', () => {
+  it('renders hero banner and quick actions on welcome page', () => {
     const html = renderToStaticMarkup(
       <Setup
         busy={false}
         errorMessage={null}
+        projectName=""
         recentProjects={[]}
         onComplete={async () => undefined}
         onOpenRecentProject={async () => undefined}
@@ -16,18 +17,36 @@ describe('Setup', () => {
       />,
     );
 
-    expect(html).toContain('LOCAL PODCAST VIDEO EDITOR');
-    expect(html).toContain('选择你的创作方式');
-    expect(html).toContain('拖入 MP3 口播音频');
-    expect(html).toContain('拖入对应 SRT 字幕');
-    expect(html).toContain('导入文件');
+    expect(html).toContain('开始创作');
+    expect(html).toContain('AI写稿');
+    expect(html).toContain('导入音频');
+    expect(html).not.toContain('所有文件均在本地处理');
   });
 
-  it('renders recent projects as quick-open entries on the welcome page', () => {
+  it('renders project name label when project is active', () => {
     const html = renderToStaticMarkup(
       <Setup
         busy={false}
         errorMessage={null}
+        projectName="my-project"
+        recentProjects={[]}
+        onComplete={async () => undefined}
+        onOpenRecentProject={async () => undefined}
+        onStartScriptWorkbench={() => undefined}
+        onOpenSettings={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('my-project');
+    expect(html).toContain('lucide-folder-open');
+  });
+
+  it('renders recent projects in projects section', () => {
+    const html = renderToStaticMarkup(
+      <Setup
+        busy={false}
+        errorMessage={null}
+        projectName=""
         recentProjects={[
           {
             path: '/tmp/demo-project',
@@ -42,7 +61,7 @@ describe('Setup', () => {
       />,
     );
 
-    expect(html).toContain('最近项目');
+    expect(html).toContain('本地草稿');
     expect(html).toContain('demo-project');
   });
 });

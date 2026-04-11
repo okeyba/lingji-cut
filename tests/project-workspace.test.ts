@@ -2,9 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearCurrentProject,
   getCurrentProjectDir,
-  getRecentProjects,
-  rememberRecentProject,
-  setCurrentProjectDir,
+  setProjectDir,
 } from '../src/store/timeline';
 
 function createStorageMock() {
@@ -33,25 +31,18 @@ describe('project workspace helpers', () => {
     localStorage.clear();
   });
 
-  it('stores and reorders recent projects', () => {
-    rememberRecentProject('/tmp/project-a');
-    rememberRecentProject('/tmp/project-b');
-    rememberRecentProject('/tmp/project-a');
+  it('stores current project dir without persisting legacy recent projects', () => {
+    setProjectDir('/tmp/project-a');
 
-    expect(getRecentProjects().map((project) => project.path)).toEqual([
-      '/tmp/project-a',
-      '/tmp/project-b',
-    ]);
-    expect(getRecentProjects()[0]?.name).toBe('project-a');
+    expect(getCurrentProjectDir()).toBe('/tmp/project-a');
+    expect(window.localStorage.getItem('podcast-editor-recent-projects')).toBeNull();
   });
 
-  it('clears the active project without deleting recent projects', () => {
-    setCurrentProjectDir('/tmp/project-a');
-    rememberRecentProject('/tmp/project-a');
+  it('clears the active project dir', () => {
+    setProjectDir('/tmp/project-a');
 
     clearCurrentProject();
 
     expect(getCurrentProjectDir()).toBe('');
-    expect(getRecentProjects().map((project) => project.path)).toEqual(['/tmp/project-a']);
   });
 });

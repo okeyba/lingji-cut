@@ -3,7 +3,8 @@
  * 从旧 Step 组件中提取，供 ScriptWorkbench 及后续 Agent 流程复用。
  */
 
-import { generateText, streamText, parseLLMJsonResponse } from './llm';
+import { generateText, streamText, streamTextWithProvider, parseLLMJsonResponse } from './llm';
+import type { LLMProvider } from '../types/ai';
 import { getAnyTemplateById } from './script-templates';
 import { reviewScript, REVIEW_SYSTEM_PROMPT, parseAnnotations } from './script-review';
 import { loadAISettings } from '../store/ai';
@@ -115,6 +116,8 @@ export async function generateScriptDraftStream(
   onChunk: (chunk: string) => void,
   options?: {
     onReasoningChunk?: (chunk: string) => void;
+    provider?: LLMProvider;
+    model?: string;
   },
 ): Promise<string> {
   const template = getAnyTemplateById(templateId);
@@ -123,9 +126,7 @@ export async function generateScriptDraftStream(
   }
 
   const settings = await loadAISettings();
-  if (!settings?.llmApiKey) {
-    throw new Error('请先在 AI 设置中配置 LLM API Key');
-  }
+  if (!settings) throw new Error('请先在 AI 设置中配置 LLM');
 
   let systemPrompt = template.systemPrompt;
   if (roleId && roleId !== 'none') {
@@ -135,6 +136,18 @@ export async function generateScriptDraftStream(
     }
   }
 
+  if (options?.provider && options.model) {
+    return streamTextWithProvider(
+      options.provider,
+      options.model,
+      systemPrompt,
+      originalText,
+      onChunk,
+      { enableThinking: settings.enableThinking, onReasoningChunk: options?.onReasoningChunk },
+    );
+  }
+
+  if (!settings.llmApiKey) throw new Error('请先在 AI 设置中配置 LLM API Key');
   return streamText(settings, systemPrompt, originalText, onChunk, options);
 }
 
@@ -157,12 +170,12 @@ export async function runScriptReviewStream(
   onChunk: (chunk: string) => void,
   options?: {
     onReasoningChunk?: (chunk: string) => void;
+    provider?: LLMProvider;
+    model?: string;
   },
 ): Promise<Annotation[]> {
   const settings = await loadAISettings();
-  if (!settings?.llmApiKey) {
-    throw new Error('请先在 AI 设置中配置 LLM API Key');
-  }
+  if (!settings) throw new Error('请先在 AI 设置中配置 LLM');
 
   const userCriteria = loadReviewCriteria();
   const systemPrompt = userCriteria.trim()
@@ -170,7 +183,20 @@ export async function runScriptReviewStream(
     : REVIEW_SYSTEM_PROMPT;
 
   // 流式调用 LLM，缓冲完整 JSON 响应
-  const fullText = await streamText(settings, systemPrompt, scriptText, onChunk, options);
+  let fullText: string;
+  if (options?.provider && options.model) {
+    fullText = await streamTextWithProvider(
+      options.provider,
+      options.model,
+      systemPrompt,
+      scriptText,
+      onChunk,
+      { enableThinking: settings.enableThinking, onReasoningChunk: options?.onReasoningChunk },
+    );
+  } else {
+    if (!settings.llmApiKey) throw new Error('请先在 AI 设置中配置 LLM API Key');
+    fullText = await streamText(settings, systemPrompt, scriptText, onChunk, options);
+  }
 
   // 从流式文本中提取 JSON 并解析批注
   const payload = parseLLMJsonResponse(fullText);

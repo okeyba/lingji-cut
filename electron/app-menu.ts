@@ -70,15 +70,22 @@ export function createApplicationMenuTemplate(
             }),
         },
         { type: 'separator' },
-        {
-          label: '关闭项目',
-          enabled: context.hasProject,
-          click: () =>
-            sendMenuEvent({
-              type: 'command',
-              action: 'close-project',
-            }),
-        },
+        context.hasProject
+          ? {
+              label: '关闭项目',
+              accelerator: 'CmdOrCtrl+W',
+              enabled: true,
+              click: () =>
+                sendMenuEvent({
+                  type: 'command',
+                  action: 'close-project',
+                }),
+            }
+          : {
+              label: '关闭窗口',
+              accelerator: 'CmdOrCtrl+W',
+              role: 'close',
+            },
         {
           label: '在 Finder 中显示',
           enabled: context.hasProject,

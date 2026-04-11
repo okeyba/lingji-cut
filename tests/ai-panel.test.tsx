@@ -172,9 +172,8 @@ describe('AIPanel', () => {
 
     expect(html).toContain('卡片已清空');
     expect(html).toContain('内容卡片已全部删除');
-    // 在 SSR 中 useEffect 不运行，panelSettings 为 null，所以显示的是"先配置 AI"
-    // 实际运行时（useEffect 执行后）若 settings 有效则会显示"重新生成卡片"
-    expect(html).toContain('先配置 AI');
+    // 在 SSR 中 useEffect 不运行，因此会展示缺少配置时的引导文案
+    expect(html).toContain('前往系统设置');
     expect(html).not.toContain('应用到时间线');
   });
 

@@ -5,6 +5,7 @@ import type { ExportConfig } from '../src/lib/export-settings';
 import type { SrtEntry } from '../src/types';
 import type { AICard, AISettings } from '../src/types/ai';
 import type { ConversationAPI } from '../src/types/conversation';
+import type { VideoImportRequest } from '../src/lib/video-import-types';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   parseSrtFile: (filePath: string) => ipcRenderer.invoke('parse-srt-file', filePath),
@@ -56,6 +57,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('scan-project-assets', projectDir) as Promise<
       { path: string; type: 'video' | 'image' | 'audio' | 'srt'; durationMs: number }[]
     >,
+  scanImportDirectory: (dir: string) =>
+    ipcRenderer.invoke('scan-import-directory', dir) as Promise<{
+      audioFiles: string[];
+      srtFiles: string[];
+    }>,
   renderVideo: (args: { timeline: string; outputPath: string; exportConfig: ExportConfig }) =>
     ipcRenderer.invoke('render-video', args),
   onRenderProgress: (callback: (progress: number) => void) => {
@@ -87,6 +93,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('load-script-state', projectDir),
   selectTextFile: () =>
     ipcRenderer.invoke('select-text-file') as Promise<{ path: string; content: string } | null>,
+  importVideoSource: (request: VideoImportRequest) =>
+    ipcRenderer.invoke('import-video-source', request),
+  getVideoImportStatus: (importId: string) =>
+    ipcRenderer.invoke('get-video-import-status', importId),
   startWatching: (dir: string) => ipcRenderer.invoke('start-watching', dir),
   stopWatching: () => ipcRenderer.invoke('stop-watching'),
   onFileChanged: (callback: (data: { file: string; content: string }) => void) => {
@@ -122,6 +132,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cancelTTS: (requestId: string) => ipcRenderer.invoke('cancel-tts', requestId),
   selectOutputPath: () => ipcRenderer.invoke('select-output-path'),
   showEditorContextMenu: () => ipcRenderer.invoke('show-editor-context-menu'),
+  loadRecentProjects: () => ipcRenderer.invoke('load-recent-projects'),
+  addRecentProject: (projectDir: string, projectName?: string) =>
+    ipcRenderer.invoke('add-recent-project', projectDir, projectName),
+  removeRecentProject: (projectDir: string) =>
+    ipcRenderer.invoke('remove-recent-project', projectDir),
+  refreshRecentProjects: () => ipcRenderer.invoke('refresh-recent-projects'),
 });
 
 // ─── Agent API ────────────────────────────────────────────
@@ -316,4 +332,31 @@ contextBridge.exposeInMainWorld('mcpAPI', {
 
   // 回复辅助（Renderer → Main）
   reply: (replyChannel: string, data: unknown) => ipcRenderer.invoke(replyChannel, data),
+});
+
+// ─── Script History API ───────────────────────────────
+
+contextBridge.exposeInMainWorld('scriptHistoryAPI', {
+  create: (input: {
+    projectId: string;
+    fileName: string;
+    content: string;
+    source: string;
+    providerId?: string | null;
+    providerName?: string | null;
+    modelName?: string | null;
+  }) => ipcRenderer.invoke('script-history:create', input),
+  list: (projectId: string, fileName: string, opts?: {
+    sourceFilter?: string[];
+    limit?: number;
+    offset?: number;
+  }) => ipcRenderer.invoke('script-history:list', projectId, fileName, opts),
+  get: (projectId: string, versionId: number) =>
+    ipcRenderer.invoke('script-history:get', projectId, versionId),
+  rollback: (versionId: number, currentContent: string, projectId: string, fileName: string) =>
+    ipcRenderer.invoke('script-history:rollback', versionId, currentContent, projectId, fileName),
+  updateLabel: (projectId: string, versionId: number, label: string | null) =>
+    ipcRenderer.invoke('script-history:update-label', projectId, versionId, label),
+  delete: (projectId: string, versionId: number) =>
+    ipcRenderer.invoke('script-history:delete', projectId, versionId),
 });

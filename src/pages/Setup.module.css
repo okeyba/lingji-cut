@@ -2,318 +2,281 @@
   width: 100%;
   height: 100%;
   display: grid;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr);
   background: var(--color-window-bg);
-  overflow-y: auto;
+  overflow: hidden;
 }
-
-.content {
-  display: grid;
-  align-items: start;
-}
-
-.hero {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 22px;
-}
-
-.heroEyebrow {
-  font-size: var(--font-size-xs);
-  letter-spacing: 0.24em;
-  color: var(--color-brand-accent);
-}
-
-.heroTitle {
-  margin: 12px 0 10px;
-  color: var(--color-text-primary);
-  line-height: 1.08;
-  letter-spacing: -0.03em;
-}
-
-.heroDescription {
-  color: var(--color-text-secondary);
-  line-height: 1.7;
-}
-
-.featureGrid {
-  display: grid;
-  gap: 10px;
-}
-
-.recentPanel {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--color-brand-accent) 8%, transparent), transparent 34%),
-    transparent;
-}
-
-.recentHeader {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.recentEyebrow {
-  font-size: var(--font-size-xs);
-  letter-spacing: 0.18em;
-  color: var(--color-brand-accent);
-}
-
-.recentTitle {
-  margin: 8px 0 0;
-  color: var(--color-text-primary);
-  font-size: clamp(20px, 2.2vw, 24px);
-  letter-spacing: -0.02em;
-}
-
-.recentHint {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  letter-spacing: 0.05em;
-}
-
-.recentList {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.recentItem {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 14px 16px;
-  border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 88%, var(--color-brand-accent));
-  background: color-mix(in srgb, var(--color-panel-muted) 86%, var(--color-brand-accent) 14%);
-  text-align: left;
-  transition:
-    transform 160ms ease,
-    border-color 160ms ease,
-    background 160ms ease;
-}
-
-.recentItem:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--color-border-strong) 68%, var(--color-brand-accent));
-  background: color-mix(in srgb, var(--color-panel-muted) 78%, var(--color-brand-accent) 22%);
-}
-
-.recentItem:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--color-brand-accent) 65%, white 35%);
-  outline-offset: 2px;
-}
-
-.recentMeta {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.recentName {
-  color: var(--color-text-primary);
-  font-size: 15px;
-  font-weight: 650;
-}
-
-.recentPath {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-  line-height: 1.45;
-  word-break: break-all;
-}
-
-.recentAction {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-}
-
-.recentTime {
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-xs);
-  white-space: nowrap;
-}
-
-.recentActionLabel {
-  color: var(--color-brand-accent);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-}
-
-.featureCard {
-  background: transparent;
-}
-
-.featureIndex {
-  color: var(--color-brand-accent);
-  font-size: var(--font-size-xs);
-  letter-spacing: 0.14em;
-}
-
-.featureTitle {
-  margin-top: 6px;
-  color: var(--color-text-primary);
-  font-size: 15px;
-  font-weight: 650;
-}
-
-.featureDescription {
-  margin-top: 6px;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-  line-height: 1.55;
-}
-
-.importPanel {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.importIntroTitle {
-  margin: 10px 0 8px;
-  color: var(--color-text-primary);
-  letter-spacing: -0.02em;
-}
-
-.importIntroDescription {
-  margin: 0;
-  color: var(--color-text-secondary);
-  line-height: 1.65;
-}
-
-.importGrid {
-  display: grid;
-  gap: 14px;
-}
-
-.errorBanner {
-  border-radius: var(--radius-lg);
-  background: var(--color-bg-error);
-  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, var(--color-border-subtle));
-  color: color-mix(in srgb, var(--color-danger) 74%, white 26%);
-  padding: 12px 14px;
-  font-size: var(--font-size-sm);
-}
-
-.primaryAction {
-  margin-top: auto;
-  min-height: 40px;
-  border-radius: 10px;
-  font-size: 13px;
-}
-
-.footerNote {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  letter-spacing: 0.06em;
-}
-
-/* Welcome 双入口布局 */
 
 .welcomeContent {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 32px;
-  padding: 48px 80px 40px;
   height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
-.entryCards {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 32px;
-  width: 100%;
-  max-width: 960px;
-}
+/* ── Hero Banner ── */
 
-.entryCard {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  padding: 32px;
-  border-radius: 16px;
-  background: #2C2C2E;
-  border: 1px solid #38383A;
-  transition: border-color 0.15s;
-}
-
-.entryCard:hover {
-  border-color: #0A84FF;
-}
-
-.entryCardTitle {
-  font-size: 24px;
-  font-weight: 700;
-  margin: 0;
-}
-
-.entryCardDesc {
-  font-size: 14px;
-  color: #EBEBF599;
-  line-height: 1.6;
-  white-space: pre-line;
-  margin: 0;
-}
-
-.entrySteps {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.entryStep {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: #EBEBF580;
-}
-
-.entryStepDot {
-  width: 24px;
-  height: 24px;
+.heroBanner {
+  position: relative;
+  height: 140px;
+  margin: 16px 20px 0;
   border-radius: 12px;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
   flex-shrink: 0;
 }
 
-.recentChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: 8px;
-  background: #2C2C2E;
-  border: 1px solid #38383A;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
+.heroBannerImage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 40%;
 }
 
-.recentChip:hover {
+.heroBannerOverlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.15) 0%,
+    rgba(0, 0, 0, 0.35) 100%
+  );
+}
+
+.projectBadge {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: 980px;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: rgba(255, 255, 255, 0.85);
+  font-family: "SF Pro Text", "PingFang SC", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  z-index: 2;
+}
+
+.createButton {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 28px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: white;
+  font-family: "SF Pro Text", "PingFang SC", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.createButton:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.createButton:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ── 快捷功能行 ── */
+
+.quickBar {
+  display: flex;
+  gap: 24px;
+  padding: 20px 20px 16px;
+  flex-shrink: 0;
+}
+
+.quickItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.quickItemIcon {
+  width: 56px;
+  height: 56px;
+  background: #2C2C2E;
+  border: 1px solid #3A3A3C;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #EBEBF5CC;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.quickItem:hover .quickItemIcon {
   border-color: #0A84FF;
-  background: #3A3A3C;
+  background: #333335;
+  color: #0A84FF;
+}
+
+.quickItemLabel {
+  color: #EBEBF580;
+  font-family: "SF Pro Text", "PingFang SC", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* ── 本地草稿 ── */
+
+.draftsSection {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 20px 20px;
+}
+
+/* ── 导入弹窗内部样式 ── */
+
+.dirPickerButton {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: #2C2C2E;
+  border: 1px dashed #48484A;
+  border-radius: 10px;
+  color: #EBEBF5CC;
+  font-family: "SF Pro Text", "PingFang SC", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+  text-align: left;
+}
+
+.dirPickerButton:hover {
+  border-color: #0A84FF;
+  background: #333335;
+}
+
+.dirPickerButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dirPickerText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scanResults {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.scanGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scanGroupHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scanIconOk {
+  color: #32D74B;
+}
+
+.scanIconWarn {
+  color: #FF9F0A;
+}
+
+.scanGroupTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: #EBEBF5CC;
+}
+
+.scanGroupCount {
+  font-weight: 400;
+  color: #EBEBF580;
+  margin-left: 4px;
+}
+
+.scanFileList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 20px;
+}
+
+.scanFileItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.scanFileItem:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.scanRadio {
+  accent-color: #0A84FF;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.scanFileName {
+  font-size: 13px;
+  color: #EBEBF5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scanEmpty {
+  padding-left: 20px;
+  font-size: 12px;
+  color: #EBEBF54D;
+}
+
+.importError {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(255, 59, 48, 0.1);
+  border: 1px solid rgba(255, 59, 48, 0.2);
+  color: #FF453A;
+  font-size: 12px;
 }

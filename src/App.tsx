@@ -1,18 +1,23 @@
+import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useState } from 'react';
 import { useToast } from './ui';
 import { AgentSidebar } from './components/agent/AgentSidebar';
 import { AppStatusBar } from './components/AppStatusBar';
 import { Toolbar } from './components/Toolbar';
-import type { AppPage, MenuAction, MenuEvent } from './lib/electron-api';
+import type { AppPage, MenuAction, MenuEvent, RecentProjectEntry } from './lib/electron-api';
 import { getAISettingsIssue } from './lib/ai-settings';
 import { useAgentStore } from './store/agent';
 import { createPersistedAIState } from './lib/ai-persistence';
 import { useViewportSize } from './hooks/useViewportSize';
 import { getAppShortcutCommand, isTextEditingTarget } from './lib/native-shortcuts';
+import { resolvePageTransition, type PageTransitionReason } from './lib/page-transition';
+import { resolveProjectLandingPage } from './lib/project-navigation';
+import { createBlankScriptProjectState } from './lib/script-project';
 import { Editor } from './pages/Editor';
 import { ScriptWorkbench } from './pages/ScriptWorkbench';
 import { Settings } from './pages/Settings';
 import { Setup } from './pages/Setup';
+import { prefersReducedMotion } from './ui/lib/animation-config';
 import { WorkspaceTabs } from './components/WorkspaceTabs';
 import { getFileNameFromPath } from './lib/utils';
 import { createDefaultTimeline } from './types';
@@ -24,8 +29,6 @@ import {
   clearCurrentProject,
   getCurrentProjectDir,
   getCurrentSaveStatus,
-  getRecentProjects,
-  removeRecentProject,
   type SaveStatus,
   setProjectDir,
   subscribeToSaveStatus,
@@ -41,11 +44,13 @@ export default function App() {
   const viewport = useViewportSize();
   const [page, setPageRaw] = useState<AppPage>('welcome');
   const [previousPage, setPreviousPage] = useState<AppPage>('welcome');
+  const [pageTransitionReason, setPageTransitionReason] = useState<PageTransitionReason>('default');
 
   const setPage = useCallback(
-    (next: AppPage) => {
+    (next: AppPage, reason: PageTransitionReason = 'default') => {
       setPageRaw((current) => {
         setPreviousPage(current);
+        setPageTransitionReason(reason);
         return next;
       });
     },
@@ -55,7 +60,7 @@ export default function App() {
   const [isSettingUp, setIsSettingUp] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [currentProjectDir, setCurrentProjectDir] = useState(() => getCurrentProjectDir());
-  const [recentProjects, setRecentProjects] = useState(() => getRecentProjects());
+  const [recentProjects, setRecentProjects] = useState<RecentProjectEntry[]>([]);
   const [saveStatus, setSaveStatus] = useState(() => getCurrentSaveStatus());
   const [aiSaveStatus, setAISaveStatus] = useState(() => getCurrentAISaveStatus());
   const aggregatedSaveStatus: SaveStatus = (() => {
@@ -169,16 +174,18 @@ export default function App() {
     [rerunAiAnalysisForEntries, setPodcast, setSrtEntries, timeline.podcast.audioPath],
   );
 
-  const syncWorkspaceState = useCallback(() => {
+  const syncWorkspaceState = useCallback(async () => {
     setCurrentProjectDir(getCurrentProjectDir());
-    setRecentProjects(getRecentProjects());
+    const projects = await window.electronAPI.loadRecentProjects();
+    setRecentProjects(projects);
   }, []);
 
-  const resetToSetup = useCallback(() => {
+  const resetToSetup = useCallback((reason: PageTransitionReason = 'default') => {
     setTimeline(createDefaultTimeline());
     setSrtEntries([]);
     clearAIAnalysis();
-    setPage('welcome');
+    useScriptStore.getState().clearProjectSession();
+    setPage('welcome', reason);
   }, [clearAIAnalysis, setSrtEntries, setTimeline]);
 
   const openProject = useCallback(
@@ -239,20 +246,18 @@ export default function App() {
         }
 
         setProjectDir(projectDir);
-        syncWorkspaceState();
+        // 添加到最近项目列表
+        await window.electronAPI.addRecentProject(projectDir);
+        void syncWorkspaceState();
         setSetupError(null);
-        setPage(
-          projectData.timeline?.podcast?.audioPath && projectData.timeline?.podcast?.srtPath
-            ? 'editor'
-            : 'welcome',
-        );
+        setPage(resolveProjectLandingPage(projectData));
       } catch (error) {
         console.error('恢复工程失败:', error);
-        removeRecentProject(projectDir);
+        await window.electronAPI.removeRecentProject(projectDir);
         if (getCurrentProjectDir() === projectDir) {
           clearCurrentProject();
         }
-        syncWorkspaceState();
+        void syncWorkspaceState();
         resetToSetup();
         setSetupError('恢复工程失败，请重新打开工程或重新导入 MP3 和 SRT。');
       }
@@ -268,6 +273,10 @@ export default function App() {
       syncWorkspaceState,
     ],
   );
+
+  useEffect(() => {
+    void syncWorkspaceState();
+  }, [syncWorkspaceState]);
 
   useEffect(() => {
     const hydrate = async () => {
@@ -309,9 +318,11 @@ export default function App() {
     setSrtEntries([]);
     clearAIAnalysis();
     setProjectDir(projectDir);
-    syncWorkspaceState();
+    // 添加到最近项目列表
+    await window.electronAPI.addRecentProject(projectDir);
+    void syncWorkspaceState();
     setSetupError(null);
-    setPage('welcome');
+    setPage(resolveProjectLandingPage());
   }, [clearAIAnalysis, setSrtEntries, setTimeline, syncWorkspaceState]);
 
   const handleOpenProject = useCallback(async () => {
@@ -323,12 +334,44 @@ export default function App() {
     await openProject(projectDir);
   }, [openProject]);
 
+  const handleOpenSettings = useCallback(() => {
+    setPage('settings');
+  }, [setPage]);
+
+  const handleCreateScriptProject = useCallback(async () => {
+    const projectDir = await window.electronAPI.selectProjectDirectory();
+    if (!projectDir) {
+      return;
+    }
+
+    clearCurrentProject();
+    useScriptStore.getState().clearProjectSession();
+    useScriptStore.getState().restoreState(createBlankScriptProjectState(projectDir));
+
+    setTimeline(createDefaultTimeline());
+    setSrtEntries([]);
+    clearAIAnalysis();
+    setProjectDir(projectDir);
+    await window.electronAPI.addRecentProject(projectDir);
+    void syncWorkspaceState();
+    setSetupError(null);
+    setPage('script-workbench');
+  }, [clearAIAnalysis, setSrtEntries, setTimeline, syncWorkspaceState]);
+
   const handleCloseProject = useCallback(() => {
     clearCurrentProject();
-    syncWorkspaceState();
-    resetToSetup();
+    void syncWorkspaceState();
+    resetToSetup('close-project');
     setSetupError(null);
   }, [resetToSetup, syncWorkspaceState]);
+
+  const handleRemoveRecentProject = useCallback(
+    async (projectDir: string) => {
+      await window.electronAPI.removeRecentProject(projectDir);
+      await syncWorkspaceState();
+    },
+    [syncWorkspaceState],
+  );
 
   const handleAddAsset = useCallback(async () => {
     const asset = await window.electronAPI.addAsset();
@@ -386,7 +429,7 @@ export default function App() {
           await handleOpenProject();
           return;
         case 'open-settings':
-          setPage('settings');
+          handleOpenSettings();
           return;
         case 'close-project':
           if (currentProjectDir) {
@@ -450,6 +493,7 @@ export default function App() {
       handleCloseProject,
       handleNewProject,
       handleOpenProject,
+      handleOpenSettings,
       handleReplaceAudio,
       handleReplaceSrt,
       page,
@@ -491,18 +535,21 @@ export default function App() {
         return;
       }
 
-      const command = getAppShortcutCommand(event);
-      if (!command) {
+      const scopedCommand = getAppShortcutCommand({
+        hasProject: Boolean(currentProjectDir),
+        ...event,
+      });
+      if (!scopedCommand) {
         return;
       }
 
       event.preventDefault();
-      void handleCommand(command);
+      void handleCommand(scopedCommand);
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleCommand]);
+  }, [currentProjectDir, handleCommand]);
 
   const handleSetupComplete = async (audioPath: string, srtPath: string) => {
     setIsSettingUp(true);
@@ -517,7 +564,7 @@ export default function App() {
         }
 
         setProjectDir(projectDir);
-        syncWorkspaceState();
+        void syncWorkspaceState();
       }
 
       setTimeline(createDefaultTimeline());
@@ -541,7 +588,7 @@ export default function App() {
       if (state.projectDir && state.projectDir !== prev.projectDir) {
         if (state.projectDir !== getCurrentProjectDir()) {
           setProjectDir(state.projectDir);
-          syncWorkspaceState();
+          void syncWorkspaceState();
         }
       }
     });
@@ -566,6 +613,13 @@ export default function App() {
   );
 
   const showWorkspaceTabs = page === 'editor' || page === 'script-workbench';
+  const reducedMotion = prefersReducedMotion();
+  const pageTransition = resolvePageTransition({
+    fromPage: previousPage,
+    toPage: page,
+    reason: pageTransitionReason,
+    reducedMotion,
+  });
 
   const agentSidebarOpen = useAgentStore((s) => s.sidebarOpen);
   const projectName = currentProjectDir ? getFileNameFromPath(currentProjectDir) : '';
@@ -655,41 +709,56 @@ export default function App() {
         />
       )}
       <div style={{ minHeight: 0, display: 'flex', overflow: 'hidden' }}>
-        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-          {page === 'welcome' || page === 'setup' ? (
-            <Setup
-              busy={isSettingUp}
-              errorMessage={setupError}
-              projectName={projectName}
-              recentProjects={recentProjects}
-              onComplete={handleSetupComplete}
-              onOpenRecentProject={openProject}
-              onStartScriptWorkbench={() => setPage('script-workbench')}
-              onOpenSettings={() => setPage('settings')}
-            />
-          ) : page === 'settings' ? (
-            <Settings onBack={() => setPage(previousPage)} />
-          ) : (
-            <>
-              {/* 写稿工作台和编辑器保持同时挂载，用 display 切换，避免重新挂载引起的布局振荡 */}
-              <div style={{ display: page === 'script-workbench' ? 'contents' : 'none' }}>
-                <ScriptWorkbench
-                  onBack={() => setPage('welcome')}
-                  onNavigateToEditor={() => setPage('editor')}
+        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={pageTransition.contentKey}
+              initial={pageTransition.initial}
+              animate={pageTransition.animate}
+              exit={pageTransition.exit}
+              transition={pageTransition.transition}
+              style={{ height: '100%', minHeight: 0 }}
+            >
+              {page === 'welcome' || page === 'setup' ? (
+                <Setup
+                  busy={isSettingUp}
+                  errorMessage={setupError}
+                  projectName={projectName}
+                  recentProjects={recentProjects}
+                  onComplete={handleSetupComplete}
+                  onOpenRecentProject={openProject}
+                  onRemoveRecentProject={handleRemoveRecentProject}
+                  onStartScriptWorkbench={() => {
+                    void handleCreateScriptProject();
+                  }}
+                  onOpenSettings={() => setPage('settings')}
                 />
-              </div>
-              <div style={{ display: page === 'editor' ? 'contents' : 'none' }}>
-                <Editor
-                  onAddAsset={handleAddAsset}
-                  onUseAsPodcastAudio={handleUseAssetAsPodcastAudio}
-                  onUseAsPodcastSrt={handleUseAssetAsPodcastSrt}
-                  exportRequestToken={exportRequestToken}
-                  projectDir={currentProjectDir}
-                  isActive={page === 'editor'}
-                />
-              </div>
-            </>
-          )}
+              ) : page === 'settings' ? (
+                <Settings onBack={() => setPage(previousPage)} />
+              ) : (
+                <>
+                  {/* 写稿工作台和编辑器保持同时挂载，用 display 切换，避免重新挂载引起的布局振荡 */}
+                  <div style={{ display: page === 'script-workbench' ? 'contents' : 'none' }}>
+                    <ScriptWorkbench
+                      onBack={() => setPage('welcome')}
+                      onNavigateToEditor={() => setPage('editor')}
+                    />
+                  </div>
+                  <div style={{ display: page === 'editor' ? 'contents' : 'none' }}>
+                    <Editor
+                      onAddAsset={handleAddAsset}
+                      onOpenSettings={handleOpenSettings}
+                      onUseAsPodcastAudio={handleUseAssetAsPodcastAudio}
+                      onUseAsPodcastSrt={handleUseAssetAsPodcastSrt}
+                      exportRequestToken={exportRequestToken}
+                      projectDir={currentProjectDir}
+                      isActive={page === 'editor'}
+                    />
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
         {agentSidebarOpen && <AgentSidebar />}
       </div>

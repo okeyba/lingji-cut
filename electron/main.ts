@@ -32,9 +32,20 @@ import { materializePersistedAIState, materializeTimelineWebCards } from './web-
 import { registerAgentIpc } from './acp/ipc';
 import { registerConversationIpc } from './conversations/ipc';
 import { registerMcpIpc } from './mcp/ipc';
+import { registerScriptHistoryIpc } from './script-history/ipc';
 import { startMcpServer, stopMcpServer } from './mcp/server';
 import { loadProjectFile, saveProjectSection } from './project-file';
 import { loadGlobalSettings, saveGlobalSettings, type GlobalSettingsFile } from './global-settings';
+import { resolveWindowCloseAction } from './window-close';
+import {
+  loadRecentProjects,
+  addRecentProject,
+  removeRecentProject as removeRecentProjectFromStore,
+  refreshRecentProjects,
+  type RecentProjectEntry,
+} from './recent-projects';
+import { getVideoImportService } from './video-import/import-service';
+import type { VideoImportRequest } from '../src/lib/video-import-types';
 
 let mainWindow: BrowserWindow | null = null;
 let menuContext: MenuContext = {
@@ -44,6 +55,8 @@ let menuContext: MenuContext = {
 };
 let fileWatcher: FSWatcher | null = null;
 const activeTtsRequests = new Map<string, AbortController>();
+let isAppQuitting = false;
+const videoImportService = getVideoImportService();
 
 function sendMenuEvent(event: MenuEvent) {
   mainWindow?.webContents.send('menu-action', event);
@@ -76,6 +89,7 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 760,
     backgroundColor: '#070b14',
+    title: '灵机剪影',
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     ...(isMac
       ? {}
@@ -110,6 +124,26 @@ function createWindow() {
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     writeAppLog('error', 'window', `渲染进程退出：${details.reason}`, String(details.exitCode));
   });
+
+  mainWindow.on('close', (event) => {
+    const action = resolveWindowCloseAction({
+      hasProject: menuContext.hasProject,
+      isAppQuitting,
+    });
+
+    if (action !== 'close-project') {
+      return;
+    }
+
+    event.preventDefault();
+    sendMenuEvent({
+      type: 'command',
+      action: 'close-project',
+    });
+  });
+
+  // 确保标题设置正确
+  mainWindow.setTitle('灵机剪影');
 
   refreshApplicationMenu();
   writeAppLog('info', 'app', '主窗口已创建');
@@ -573,6 +607,30 @@ ipcMain.handle('scan-project-assets', async (_event, projectDir: string) => {
   return results;
 });
 
+ipcMain.handle('scan-import-directory', async (_event, dir: string) => {
+  const audioFiles: string[] = [];
+  const srtFiles: string[] = [];
+
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return { audioFiles, srtFiles };
+  }
+
+  for (const entry of entries) {
+    if (!entry.isFile() || entry.name.startsWith('.')) continue;
+    const ext = path.extname(entry.name).toLowerCase();
+    if (AUDIO_EXTS.has(ext)) {
+      audioFiles.push(path.join(dir, entry.name));
+    } else if (SRT_EXTS.has(ext)) {
+      srtFiles.push(path.join(dir, entry.name));
+    }
+  }
+
+  return { audioFiles, srtFiles };
+});
+
 ipcMain.handle(
   'save-script-file',
   async (_event, projectDir: string, filename: string, content: string) => {
@@ -622,18 +680,32 @@ ipcMain.handle('select-text-file', async () => {
   return { path: filePath, content };
 });
 
+ipcMain.handle('import-video-source', async (_event, request: VideoImportRequest) => {
+  writeAppLog(
+    'info',
+    'video-import',
+    '收到视频导入请求',
+    `${request.sourceType}: ${request.url}`,
+  );
+  return videoImportService.startImport(request);
+});
+
+ipcMain.handle('get-video-import-status', async (_event, importId: string) => {
+  return videoImportService.getImportStatus(importId);
+});
+
 ipcMain.handle('start-watching', async (_event, dir: string) => {
   await fileWatcher?.close();
 
   fileWatcher = chokidar.watch(dir, {
-    depth: 1,
+    depth: 3,
     ignoreInitial: true,
     ignored: /(^|[/\\])\../,
   });
 
   fileWatcher.on('change', async (filePath: string) => {
     const relative = path.relative(dir, filePath);
-    if (!relative.endsWith('.md')) return;
+    if (!relative.endsWith('.md') && !relative.endsWith('.json')) return;
 
     try {
       const content = await fs.readFile(filePath, 'utf-8');
@@ -673,7 +745,7 @@ ipcMain.handle('read-directory', async (_event, dir: string) => {
     for (const entry of entries) {
       if (entry.name.startsWith('.')) continue;
 
-      if (entry.isDirectory() && currentDepth < 1) {
+      if (entry.isDirectory() && currentDepth < 3) {
         const children = await readDir(path.join(dirPath, entry.name), currentDepth + 1);
         result.push({ name: entry.name, type: 'directory', children });
         continue;
@@ -886,6 +958,49 @@ ipcMain.on('show-item-in-folder', (_event, filePath: string) => {
   shell.showItemInFolder(filePath);
 });
 
+// ── 最近项目管理 ──
+
+ipcMain.handle('load-recent-projects', async () => {
+  const userDataPath = app.getPath('userData');
+  return await loadRecentProjects(userDataPath);
+});
+
+ipcMain.handle('add-recent-project', async (_event, projectDir: string, projectName?: string) => {
+  const userDataPath = app.getPath('userData');
+  const projects = await addRecentProject(userDataPath, projectDir, projectName);
+  // 更新菜单上下文
+  menuContext.recentProjects = projects.map((p) => ({
+    path: p.path,
+    name: p.name,
+  }));
+  refreshApplicationMenu();
+  return projects;
+});
+
+ipcMain.handle('remove-recent-project', async (_event, projectDir: string) => {
+  const userDataPath = app.getPath('userData');
+  const projects = await removeRecentProjectFromStore(userDataPath, projectDir);
+  // 更新菜单上下文
+  menuContext.recentProjects = projects.map((p) => ({
+    path: p.path,
+    name: p.name,
+  }));
+  refreshApplicationMenu();
+  return projects;
+});
+
+ipcMain.handle('refresh-recent-projects', async () => {
+  const userDataPath = app.getPath('userData');
+  const projects = await refreshRecentProjects(userDataPath);
+  // 更新菜单上下文
+  menuContext.recentProjects = projects.map((p) => ({
+    path: p.path,
+    name: p.name,
+  }));
+  refreshApplicationMenu();
+  return projects;
+});
+
 ipcMain.handle(
   'render-video',
   async (_event, args: { timeline: string; outputPath: string; exportConfig: ExportConfig }) => {
@@ -946,6 +1061,10 @@ if (process.env.NODE_ENV_ELECTRON_VITE === 'development') {
 registerAgentIpc(() => mainWindow);
 registerConversationIpc(() => mainWindow);
 registerMcpIpc(() => mainWindow);
+registerScriptHistoryIpc();
+
+// 设置 macOS 系统菜单栏应用名称
+app.setName('灵机剪影');
 
 app.whenReady().then(async () => {
   createWindow();
@@ -955,6 +1074,10 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.error('[MCP] Failed to start server:', err);
   }
+});
+
+app.on('before-quit', () => {
+  isAppQuitting = true;
 });
 
 app.on('activate', () => {

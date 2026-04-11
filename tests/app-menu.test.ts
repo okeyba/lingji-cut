@@ -74,4 +74,44 @@ describe('createApplicationMenuTemplate', () => {
       expect.arrayContaining([expect.objectContaining({ label: 'demo-project' })]),
     );
   });
+
+  it('uses Cmd+W to close the project when a project is open, otherwise falls back to native close', () => {
+    const templateWithProject = createTemplate({
+      activePage: 'editor',
+      isDevelopment: false,
+      hasProject: true,
+      recentProjects: [],
+    });
+    const templateWithoutProject = createTemplate({
+      activePage: 'welcome',
+      isDevelopment: false,
+      hasProject: false,
+      recentProjects: [],
+    });
+
+    const withProjectMenu = templateWithProject.find((item) => item.label === '项目');
+    const withoutProjectMenu = templateWithoutProject.find((item) => item.label === '项目');
+    const withProjectSubmenu = Array.isArray(withProjectMenu?.submenu) ? withProjectMenu.submenu : [];
+    const withoutProjectSubmenu = Array.isArray(withoutProjectMenu?.submenu)
+      ? withoutProjectMenu.submenu
+      : [];
+
+    const closeProjectItem = withProjectSubmenu.find(
+      (item) => 'label' in item && item.label === '关闭项目',
+    );
+    const closeWindowItem = withoutProjectSubmenu.find(
+      (item) => 'label' in item && item.label === '关闭窗口',
+    );
+
+    expect(closeProjectItem).toMatchObject({
+      label: '关闭项目',
+      accelerator: 'CmdOrCtrl+W',
+      enabled: true,
+    });
+    expect(closeWindowItem).toMatchObject({
+      label: '关闭窗口',
+      role: 'close',
+      accelerator: 'CmdOrCtrl+W',
+    });
+  });
 });

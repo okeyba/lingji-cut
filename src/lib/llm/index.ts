@@ -1,12 +1,12 @@
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
-import type { AISettings } from '../../types/ai';
+import type { AISettings, LLMProvider } from '../../types/ai';
 import {
   extractReasoningContent,
   extractTextContent,
   parseLLMJsonResponse,
   parseStructuredOutput,
 } from './content';
-import { createChatModel } from './model';
+import { createChatModel, createChatModelFromProvider } from './model';
 
 export interface StreamCallbacks {
   onReasoningChunk?: (chunk: string) => void;
@@ -78,6 +78,34 @@ export async function streamText(
       continue;
     }
 
+    fullText += textChunk;
+    onChunk(textChunk);
+  }
+
+  return assertNonEmptyContent(fullText, 'LLM 流式返回空内容');
+}
+
+export async function streamTextWithProvider(
+  provider: LLMProvider,
+  model: string,
+  systemPrompt: string,
+  userMessage: string,
+  onChunk: (chunk: string) => void,
+  options?: { enableThinking?: boolean } & StreamCallbacks,
+): Promise<string> {
+  const chatModel = createChatModelFromProvider(provider, model, {
+    enableThinking: options?.enableThinking,
+  });
+  const stream = await chatModel.stream(buildPromptMessages(systemPrompt, userMessage));
+  let fullText = '';
+
+  for await (const chunk of stream) {
+    const reasoningChunk = extractReasoningContent(chunk);
+    if (reasoningChunk) {
+      options?.onReasoningChunk?.(reasoningChunk);
+    }
+    const textChunk = extractTextContent(chunk.content);
+    if (!textChunk) continue;
     fullText += textChunk;
     onChunk(textChunk);
   }

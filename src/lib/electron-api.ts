@@ -3,6 +3,10 @@ import type { AppLogEntry } from './app-log';
 import type { SrtEntry } from '../types';
 import type { AICard, AISettings, CoverCandidate } from '../types/ai';
 import type { ImportKind } from './import-files';
+import type {
+  VideoImportProgress,
+  VideoImportRequest,
+} from './video-import-types';
 
 export type AppPage = 'welcome' | 'setup' | 'editor' | 'script-workbench' | 'settings';
 
@@ -72,6 +76,15 @@ export interface ProjectMetadata {
   createdAtMs: number;
 }
 
+export interface RecentProjectEntry {
+  path: string;
+  name: string;
+  lastOpenedAt: number;
+  createdAt?: string;
+  updatedAt?: string;
+  coverImageUrl?: string;
+}
+
 export interface ElectronAPI {
   parseSrtFile: (filePath: string) => Promise<{ entries: SrtEntry[]; durationMs: number }>;
   getAudioDuration: (filePath: string) => Promise<number>;
@@ -120,6 +133,10 @@ export interface ElectronAPI {
   scanProjectAssets: (projectDir: string) => Promise<
     { path: string; type: 'video' | 'image' | 'audio' | 'srt'; durationMs: number }[]
   >;
+  scanImportDirectory: (dir: string) => Promise<{
+    audioFiles: string[];
+    srtFiles: string[];
+  }>;
   renderVideo: (args: {
     timeline: string;
     outputPath: string;
@@ -138,6 +155,8 @@ export interface ElectronAPI {
   saveScriptState: (projectDir: string, state: string) => Promise<void>;
   loadScriptState: (projectDir: string) => Promise<string | null>;
   selectTextFile: () => Promise<{ path: string; content: string } | null>;
+  importVideoSource: (request: VideoImportRequest) => Promise<VideoImportProgress>;
+  getVideoImportStatus: (importId: string) => Promise<VideoImportProgress | null>;
   startWatching: (dir: string) => Promise<void>;
   stopWatching: () => Promise<void>;
   onFileChanged: (callback: (data: { file: string; content: string }) => void) => () => void;
@@ -160,11 +179,78 @@ export interface ElectronAPI {
   cancelTTS: (requestId: string) => Promise<void>;
   selectOutputPath: () => Promise<string | null>;
   showEditorContextMenu: () => Promise<void>;
+  // 最近项目管理
+  loadRecentProjects: () => Promise<RecentProjectEntry[]>;
+  addRecentProject: (projectDir: string, projectName?: string) => Promise<RecentProjectEntry[]>;
+  removeRecentProject: (projectDir: string) => Promise<RecentProjectEntry[]>;
+  refreshRecentProjects: () => Promise<RecentProjectEntry[]>;
 }
 
 declare global {
   interface Window {
     electronAPI: ElectronAPI;
+  }
+}
+
+// ─── ScriptHistoryAPI ─────────────────────────────────
+
+export interface ScriptHistoryAPI {
+  create(input: {
+    projectId: string;
+    fileName: string;
+    content: string;
+    source: string;
+    providerId?: string | null;
+    providerName?: string | null;
+    modelName?: string | null;
+  }): Promise<{
+    id: number;
+    fileName: string;
+    source: string;
+    providerName: string | null;
+    modelName: string | null;
+    label: string | null;
+    byteSize: number;
+    createdAt: string;
+  }>;
+  list(projectId: string, fileName: string, opts?: {
+    sourceFilter?: string[];
+    limit?: number;
+    offset?: number;
+  }): Promise<Array<{
+    id: number;
+    fileName: string;
+    source: string;
+    providerName: string | null;
+    modelName: string | null;
+    label: string | null;
+    byteSize: number;
+    createdAt: string;
+  }>>;
+  get(projectId: string, versionId: number): Promise<{
+    id: number;
+    projectId: string;
+    fileName: string;
+    content: string;
+    source: string;
+    providerId: string | null;
+    providerName: string | null;
+    modelName: string | null;
+    label: string | null;
+    byteSize: number;
+    createdAt: string;
+  } | null>;
+  rollback(versionId: number, currentContent: string, projectId: string, fileName: string): Promise<{
+    rollbackContent: string;
+    savedCurrentVersionId: number;
+  }>;
+  updateLabel(projectId: string, versionId: number, label: string | null): Promise<void>;
+  delete(projectId: string, versionId: number): Promise<void>;
+}
+
+declare global {
+  interface Window {
+    scriptHistoryAPI: ScriptHistoryAPI;
   }
 }
 

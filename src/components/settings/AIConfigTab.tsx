@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { loadAISettings, saveAISettings } from '../../store/ai';
-import { Field, Input, Divider, Switch, Select } from '../../ui';
+import { Field, Divider, Switch, Select } from '../../ui';
 import type { SelectOption } from '../../ui';
+import type { LLMProvider } from '../../types/ai';
+import { ProviderListSection } from './ProviderListSection';
 
 const JIMENG_MODEL_OPTIONS: SelectOption[] = [
   { value: 'jimeng-5.0', label: 'jimeng-5.0（国内站 / 亚洲国际站）' },
@@ -11,13 +13,10 @@ const JIMENG_MODEL_OPTIONS: SelectOption[] = [
   { value: 'jimeng-4.0', label: 'jimeng-4.0（全站）' },
 ];
 
-const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
-const DEFAULT_OPENAI_MODEL = 'gpt-4o';
-
 export function AIConfigTab() {
-  const [llmBaseUrl, setLlmBaseUrl] = useState('');
-  const [llmApiKey, setLlmApiKey] = useState('');
-  const [llmModel, setLlmModel] = useState('');
+  const [providers, setProviders] = useState<LLMProvider[]>([]);
+  const [defaultProviderId, setDefaultProviderId] = useState<string | null>(null);
+  const [defaultModel, setDefaultModel] = useState<string | null>(null);
   const [enableThinking, setEnableThinking] = useState(true);
   const [jimengApiUrl, setJimengApiUrl] = useState('');
   const [jimengSessionId, setJimengSessionId] = useState('');
@@ -26,9 +25,9 @@ export function AIConfigTab() {
 
   useEffect(() => {
     void loadAISettings().then((settings) => {
-      setLlmBaseUrl(settings?.llmBaseUrl ?? 'https://api.openai.com/v1');
-      setLlmApiKey(settings?.llmApiKey ?? '');
-      setLlmModel(settings?.llmModel ?? 'gpt-4o');
+      setProviders(settings?.llmProviders ?? []);
+      setDefaultProviderId(settings?.defaultProviderId ?? null);
+      setDefaultModel(settings?.defaultModel ?? null);
       setEnableThinking(settings?.enableThinking ?? true);
       setJimengApiUrl(settings?.jimengApiUrl ?? 'http://47.109.159.194:8330');
       setJimengSessionId(settings?.jimengSessionId ?? '');
@@ -40,9 +39,14 @@ export function AIConfigTab() {
     void loadAISettings().then((current) => {
       void saveAISettings({
         ...(current ?? { minimaxApiKey: '', minimaxVoiceId: 'male-qn-qingse', minimaxSpeed: 1.0 }),
-        llmBaseUrl,
-        llmApiKey,
-        llmModel,
+        // 多 Provider
+        llmProviders: providers,
+        defaultProviderId,
+        defaultModel,
+        // 旧字段保持兼容（取默认 Provider 的值回填）
+        llmBaseUrl: providers.find((p) => p.id === defaultProviderId)?.baseUrl ?? current?.llmBaseUrl ?? '',
+        llmApiKey: providers.find((p) => p.id === defaultProviderId)?.apiKey ?? current?.llmApiKey ?? '',
+        llmModel: defaultModel ?? current?.llmModel ?? '',
         enableThinking,
         jimengApiUrl,
         jimengSessionId,
@@ -64,21 +68,15 @@ export function AIConfigTab() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Field label="API Base URL">
-          <Input
-            value={llmBaseUrl}
-            onChange={(e) => setLlmBaseUrl(e.target.value)}
-            placeholder={DEFAULT_OPENAI_BASE_URL}
-          />
-        </Field>
-        <Field label="API Key">
-          <Input type="password" value={llmApiKey} onChange={(e) => setLlmApiKey(e.target.value)} placeholder="sk-..." />
-        </Field>
-        <Field label="模型名称">
-          <Input
-            value={llmModel}
-            onChange={(e) => setLlmModel(e.target.value)}
-            placeholder={DEFAULT_OPENAI_MODEL}
+        {/* Provider 列表 */}
+        <Field label="LLM Providers">
+          <ProviderListSection
+            providers={providers}
+            defaultProviderId={defaultProviderId}
+            onChange={(p, id) => {
+              setProviders(p);
+              setDefaultProviderId(id);
+            }}
           />
         </Field>
 
@@ -92,10 +90,21 @@ export function AIConfigTab() {
         <Divider label="封面生成（即梦）" />
 
         <Field label="即梦 API URL">
-          <Input value={jimengApiUrl} onChange={(e) => setJimengApiUrl(e.target.value)} placeholder="http://47.109.159.194:8330" />
+          <input
+            style={inputStyle}
+            value={jimengApiUrl}
+            onChange={(e) => setJimengApiUrl(e.target.value)}
+            placeholder="http://47.109.159.194:8330"
+          />
         </Field>
         <Field label="即梦 Session ID">
-          <Input type="password" value={jimengSessionId} onChange={(e) => setJimengSessionId(e.target.value)} placeholder="session id" />
+          <input
+            type="password"
+            style={inputStyle}
+            value={jimengSessionId}
+            onChange={(e) => setJimengSessionId(e.target.value)}
+            placeholder="session id"
+          />
         </Field>
         <Field label="即梦模型">
           <Select
@@ -126,3 +135,15 @@ export function AIConfigTab() {
     </>
   );
 }
+
+const inputStyle: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.08)',
+  border: '1px solid rgba(255,255,255,0.12)',
+  borderRadius: 8,
+  padding: '8px 12px',
+  color: '#fff',
+  fontSize: 13,
+  outline: 'none',
+  width: '100%',
+  boxSizing: 'border-box',
+};

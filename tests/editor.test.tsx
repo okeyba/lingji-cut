@@ -33,7 +33,9 @@ vi.mock('../src/components/AssetPanel', () => ({
 }));
 
 vi.mock('../src/components/AIPanel', () => ({
-  AIPanel: () => <div>ai-panel</div>,
+  AIPanel: (props: { onOpenSettings?: () => void }) => (
+    <div data-ai-open-settings-hook={String(Boolean(props.onOpenSettings))}>ai-panel</div>
+  ),
 }));
 
 vi.mock('../src/components/EditorInspector', () => ({
@@ -95,6 +97,7 @@ async function renderEditor() {
   return renderToStaticMarkup(
     <Editor
       onAddAsset={async () => undefined}
+      onOpenSettings={() => undefined}
       onUseAsPodcastAudio={async () => undefined}
       onUseAsPodcastSrt={async () => undefined}
       exportRequestToken={0}
@@ -134,6 +137,7 @@ describe('Editor', () => {
       return renderToStaticMarkup(
         <Editor
           onAddAsset={async () => undefined}
+          onOpenSettings={() => undefined}
           onUseAsPodcastAudio={async () => undefined}
           onUseAsPodcastSrt={async () => undefined}
           exportRequestToken={0}
@@ -150,5 +154,21 @@ describe('Editor', () => {
 
     expect(html).toContain('data-editor-region="timeline-ai-overlay"');
     expect(html).toContain('data-has-retry="true"');
+  });
+
+  it('passes the system settings entry into the AI panel', async () => {
+    const { Editor } = await import('../src/pages/Editor');
+    const html = renderToStaticMarkup(
+      <Editor
+        onAddAsset={async () => undefined}
+        initialActivePanel="ai"
+        onOpenSettings={() => undefined}
+        onUseAsPodcastAudio={async () => undefined}
+        onUseAsPodcastSrt={async () => undefined}
+        exportRequestToken={0}
+      />,
+    );
+
+    expect(html).toContain('data-ai-open-settings-hook="true"');
   });
 });
