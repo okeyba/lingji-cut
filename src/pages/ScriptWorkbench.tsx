@@ -29,6 +29,8 @@ import { resolveProvider } from '../lib/llm/provider-utils';
 import { getAllTemplates, getRoleById } from '../lib/script-templates';
 import { replaceEditorContent } from '../lib/editor-document';
 import { clearVirtualCursor } from '../lib/virtual-cursor';
+import { openSearchPanel } from '@codemirror/search';
+import { setOpenWithReplace } from '../ui/components/script-editor-search';
 import { waitForValue } from '../lib/wait-for-value';
 import { AnnotationList } from '../components/script/AnnotationList';
 import { ConflictDialog } from '../components/script/ConflictDialog';
@@ -1231,6 +1233,17 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
       regenerateScript: handleDirectRegenerate,
       reviewScript: runInternalReviewScript,
       save: () => void handleSave(),
+      find: () => {
+        const view = editorViewRef.current;
+        if (view) openSearchPanel(view);
+      },
+      findReplace: () => {
+        const view = editorViewRef.current;
+        if (view) {
+          setOpenWithReplace();
+          openSearchPanel(view);
+        }
+      },
     });
     return () => {
       setWorkbenchMounted(false);
@@ -1243,6 +1256,8 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
         regenerateScript: null,
         reviewScript: null,
         save: null,
+        find: null,
+        findReplace: null,
       });
     };
   }, [

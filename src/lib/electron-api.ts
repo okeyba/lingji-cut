@@ -42,6 +42,8 @@ export const MENU_ACTIONS = [
   'export',
   'save-script',
   'go-back',
+  'find',
+  'find-replace',
 ] as const;
 
 export type MenuAction = (typeof MENU_ACTIONS)[number];

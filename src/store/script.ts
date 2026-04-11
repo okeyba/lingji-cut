@@ -76,6 +76,10 @@ export interface WorkbenchCallbacks {
   reviewScript: (() => Promise<void>) | null;
   /** 保存所有脏文件 */
   save: (() => void) | null;
+  /** 打开搜索面板 */
+  find: (() => void) | null;
+  /** 打开搜索替换面板 */
+  findReplace: (() => void) | null;
 }
 
 interface ScriptState {
@@ -262,6 +266,8 @@ const initialState: ScriptState = {
     regenerateScript: null,
     reviewScript: null,
     save: null,
+    find: null,
+    findReplace: null,
   },
   extraFileContents: {},
   mcpChangeHighlightLines: [],

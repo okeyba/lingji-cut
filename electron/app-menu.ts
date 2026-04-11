@@ -107,6 +107,23 @@ export function createApplicationMenuTemplate(
         { label: '复制', role: 'copy' },
         { label: '粘贴', role: 'paste' },
         { label: '全选', role: 'selectAll' },
+        ...(context.activePage === 'script-workbench'
+          ? [
+              { type: 'separator' as const },
+              {
+                label: '搜索',
+                accelerator: 'CmdOrCtrl+F',
+                click: () =>
+                  sendMenuEvent({ type: 'command', action: 'find' }),
+              },
+              {
+                label: '搜索与替换',
+                accelerator: 'CmdOrCtrl+H',
+                click: () =>
+                  sendMenuEvent({ type: 'command', action: 'find-replace' }),
+              },
+            ]
+          : []),
       ],
     },
     {

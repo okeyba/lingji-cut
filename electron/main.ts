@@ -470,6 +470,19 @@ ipcMain.handle('show-editor-context-menu', async (event) => {
     { label: '粘贴', role: 'paste' },
     { type: 'separator' },
     { label: '全选', role: 'selectAll' },
+    { type: 'separator' },
+    {
+      label: '搜索',
+      accelerator: 'CmdOrCtrl+F',
+      click: () =>
+        event.sender.send('menu-action', { type: 'command', action: 'find' }),
+    },
+    {
+      label: '搜索与替换',
+      accelerator: 'CmdOrCtrl+H',
+      click: () =>
+        event.sender.send('menu-action', { type: 'command', action: 'find-replace' }),
+    },
   ]);
   menu.popup({ window: win });
 });

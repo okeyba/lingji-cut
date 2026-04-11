@@ -67,6 +67,15 @@ function countMatches(view: EditorView): { current: number; total: number } {
   return { current, total };
 }
 
+/* ── 打开时展开替换的标志 ── */
+
+let _openWithReplace = false;
+
+/** 标记下次打开搜索面板时自动展开替换行 */
+export function setOpenWithReplace(): void {
+  _openWithReplace = true;
+}
+
 /* ── 面板工厂 ── */
 
 export function createSearchPanel(view: EditorView): Panel {
@@ -213,6 +222,14 @@ export function createSearchPanel(view: EditorView): Panel {
           searchInput.value = text;
           dispatchQuery();
         }
+      }
+      // 如果标记了打开替换行，则自动展开
+      if (_openWithReplace) {
+        _openWithReplace = false;
+        replaceVisible = true;
+        replaceRow.style.display = 'flex';
+        toggleBtn.innerHTML = '';
+        toggleBtn.appendChild(chevronDown());
       }
       searchInput.focus();
       searchInput.select();

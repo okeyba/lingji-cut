@@ -507,6 +507,16 @@ export default function App() {
             setPage('welcome');
           }
           return;
+        case 'find': {
+          const findCb = useScriptStore.getState().workbenchCallbacks.find;
+          if (page === 'script-workbench' && findCb) findCb();
+          return;
+        }
+        case 'find-replace': {
+          const findReplaceCb = useScriptStore.getState().workbenchCallbacks.findReplace;
+          if (page === 'script-workbench' && findReplaceCb) findReplaceCb();
+          return;
+        }
       }
     },
     [
