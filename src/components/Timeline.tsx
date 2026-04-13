@@ -10,9 +10,12 @@ import { getRenderableVisualTracks, getVisualTracks } from '../lib/timeline-trac
 import { filterValidSubtitleHighlights } from '../lib/subtitle-highlights';
 import { formatTime, getEffectiveTimelineDurationMs } from '../lib/utils';
 import {
+  clampTimelineZoom,
   getAnchoredTimelineScrollLeft,
+  getBaseTimelineWidth,
   getContinuousTimelineZoom,
-  getTimelineTrackWidth,
+  getTimelineContentWidthPx,
+  getTimelineVisualEndMs,
   getTimelineWheelZoomMode,
   getWheelTimelineZoom,
 } from '../lib/timeline-view';
@@ -92,6 +95,11 @@ export function Timeline({
   } = useTimelineStore();
   // 考虑动画 / 媒体 overlay 末端，没素材时也保证尺子能容纳已经添加的卡片
   const durationMs = useMemo(() => getEffectiveTimelineDurationMs(timeline), [timeline]);
+  // 内容末端（不含尾部留白）：用于 pxPerMs 推导与 seek clamp
+  const visualEndMs = useMemo(
+    () => Math.max(1, getTimelineVisualEndMs(timeline), durationMs),
+    [timeline, durationMs],
+  );
   const outerPadding = compact ? 8 : 10;
   const sidebarWidth = compact ? 86 : 104;
   const toolbarHeight = compact ? 36 : 40;
@@ -99,43 +107,57 @@ export function Timeline({
   const audioTrackHeight = compact ? 26 : 30;
   const subtitleTrackHeight = compact ? 52 : 60;
   const overlayTrackHeight = compact ? 30 : 34;
-  const trackWidth = useMemo(
-    () => getTimelineTrackWidth(durationMs, zoomLevel, Math.max(480, viewportWidth || 960)),
-    [durationMs, viewportWidth, zoomLevel],
+  // 轨道内容区宽度（含尾部一屏留白）。替代旧的 trackWidth。
+  const contentWidth = useMemo(
+    () =>
+      getTimelineContentWidthPx(timeline, zoomLevel, Math.max(480, viewportWidth || 960)),
+    [timeline, viewportWidth, zoomLevel],
   );
-  const pxPerMs = trackWidth / durationMs;
-  const trackColumns = `${sidebarWidth}px ${trackWidth}px`;
+  // pxPerMs 基于"有效内容末端"反推，保持 1 秒在屏幕上的像素密度恒定；
+  // 留白区由 contentWidth 本身提供，不改变秒的视觉密度。
+  const pxPerMs = useMemo(() => {
+    const clampedZoom = clampTimelineZoom(zoomLevel);
+    const basePx = getBaseTimelineWidth(visualEndMs) * clampedZoom;
+    return basePx / visualEndMs;
+  }, [visualEndMs, zoomLevel]);
+  const trackColumns = `${sidebarWidth}px ${contentWidth}px`;
   const visualTracks = useMemo(() => getVisualTracks(timeline.tracks), [timeline.tracks]);
   const renderableTracks = useMemo(
     () => getRenderableVisualTracks(timeline.tracks),
     [timeline.tracks],
   );
-  const contentWidth = sidebarWidth + trackWidth;
+  // canvas 外层总宽度（含左侧 sidebar），用于最外层 DOM 布局
+  const canvasWidth = sidebarWidth + contentWidth;
   const majorTickInterval = useMemo(() => {
-    if (durationMs <= 30_000) {
+    if (visualEndMs <= 30_000) {
       return 5_000;
     }
 
-    if (durationMs <= 120_000) {
+    if (visualEndMs <= 120_000) {
       return 10_000;
     }
 
     return 30_000;
-  }, [durationMs]);
+  }, [visualEndMs]);
   const minorTickInterval = Math.max(1_000, Math.round(majorTickInterval / 5));
+  // ruler 覆盖整条内容区（含尾部留白），按 pxPerMs 反推最大刻度 ms
+  const totalRulerMs = useMemo(
+    () => (pxPerMs > 0 ? Math.floor(contentWidth / pxPerMs) : visualEndMs),
+    [contentWidth, pxPerMs, visualEndMs],
+  );
   const ticks = useMemo(() => {
     const values: number[] = [];
 
-    for (let cursor = 0; cursor <= durationMs; cursor += majorTickInterval) {
+    for (let cursor = 0; cursor <= totalRulerMs; cursor += majorTickInterval) {
       values.push(cursor);
     }
 
-    if (values[values.length - 1] !== durationMs) {
-      values.push(durationMs);
+    if (values.length === 0 || values[values.length - 1] !== totalRulerMs) {
+      values.push(totalRulerMs);
     }
 
     return values;
-  }, [durationMs, majorTickInterval]);
+  }, [totalRulerMs, majorTickInterval]);
   const overlaysByTrack = useMemo(() => {
     const groups = new Map<string, typeof timeline.overlays>();
 
@@ -247,7 +269,7 @@ export function Timeline({
 
     container.scrollLeft = pendingScrollLeftRef.current;
     pendingScrollLeftRef.current = null;
-  }, [trackWidth]);
+  }, [contentWidth]);
 
   const gridBackground = useMemo(() => {
     const major = Math.max(40, majorTickInterval * pxPerMs);
@@ -286,9 +308,9 @@ export function Timeline({
         return 0;
       }
 
-      return Math.max(0, Math.min(durationMs, Math.round(offsetX / pxPerMs)));
+      return Math.max(0, Math.min(visualEndMs, Math.round(offsetX / pxPerMs)));
     },
-    [durationMs, pxPerMs],
+    [visualEndMs, pxPerMs],
   );
 
   const canPasteOverlay = Boolean(overlayClipboard);
@@ -409,7 +431,7 @@ export function Timeline({
       return;
     }
 
-    onSeek(Math.max(0, Math.min(durationMs, Math.round(offsetX / pxPerMs))));
+    onSeek(Math.max(0, Math.min(visualEndMs, Math.round(offsetX / pxPerMs))));
   };
 
   const handleWheelZoom = useCallback((event: WheelEvent) => {
@@ -442,8 +464,8 @@ export function Timeline({
           Math.min(visibleTrackWidth, event.clientX - rect.left - sidebarWidth - outerPadding),
         )
       : visibleTrackWidth / 2;
-    const nextTrackWidth = getTimelineTrackWidth(
-      durationMs,
+    const nextContentWidth = getTimelineContentWidthPx(
+      timeline,
       nextZoom,
       Math.max(480, viewportWidth || 960),
     );
@@ -451,12 +473,12 @@ export function Timeline({
     pendingScrollLeftRef.current = getAnchoredTimelineScrollLeft({
       scrollLeft: container.scrollLeft,
       pointerX,
-      previousTrackWidth: trackWidth,
-      nextTrackWidth,
+      previousTrackWidth: contentWidth,
+      nextTrackWidth: nextContentWidth,
     });
 
     setZoomLevel(nextZoom);
-  }, [durationMs, outerPadding, sidebarWidth, trackWidth, viewportWidth, zoomLevel]);
+  }, [timeline, outerPadding, sidebarWidth, contentWidth, viewportWidth, zoomLevel]);
 
   // 通过 ref 保持最新版本的 handler，避免 native listener 中的 stale closure
   const handleWheelZoomRef = useRef(handleWheelZoom);
@@ -633,11 +655,11 @@ export function Timeline({
         <div
           className={styles.canvas}
           style={{
-            width: contentWidth + outerPadding * 2,
+            width: canvasWidth + outerPadding * 2,
             padding: outerPadding,
           }}
         >
-          <div className={styles.content} style={{ width: contentWidth }}>
+          <div className={styles.content} style={{ width: canvasWidth }}>
             <div
               className={styles.rulerRow}
               style={{ gridTemplateColumns: trackColumns, height: rulerHeight }}
@@ -675,14 +697,14 @@ export function Timeline({
               style={{
                 marginTop: -audioTrackHeight,
                 marginLeft: sidebarWidth,
-                width: trackWidth,
+                width: Math.max(0, Math.round(visualEndMs * pxPerMs)),
                 height: audioTrackHeight,
               }}
             >
               <TimelineAudioWaveform
                 audioPath={timeline.podcast.audioPath}
                 durationMs={durationMs}
-                trackWidth={trackWidth}
+                trackWidth={Math.max(0, Math.round(visualEndMs * pxPerMs))}
                 trackHeight={audioTrackHeight}
               />
             </div>
@@ -701,7 +723,7 @@ export function Timeline({
               style={{
                 marginTop: -subtitleTrackHeight,
                 marginLeft: sidebarWidth,
-                width: trackWidth,
+                width: contentWidth,
                 height: subtitleTrackHeight,
               }}
             >
