@@ -55,6 +55,7 @@ export interface TimelineStore {
   pasteOverlay: (options: { trackId: string; startMs: number }) => string | null;
   updateOverlay: (id: string, updates: Partial<OverlayItem>) => void;
   trimOverlayClip: (id: string, edge: 'start' | 'end', newEdgeMs: number) => void;
+  splitOverlayClipsAt: (playheadMs: number, targetIds?: string[]) => void;
   removeOverlay: (id: string) => void;
   undo: () => void;
   redo: () => void;
@@ -778,6 +779,61 @@ export const useTimelineStore = create<TimelineStore>((set) => ({
         overlays: state.timeline.overlays.map((o) =>
           o.id === id ? nextOverlay : o,
         ),
+      });
+
+      return buildCommittedTimelineState(state, nextTimeline);
+    }),
+  splitOverlayClipsAt: (playheadMs, targetIds) =>
+    set((state) => {
+      const EDGE_TOLERANCE = 50;
+
+      const eligibleIds = new Set(
+        targetIds ?? state.timeline.overlays.map((o) => o.id),
+      );
+      const newOverlays: OverlayItem[] = [];
+      let didSplit = false;
+
+      for (const overlay of state.timeline.overlays) {
+        if (!eligibleIds.has(overlay.id)) {
+          newOverlays.push(overlay);
+          continue;
+        }
+
+        const track = state.timeline.tracks.find((t) => t.id === overlay.trackId);
+        if (track?.locked) {
+          newOverlays.push(overlay);
+          continue;
+        }
+
+        const leftDuration = playheadMs - overlay.startMs;
+        const rightDuration = overlay.durationMs - leftDuration;
+
+        if (leftDuration < EDGE_TOLERANCE || rightDuration < EDGE_TOLERANCE) {
+          newOverlays.push(overlay);
+          continue;
+        }
+
+        didSplit = true;
+        const leftClip: OverlayItem = {
+          ...overlay,
+          durationMs: leftDuration,
+        };
+        const rightClip: OverlayItem = {
+          ...overlay,
+          id: uuid(),
+          startMs: playheadMs,
+          durationMs: rightDuration,
+        };
+        newOverlays.push(leftClip, rightClip);
+      }
+
+      if (!didSplit) {
+        return {};
+      }
+
+      const nextTimeline = normalizeTimeline({
+        ...state.timeline,
+        overlays: newOverlays,
       });
 
       return buildCommittedTimelineState(state, nextTimeline);
