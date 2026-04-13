@@ -21,6 +21,12 @@ interface OverlayBlockProps {
   trackLocked?: boolean;
   /** 碰撞反馈状态;invalid 时叠加红遮罩 */
   collisionState?: 'none' | 'invalid';
+  /** 拖拽预览:覆盖 X 位置(ms),优先级高于 overlay.startMs。仅用于视觉跟随,不写入 store。 */
+  dragPreviewStartMs?: number;
+  /** 拖拽预览:Y 方向 px 偏移,用于跨轨道视觉移动。 */
+  dragPreviewDeltaY?: number;
+  /** 拖拽预览:是否处于拖拽状态(控制 opacity/z-index/transform/pointer-events)。 */
+  isDragging?: boolean;
   /** 可选的 trim snap 计算函数(Task 13 会注入) */
   computeSnapForTrim?: (candidateMs: number, overlayId: string) => number;
   /**
@@ -44,6 +50,9 @@ export function OverlayBlock({
   selected = false,
   trackLocked = false,
   collisionState = 'none',
+  dragPreviewStartMs,
+  dragPreviewDeltaY,
+  isDragging = false,
   computeSnapForTrim,
   onBeginOverlayDrag,
   getTrackDragZones,
@@ -85,7 +94,9 @@ export function OverlayBlock({
     : overlay.type === 'video'
       ? 'color-mix(in srgb, var(--color-selection-blue-hover) 24%, transparent)'
       : 'color-mix(in srgb, var(--color-brand-warm) 22%, transparent)';
-  const left = overlay.startMs * pxPerMs;
+  // 拖拽期间用 dragPreviewStartMs 覆盖 X,避免改 store 污染 undo 历史。
+  const effectiveStartMs = dragPreviewStartMs ?? overlay.startMs;
+  const left = effectiveStartMs * pxPerMs;
   const width = Math.max(24, overlay.durationMs * pxPerMs);
   const thumbnailWidth = Math.max(0, Math.min(38, width - 26));
   const blockHeight = Math.max(24, trackHeight - 6);
@@ -300,6 +311,17 @@ export function OverlayBlock({
         width,
         height: blockHeight,
         cursor: resolvedCursor,
+        ...(isDragging
+          ? {
+              transform: dragPreviewDeltaY
+                ? `translateY(${dragPreviewDeltaY}px)`
+                : undefined,
+              opacity: 0.85,
+              zIndex: 50,
+              pointerEvents: 'none' as const,
+              transition: 'none',
+            }
+          : {}),
         ['--overlay-color' as string]: color,
         ['--overlay-glow' as string]: colorGlow,
       }}

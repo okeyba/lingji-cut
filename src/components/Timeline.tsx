@@ -61,6 +61,39 @@ interface OverlayDragState {
   candidateTrackId: string;
 }
 
+/**
+ * 计算 overlay 在拖拽预览期间相对原轨道行需要的 Y 方向 px 偏移。
+ * 仅用于视觉跟随,不会写入 store。
+ *
+ * visualTracks 已按 order 降序排序(见 getVisualTracks),index 0 即页面最上方的轨道。
+ */
+function computeDragPreviewDeltaY(
+  dragState: OverlayDragState,
+  overlay: OverlayItem,
+  visualTracksSorted: TimelineTrack[],
+  trackRowHeight: number,
+): number {
+  if (dragState.overlayId !== overlay.id) return 0;
+
+  const srcIdx = visualTracksSorted.findIndex((t) => t.id === overlay.trackId);
+  if (srcIdx < 0) return 0;
+
+  // Drop zone 场景:视觉上把 block 移到对应 dropzone 带
+  if (dragState.dropZoneHover === 'top') {
+    // 顶部 dropzone 在第一条轨道上方,距离 = 当前 index 的全部行数(再额外 1 行越过自身)
+    return -(srcIdx + 1) * trackRowHeight;
+  }
+  if (dragState.dropZoneHover === 'bottom') {
+    // 底部 dropzone 在最后一条轨道下方
+    return (visualTracksSorted.length - srcIdx) * trackRowHeight;
+  }
+
+  // 跨轨道:按 track 行数差 × rowHeight
+  const tgtIdx = visualTracksSorted.findIndex((t) => t.id === dragState.candidateTrackId);
+  if (tgtIdx < 0) return 0;
+  return (tgtIdx - srcIdx) * trackRowHeight;
+}
+
 interface AssetLike {
   path: string;
   type: 'video' | 'image' | 'text';
@@ -1212,6 +1245,10 @@ export function Timeline({
                         }}
                       >
                         {overlays.map((overlay) => {
+                          const activeDragForOverlay =
+                            dragState && dragState.overlayId === overlay.id
+                              ? dragState
+                              : null;
                           const overlayBlock = (
                             <OverlayBlock
                               overlay={overlay}
@@ -1220,12 +1257,26 @@ export function Timeline({
                               selected={selectedOverlayId === overlay.id}
                               trackLocked={Boolean(track.locked)}
                               collisionState={
-                                dragState !== null
-                                  && dragState.overlayId === overlay.id
-                                  && dragState.collision
+                                activeDragForOverlay && activeDragForOverlay.collision
                                   ? 'invalid'
                                   : 'none'
                               }
+                              dragPreviewStartMs={
+                                activeDragForOverlay
+                                  ? activeDragForOverlay.candidateStartMs
+                                  : undefined
+                              }
+                              dragPreviewDeltaY={
+                                activeDragForOverlay
+                                  ? computeDragPreviewDeltaY(
+                                      activeDragForOverlay,
+                                      overlay,
+                                      visualTracks,
+                                      overlayTrackHeight,
+                                    )
+                                  : undefined
+                              }
+                              isDragging={Boolean(activeDragForOverlay)}
                               computeSnapForTrim={computeSnapForTrim}
                               onBeginOverlayDrag={handleBeginOverlayDrag}
                               getTrackDragZones={getTrackDragZones}
