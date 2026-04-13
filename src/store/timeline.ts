@@ -8,6 +8,7 @@ import type {
   SubtitleHighlight,
   SubtitleStyle,
   TimelineData,
+  TimelineTrack,
 } from '../types';
 import { DEFAULT_VISUAL_TRACK_ID, DEFAULT_AI_CARDS_TRACK_ID, createDefaultTimeline, createVisualTrack } from '../types';
 import type { AICardTimelineDraft } from '../types/ai';
@@ -46,7 +47,9 @@ export interface TimelineStore {
   addAssets: (items: { path: string; type: AssetType; durationMs?: number }[]) => void;
   removeAsset: (path: string) => void;
   addTrack: () => string;
-  createTrackAt: (position: 'top' | 'bottom') => string;
+  createTrackAt: (
+    position: 'top' | 'bottom' | { kind: 'gap'; gapIndex: number },
+  ) => string;
   toggleTrackLocked: (trackId: string) => void;
   removeTrack: (id: string) => void;
   addOverlay: (overlay: OverlayDraft) => string;
@@ -448,35 +451,75 @@ export const useTimelineStore = create<TimelineStore>((set) => ({
     return track.id;
   },
   createTrackAt: (position) => {
-    const tracks = useTimelineStore.getState().timeline.tracks;
-    const visualTracks = tracks.filter((t) => t.kind === 'visual');
-    const existingIds = new Set(visualTracks.map((t) => t.id));
+    const state = useTimelineStore.getState();
+    const tracks = state.timeline.tracks;
+
+    // 升序(order 小的在前)用于 gap 索引计算,保持既有 'top'=lowest/'bottom'=highest 语义
+    const ascOrderedVisualTracks = [...tracks.filter((t) => t.kind === 'visual')]
+      .sort((left, right) => {
+        if (left.order !== right.order) {
+          return left.order - right.order;
+        }
+        return left.id.localeCompare(right.id);
+      });
+    const visualCount = ascOrderedVisualTracks.length;
+
+    // 将 'top'/'bottom' 翻译为 gap 索引,保持既有测试/行为
+    let gapIndex: number;
+    if (position === 'top') {
+      gapIndex = 0;
+    } else if (position === 'bottom') {
+      gapIndex = visualCount;
+    } else {
+      gapIndex = Math.max(0, Math.min(visualCount, position.gapIndex));
+    }
+
+    // 生成新 id
+    const existingIds = new Set(ascOrderedVisualTracks.map((t) => t.id));
     let nextIndex = 1;
     while (existingIds.has(`visual-${nextIndex}`)) nextIndex += 1;
 
-    const orders = visualTracks.map((t) => t.order);
-    const nextOrder =
-      position === 'top'
-        ? orders.length
-          ? Math.min(...orders) - 1
-          : 0
-        : orders.length
-          ? Math.max(...orders) + 1
-          : 0;
-
-    const newTrack = {
+    const newTrack: TimelineTrack = {
       id: `visual-${nextIndex}`,
-      kind: 'visual' as const,
+      kind: 'visual',
       label: `轨道 ${nextIndex}`,
-      order: nextOrder,
+      order: 0,
     };
 
-    set((state) => {
-      const nextTimeline = normalizeTimeline({
-        ...state.timeline,
-        tracks: [...state.timeline.tracks, newTrack],
+    // 按 gapIndex 插入 asc 顺序数组
+    const insertedAsc = [
+      ...ascOrderedVisualTracks.slice(0, gapIndex),
+      newTrack,
+      ...ascOrderedVisualTracks.slice(gapIndex),
+    ];
+
+    // 重新编号 order 为连续的 0..N-1
+    const reorderedMap = new Map<string, number>();
+    insertedAsc.forEach((track, index) => {
+      reorderedMap.set(track.id, index);
+    });
+
+    set((currentState) => {
+      const existingTrackMap = new Map(
+        currentState.timeline.tracks
+          .filter((t) => t.kind === 'visual')
+          .map((t) => [t.id, t] as const),
+      );
+      const mergedVisualTracks = insertedAsc.map((track) => {
+        const existing = existingTrackMap.get(track.id);
+        return {
+          ...(existing ?? track),
+          order: reorderedMap.get(track.id) ?? 0,
+        };
       });
-      return buildCommittedTimelineState(state, nextTimeline);
+      const nonVisualTracks = currentState.timeline.tracks.filter(
+        (t) => t.kind !== 'visual',
+      );
+      const nextTimeline = normalizeTimeline({
+        ...currentState.timeline,
+        tracks: [...nonVisualTracks, ...mergedVisualTracks],
+      });
+      return buildCommittedTimelineState(currentState, nextTimeline);
     });
 
     return newTrack.id;

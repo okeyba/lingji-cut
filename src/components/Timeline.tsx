@@ -56,42 +56,12 @@ interface OverlayDragState {
   overlayId: string;
   collision: boolean;
   snapTargets: SnapTarget[];
-  dropZoneHover: 'top' | 'bottom' | null;
+  /** UI 屏幕顺序的 gap 索引(0 = 屏幕最顶, N = 屏幕最底);null 表示落在普通轨道上 */
+  dropGapIndex: number | null;
   candidateStartMs: number;
   candidateTrackId: string;
-}
-
-/**
- * 计算 overlay 在拖拽预览期间相对原轨道行需要的 Y 方向 px 偏移。
- * 仅用于视觉跟随,不会写入 store。
- *
- * visualTracks 已按 order 降序排序(见 getVisualTracks),index 0 即页面最上方的轨道。
- */
-function computeDragPreviewDeltaY(
-  dragState: OverlayDragState,
-  overlay: OverlayItem,
-  visualTracksSorted: TimelineTrack[],
-  trackRowHeight: number,
-): number {
-  if (dragState.overlayId !== overlay.id) return 0;
-
-  const srcIdx = visualTracksSorted.findIndex((t) => t.id === overlay.trackId);
-  if (srcIdx < 0) return 0;
-
-  // Drop zone 场景:视觉上把 block 移到对应 dropzone 带
-  if (dragState.dropZoneHover === 'top') {
-    // 顶部 dropzone 在第一条轨道上方,距离 = 当前 index 的全部行数(再额外 1 行越过自身)
-    return -(srcIdx + 1) * trackRowHeight;
-  }
-  if (dragState.dropZoneHover === 'bottom') {
-    // 底部 dropzone 在最后一条轨道下方
-    return (visualTracksSorted.length - srcIdx) * trackRowHeight;
-  }
-
-  // 跨轨道:按 track 行数差 × rowHeight
-  const tgtIdx = visualTracksSorted.findIndex((t) => t.id === dragState.candidateTrackId);
-  if (tgtIdx < 0) return 0;
-  return (tgtIdx - srcIdx) * trackRowHeight;
+  /** 基于 DOM 实测的 Y 方向像素偏移,仅用于拖拽预览的 translateY */
+  previewDeltaY: number;
 }
 
 interface AssetLike {
@@ -126,6 +96,12 @@ export function Timeline({
   const rulerRef = useRef<HTMLDivElement>(null);
   const pendingScrollLeftRef = useRef<number | null>(null);
   const trackLaneRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  /** 每条 visual 轨道的整行 DOM(含 sidebar),用于 drag preview Y 偏移测量 */
+  const trackRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  /** 每个 visual gap 槽位的 DOM,gapRefs.current[i] 对应屏幕顺序第 i 个 gap */
+  const gapRefs = useRef<Array<HTMLDivElement | null>>([]);
+  /** 拖拽开始瞬间,源 overlay 所在轨道行的 rect.top,用于 previewDeltaY 测量 */
+  const dragSourceRowTopRef = useRef<number | null>(null);
   const [hoverTrackId, setHoverTrackId] = useState<string | null>(null);
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
   const [contextTarget, setContextTarget] = useState<TimelineContextTarget | null>(null);
@@ -181,6 +157,13 @@ export function Timeline({
   }, [visualEndMs, zoomLevel]);
   const trackColumns = `${sidebarWidth}px ${contentWidth}px`;
   const visualTracks = useMemo(() => getVisualTracks(timeline.tracks), [timeline.tracks]);
+  // 轨道数变动时裁剪 gapRefs 数组,避免保留已卸载的 DOM 引用
+  useEffect(() => {
+    const expected = visualTracks.length + 1;
+    if (gapRefs.current.length > expected) {
+      gapRefs.current.length = expected;
+    }
+  }, [visualTracks.length]);
   const renderableTracks = useMemo(
     () => getRenderableVisualTracks(timeline.tracks),
     [timeline.tracks],
@@ -744,25 +727,29 @@ export function Timeline({
     });
   };
 
-  // ── Drop zone hit test ──
-  // 在屏幕坐标空间判断鼠标当前是否位于顶部或底部的新轨道 drop zone 内。
-  const DROP_ZONE_HEIGHT = 32;
-  const resolveDropZoneHover = (clientY: number): 'top' | 'bottom' | null => {
-    if (visualTracks.length === 0) return null;
-    const firstLane = trackLaneRefs.current[visualTracks[0].id];
-    const lastLane = trackLaneRefs.current[visualTracks[visualTracks.length - 1].id];
-    if (!firstLane || !lastLane) return null;
-    const topRect = firstLane.getBoundingClientRect();
-    const bottomRect = lastLane.getBoundingClientRect();
-
-    if (clientY >= topRect.top - DROP_ZONE_HEIGHT - 4 && clientY < topRect.top) {
-      return 'top';
-    }
-    if (clientY > bottomRect.bottom && clientY <= bottomRect.bottom + DROP_ZONE_HEIGHT + 4) {
-      return 'bottom';
+  // ── Gap hit test ──
+  // 遍历每个展开的 gap 容器 DOM,判断鼠标 Y 是否落在其 rect 内。
+  // 返回屏幕顺序的 gap 索引(0=最顶, N=最底),未命中返回 null。
+  const resolveGapIndex = (clientY: number): number | null => {
+    const gapEls = gapRefs.current;
+    for (let i = 0; i < gapEls.length; i += 1) {
+      const el = gapEls[i];
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.height <= 0) continue;
+      if (clientY >= rect.top && clientY <= rect.bottom) {
+        return i;
+      }
     }
     return null;
   };
+
+  /**
+   * 将 UI 层屏幕顺序的 gapIndex 转换为 store 层 asc-order 的 gapIndex。
+   * UI gap 0(屏幕最顶)= store gap N;UI gap N(屏幕最底)= store gap 0。
+   */
+  const uiGapToStoreGap = (uiGapIndex: number, visualCount: number): number =>
+    visualCount - uiGapIndex;
 
   // ── Drag 相关 refs(必须在使用处之前声明) ──
   const currentTimeRef = useRef(currentTimeMs);
@@ -822,6 +809,12 @@ export function Timeline({
 
       startEvent.preventDefault();
 
+      // 记录源轨道行 rect.top,用于后续 previewDeltaY DOM 测量
+      const sourceRow = trackRowRefs.current[overlay.trackId];
+      dragSourceRowTopRef.current = sourceRow
+        ? sourceRow.getBoundingClientRect().top
+        : null;
+
       // 启动 autoscroll
       const scrollContainer = containerRef.current;
       if (scrollContainer) {
@@ -833,9 +826,10 @@ export function Timeline({
         overlayId: overlay.id,
         collision: false,
         snapTargets: [],
-        dropZoneHover: null,
+        dropGapIndex: null,
         candidateStartMs: overlay.startMs,
         candidateTrackId: overlay.trackId,
+        previewDeltaY: 0,
       };
       dragStateRef.current = initialState;
       setDragState(initialState);
@@ -865,20 +859,20 @@ export function Timeline({
         let candidateStartMs = Math.max(0, Math.round(localX / pxPerMs - grabOffsetMs));
         // 尾部留白后不再硬限制最大位置;碰撞检测仍会阻止与其它 clip 重叠
 
-        // 2. 解析轨道 / drop zone
-        const dropZoneHover = resolveDropZoneHover(moveEvent.clientY);
+        // 2. 解析轨道 / gap
+        const dropGapIndex = resolveGapIndex(moveEvent.clientY);
         const trackZones = getTrackDragZones();
         let candidateTrackId = overlay.trackId;
-        if (!dropZoneHover) {
+        if (dropGapIndex === null) {
           const matched = trackZones.find(
             (tz) => moveEvent.clientY >= tz.top && moveEvent.clientY <= tz.bottom,
           );
           candidateTrackId = matched?.trackId ?? overlay.trackId;
         }
 
-        // 3. Snap(drop zone 时跳过；按住 Alt 临时关闭)
+        // 3. Snap(落 gap 时跳过；按住 Alt 临时关闭)
         let snapTargets: SnapTarget[] = [];
-        if (!dropZoneHover) {
+        if (dropGapIndex === null) {
           const snapEnabledNow = snapEnabled && !moveEvent.altKey;
           const snap = computeSnap({
             candidateMs: candidateStartMs,
@@ -893,9 +887,9 @@ export function Timeline({
           snapTargets = snap.targets;
         }
 
-        // 4. Collision(drop zone 时跳过；落新轨道天然无撞)
+        // 4. Collision(落 gap 时跳过；落新轨道天然无撞)
         let collision = false;
-        if (!dropZoneHover) {
+        if (dropGapIndex === null) {
           const placement = canPlaceAt({
             trackId: candidateTrackId,
             startMs: candidateStartMs,
@@ -906,13 +900,37 @@ export function Timeline({
           collision = !placement.ok;
         }
 
+        // 5. Drag preview deltaY:DOM 测量目标元素(gap 或目标轨道行)的 top,
+        //    与源轨道行 top 的差值,避免静态 rowHeight 公式在 gap 展开过渡期失真
+        let previewDeltaY = 0;
+        const sourceTop = dragSourceRowTopRef.current;
+        if (sourceTop !== null) {
+          let targetTop: number | null = null;
+          if (dropGapIndex !== null) {
+            const gapEl = gapRefs.current[dropGapIndex];
+            if (gapEl) {
+              const rect = gapEl.getBoundingClientRect();
+              targetTop = rect.top + rect.height / 2 - blockRect.height / 2;
+            }
+          } else {
+            const targetRow = trackRowRefs.current[candidateTrackId];
+            if (targetRow) {
+              targetTop = targetRow.getBoundingClientRect().top;
+            }
+          }
+          if (targetTop !== null) {
+            previewDeltaY = targetTop - sourceTop;
+          }
+        }
+
         const nextState: OverlayDragState = {
           overlayId: overlay.id,
           collision,
           snapTargets,
-          dropZoneHover,
+          dropGapIndex,
           candidateStartMs,
           candidateTrackId,
+          previewDeltaY,
         };
         dragStateRef.current = nextState;
         setDragState(nextState);
@@ -926,10 +944,17 @@ export function Timeline({
 
         const finalState = dragStateRef.current;
         if (finalState && didMove) {
-          if (finalState.dropZoneHover) {
+          if (finalState.dropGapIndex !== null) {
+            const visualCount = useTimelineStore
+              .getState()
+              .timeline.tracks.filter((t) => t.kind === 'visual').length;
+            const storeGapIndex = uiGapToStoreGap(
+              finalState.dropGapIndex,
+              visualCount,
+            );
             const newTrackId = useTimelineStore
               .getState()
-              .createTrackAt(finalState.dropZoneHover);
+              .createTrackAt({ kind: 'gap', gapIndex: storeGapIndex });
             useTimelineStore.getState().updateOverlay(overlay.id, {
               trackId: newTrackId,
               startMs: finalState.candidateStartMs,
@@ -948,6 +973,7 @@ export function Timeline({
 
         dragStateRef.current = null;
         setDragState(null);
+        dragSourceRowTopRef.current = null;
       };
 
       window.addEventListener('mousemove', handleMove);
@@ -1147,12 +1173,12 @@ export function Timeline({
 
             <div className={styles.visualTracksGroup}>
             <TrackDropZone
-              position="top"
+              gapIndex={0}
               active={Boolean(dragState)}
-              highlighted={dragState?.dropZoneHover === 'top'}
-              width={contentWidth}
-              left={sidebarWidth}
-              top={-36}
+              highlighted={dragState?.dropGapIndex === 0}
+              ref={(el) => {
+                gapRefs.current[0] = el;
+              }}
             />
             {visualTracks.map((track, index) => {
               const overlays = overlaysByTrack.get(track.id) ?? [];
@@ -1168,8 +1194,11 @@ export function Timeline({
                   : 0;
 
               return (
+                <Fragment key={track.id}>
                 <div
-                  key={track.id}
+                  ref={(node) => {
+                    trackRowRefs.current[track.id] = node;
+                  }}
                   className={styles.overlayRow}
                   data-locked={track.locked ? 'true' : 'false'}
                   style={{
@@ -1260,12 +1289,7 @@ export function Timeline({
                               }
                               dragPreviewDeltaY={
                                 activeDragForOverlay
-                                  ? computeDragPreviewDeltaY(
-                                      activeDragForOverlay,
-                                      overlay,
-                                      visualTracks,
-                                      overlayTrackHeight,
-                                    )
+                                  ? activeDragForOverlay.previewDeltaY
                                   : undefined
                               }
                               isDragging={Boolean(activeDragForOverlay)}
@@ -1341,16 +1365,17 @@ export function Timeline({
                     </ContextMenu.Content>
                   </ContextMenu>
                 </div>
+                <TrackDropZone
+                  gapIndex={index + 1}
+                  active={Boolean(dragState)}
+                  highlighted={dragState?.dropGapIndex === index + 1}
+                  ref={(el) => {
+                    gapRefs.current[index + 1] = el;
+                  }}
+                />
+                </Fragment>
               );
             })}
-            <TrackDropZone
-              position="bottom"
-              active={Boolean(dragState)}
-              highlighted={dragState?.dropZoneHover === 'bottom'}
-              width={contentWidth}
-              left={sidebarWidth}
-              bottom={-36}
-            />
             </div>
 
             <SnapGuides
@@ -1358,7 +1383,12 @@ export function Timeline({
               pxPerMs={pxPerMs}
               sidebarWidth={sidebarWidth}
               height={Math.max(
-                overlayTrackHeight * Math.max(visualTracks.length, 1) + audioTrackHeight + subtitleTrackHeight + rulerHeight,
+                overlayTrackHeight * Math.max(visualTracks.length, 1)
+                  + audioTrackHeight
+                  + subtitleTrackHeight
+                  + rulerHeight
+                  // gap 展开后的额外高度,避免拖拽期间 guide 被挤出视图底部
+                  + (dragState ? 28 * (visualTracks.length + 1) : 0),
                 240,
               )}
               top={0}

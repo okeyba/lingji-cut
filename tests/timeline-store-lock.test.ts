@@ -69,4 +69,32 @@ describe('track lock & createTrackAt', () => {
       .sort((a, b) => a.order - b.order);
     expect(visualTracks[visualTracks.length - 1].id).toBe(id);
   });
+
+  it('createTrackAt gap inserts at exact index with re-normalized order', () => {
+    useTimelineStore.setState((s) => ({
+      timeline: {
+        ...s.timeline,
+        tracks: [
+          { id: 'audio', kind: 'audio', label: 'A', order: 0, locked: true },
+          { id: 'visual-1', kind: 'visual', label: 'V1', order: 0 },
+          { id: 'visual-2', kind: 'visual', label: 'V2', order: 1 },
+          { id: 'visual-3', kind: 'visual', label: 'V3', order: 2 },
+        ],
+      },
+    }));
+    const newId = useTimelineStore
+      .getState()
+      .createTrackAt({ kind: 'gap', gapIndex: 2 });
+    const visualTracks = useTimelineStore
+      .getState()
+      .timeline.tracks.filter((t) => t.kind === 'visual')
+      .sort((a, b) => a.order - b.order);
+    expect(visualTracks.map((t) => t.id)).toEqual([
+      'visual-1',
+      'visual-2',
+      newId,
+      'visual-3',
+    ]);
+    expect(visualTracks.map((t) => t.order)).toEqual([0, 1, 2, 3]);
+  });
 });

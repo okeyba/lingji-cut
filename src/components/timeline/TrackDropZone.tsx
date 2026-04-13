@@ -1,50 +1,32 @@
-import type { CSSProperties } from 'react';
+import { forwardRef } from 'react';
 import styles from '../Timeline.module.css';
 
 export interface TrackDropZoneProps {
-  position: 'top' | 'bottom';
+  /** 屏幕顺序的 gap 索引:0 = 最顶第一条轨道之前,N = 最底最后一条轨道之后 */
+  gapIndex: number;
+  /** 拖拽活跃期间 → 展开显示 */
   active: boolean;
+  /** 当前 hover 命中此 gap → 高亮 */
   highlighted: boolean;
-  width: number;
-  left: number;
-  /** 相对 content 容器的垂直定位；沿用 spec 里 -36px 偏移 */
-  top?: number | undefined;
-  bottom?: number | undefined;
 }
 
 /**
- * 拖拽 overlay 时显示在轨道区顶部 / 底部的"释放以新建轨道"虚线框。
- * 仅在 Timeline.tsx 的拖拽状态生效时渲染。
+ * 拖拽 overlay 时显示在每条 visual 轨道之间间隙里的 "释放新建轨道" 指示条。
+ * 平时高度为 0,拖拽开始后 CSS transition 展开到 28px,hover 命中时高亮。
  */
-export function TrackDropZone({
-  position,
-  active,
-  highlighted,
-  width,
-  left,
-  top,
-  bottom,
-}: TrackDropZoneProps) {
-  if (!active) return null;
-  const style: CSSProperties = {
-    width,
-    left,
-    opacity: highlighted ? 1 : 0.65,
-  };
-  if (top !== undefined) style.top = top;
-  if (bottom !== undefined) style.bottom = bottom;
-
-  const className = [
-    styles.trackDropZone,
-    position === 'top' ? styles.trackDropZoneTop : styles.trackDropZoneBottom,
-    highlighted ? styles.trackDropZoneHighlighted : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
-
-  return (
-    <div className={className} style={style} data-drop-position={position}>
-      <span>释放以新建轨道</span>
-    </div>
-  );
-}
+export const TrackDropZone = forwardRef<HTMLDivElement, TrackDropZoneProps>(
+  function TrackDropZone({ gapIndex, active, highlighted }, ref) {
+    return (
+      <div
+        ref={ref}
+        className={styles.trackDropZone}
+        data-active={active ? 'true' : 'false'}
+        data-highlighted={highlighted ? 'true' : 'false'}
+        data-gap-index={gapIndex}
+      >
+        <div className={styles.trackDropZoneLine} />
+        <span className={styles.trackDropZoneHint}>释放新建轨道</span>
+      </div>
+    );
+  },
+);
