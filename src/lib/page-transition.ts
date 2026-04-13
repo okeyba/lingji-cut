@@ -1,4 +1,5 @@
 import type { AppPage } from './electron-api';
+import type { TargetAndTransition, Transition } from 'framer-motion';
 
 export type PageTransitionReason = 'default' | 'close-project';
 
@@ -9,24 +10,16 @@ interface ResolvePageTransitionOptions {
   reducedMotion: boolean;
 }
 
-interface MotionState {
-  opacity: number;
-  y: number;
-}
-
 export interface PageTransitionConfig {
   enabled: boolean;
   contentKey: string;
-  initial: MotionState;
-  animate: MotionState;
-  exit: MotionState;
-  transition: {
-    duration: number;
-    ease: [number, number, number, number];
-  };
+  initial: TargetAndTransition;
+  animate: TargetAndTransition;
+  exit: TargetAndTransition;
+  transition: Transition;
 }
 
-const STATIC_STATE: MotionState = { opacity: 1, y: 0 };
+const STATIC_STATE: TargetAndTransition = { opacity: 1, y: 0 };
 const EASE_OUT_EXPO: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 export function resolvePageTransition({

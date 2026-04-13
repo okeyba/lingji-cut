@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { loadAISettings, saveAISettings } from '../../store/ai';
 import { Field, Input, Slider, Select, SaveButton, SettingsPageHeader } from '../../ui';
 import type { SelectOption } from '../../ui';
+import { hasUnsavedAIConfigChanges } from './ai-config-utils';
+import { useSettingsTabGuard } from './useSettingsTabGuard';
 import styles from './SettingsCommon.module.css';
 
 const MINIMAX_MODEL_OPTIONS: SelectOption[] = [
@@ -27,8 +29,39 @@ const EMOTION_OPTIONS: SelectOption[] = [
   { value: 'fluent', label: '生动（2.6 系列）' },
 ];
 
+interface TTSConfigTabProps {
+  onRegisterLeaveGuard?: (guard: (() => Promise<boolean>) | null) => void;
+}
 
-export function TTSConfigTab() {
+function createTTSSnapshot({
+  apiKey,
+  model,
+  voiceId,
+  speed,
+  vol,
+  pitch,
+  emotion,
+}: {
+  apiKey: string;
+  model: string;
+  voiceId: string;
+  speed: number;
+  vol: number;
+  pitch: number;
+  emotion: string;
+}): string {
+  return JSON.stringify({
+    apiKey: apiKey.trim(),
+    model,
+    voiceId: voiceId.trim(),
+    speed,
+    vol,
+    pitch,
+    emotion,
+  });
+}
+
+export function TTSConfigTab({ onRegisterLeaveGuard }: TTSConfigTabProps) {
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('speech-2.8-hd');
   const [voiceId, setVoiceId] = useState('male-qn-qingse');
@@ -37,23 +70,78 @@ export function TTSConfigTab() {
   const [pitch, setPitch] = useState(0);
   const [emotion, setEmotion] = useState('');
   const [saved, setSaved] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState('');
+  const saveFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     void loadAISettings().then((s) => {
-      if (!s) return;
-      setApiKey(s.minimaxApiKey ?? '');
-      setModel(s.minimaxModel ?? 'speech-2.8-hd');
-      setVoiceId(s.minimaxVoiceId ?? 'male-qn-qingse');
-      setSpeed(s.minimaxSpeed ?? 1.0);
-      setVol(s.minimaxVol ?? 1.0);
-      setPitch(s.minimaxPitch ?? 0);
-      setEmotion(s.minimaxEmotion ?? '');
+      const nextApiKey = s?.minimaxApiKey ?? '';
+      const nextModel = s?.minimaxModel ?? 'speech-2.8-hd';
+      const nextVoiceId = s?.minimaxVoiceId ?? 'male-qn-qingse';
+      const nextSpeed = s?.minimaxSpeed ?? 1.0;
+      const nextVol = s?.minimaxVol ?? 1.0;
+      const nextPitch = s?.minimaxPitch ?? 0;
+      const nextEmotion = s?.minimaxEmotion ?? '';
+
+      setApiKey(nextApiKey);
+      setModel(nextModel);
+      setVoiceId(nextVoiceId);
+      setSpeed(nextSpeed);
+      setVol(nextVol);
+      setPitch(nextPitch);
+      setEmotion(nextEmotion);
+      setLastSavedSnapshot(
+        createTTSSnapshot({
+          apiKey: nextApiKey,
+          model: nextModel,
+          voiceId: nextVoiceId,
+          speed: nextSpeed,
+          vol: nextVol,
+          pitch: nextPitch,
+          emotion: nextEmotion,
+        }),
+      );
+      setHasLoaded(true);
     });
   }, []);
 
-  const handleSave = () => {
-    void loadAISettings().then((current) => {
-      void saveAISettings({
+  useEffect(
+    () => () => {
+      if (saveFeedbackTimerRef.current) {
+        clearTimeout(saveFeedbackTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const currentSnapshot = useMemo(
+    () =>
+      createTTSSnapshot({
+        apiKey,
+        model,
+        voiceId,
+        speed,
+        vol,
+        pitch,
+        emotion,
+      }),
+    [apiKey, model, voiceId, speed, vol, pitch, emotion],
+  );
+
+  const hasUnsavedChanges =
+    hasLoaded && hasUnsavedAIConfigChanges(lastSavedSnapshot, currentSnapshot);
+
+  useEffect(() => {
+    if (hasUnsavedChanges && saved) {
+      setSaved(false);
+    }
+  }, [hasUnsavedChanges, saved]);
+
+  const handleSave = useCallback(async () => {
+    try {
+      const current = await loadAISettings();
+      await saveAISettings({
         ...(current ?? {
           llmProviders: [],
           defaultProviderId: null,
@@ -71,12 +159,28 @@ export function TTSConfigTab() {
         minimaxVol: vol,
         minimaxPitch: pitch,
         minimaxEmotion: emotion,
-      }).then(() => {
-        setSaved(true);
-        setTimeout(() => setSaved(false), 2000);
       });
-    });
-  };
+      setApiKey(apiKey.trim());
+      setVoiceId(voiceId.trim());
+      setLastSavedSnapshot(currentSnapshot);
+      setSaved(true);
+      if (saveFeedbackTimerRef.current) {
+        clearTimeout(saveFeedbackTimerRef.current);
+      }
+      saveFeedbackTimerRef.current = setTimeout(() => setSaved(false), 2000);
+      return true;
+    } catch (error) {
+      window.alert(error instanceof Error ? `保存 TTS 配置失败：${error.message}` : '保存 TTS 配置失败，请稍后重试。');
+      return false;
+    }
+  }, [apiKey, currentSnapshot, emotion, model, pitch, speed, voiceId, vol]);
+
+  useSettingsTabGuard({
+    title: 'TTS 配置',
+    hasUnsavedChanges,
+    onSave: handleSave,
+    onRegisterLeaveGuard,
+  });
 
   return (
     <>
@@ -136,8 +240,11 @@ export function TTSConfigTab() {
       </div>
 
       <SaveButton
-        onClick={handleSave}
+        onClick={() => {
+          void handleSave();
+        }}
         saved={saved}
+        disabled={!hasLoaded || !hasUnsavedChanges}
         defaultLabel="保存 TTS 配置"
         className={styles.saveButton}
       />

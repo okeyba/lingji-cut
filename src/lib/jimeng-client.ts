@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid';
-import type { AISettings, CoverCandidate } from '../types/ai';
+import { DEFAULT_JIMENG_MODEL, type AISettings, type CoverCandidate } from '../types/ai';
 
 interface JimengApiResponse {
   data?: Array<{ url?: string | null } | null> | null;
@@ -29,7 +29,7 @@ export function buildJimengImageRequest(
       Authorization: `Bearer ${settings.jimengSessionId}`,
     },
     body: {
-      model: settings.jimengModel ?? 'jimeng-4.5',
+      model: settings.jimengModel?.trim() || DEFAULT_JIMENG_MODEL,
       prompt,
       ratio: '16:9',
       resolution: '2k',

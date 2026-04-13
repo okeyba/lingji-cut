@@ -93,6 +93,22 @@
   color: var(--color-text-secondary);
 }
 
+.fieldLabelRow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.requiredMark {
+  font-size: var(--font-size-md);
+  color: var(--color-system-red);
+}
+
+.fieldError {
+  font-size: var(--font-size-md);
+  color: var(--color-system-red);
+}
+
 .hintText {
   margin: 0;
   font-size: var(--font-size-md);
@@ -132,6 +148,11 @@
 
 .defaultCheckbox {
   color: var(--color-text-secondary);
+}
+
+.footerError {
+  font-size: var(--font-size-md);
+  color: var(--color-system-red);
 }
 
 @media (max-width: 640px) {

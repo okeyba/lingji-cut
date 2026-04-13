@@ -83,9 +83,9 @@ describe('script shell components', () => {
       '../src/components/script/FileTreePanel'
     );
 
-    expect(reconcileExpandedDirectories(nestedEntries, {})).toEqual({ drafts: true });
-    expect(reconcileExpandedDirectories(nestedEntries, { drafts: false })).toEqual({
-      drafts: false,
+    expect(reconcileExpandedDirectories(nestedEntries, {})).toEqual({ drafts: false });
+    expect(reconcileExpandedDirectories(nestedEntries, { drafts: true })).toEqual({
+      drafts: true,
     });
 
     const html = renderToStaticMarkup(

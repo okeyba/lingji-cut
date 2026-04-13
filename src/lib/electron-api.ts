@@ -1,7 +1,7 @@
 import type { ExportConfig } from './export-settings';
 import type { AppLogEntry } from './app-log';
 import type { SrtEntry } from '../types';
-import type { AICard, AISettings, CoverCandidate } from '../types/ai';
+import type { AICard, AISegment, AISettings, CoverCandidate } from '../types/ai';
 import type { ImportKind } from './import-files';
 import type {
   VideoImportProgress,
@@ -111,9 +111,12 @@ export interface ElectronAPI {
   regenerateAICard: (args: {
     entries: SrtEntry[];
     card: AICard;
+    segment: AISegment;
     settings: AISettings;
     globalPrompt?: string;
     cardPrompt?: string;
+    programSummary?: string;
+    keywords?: string[];
   }) => Promise<AICard>;
   regenerateCoverPrompt: (args: {
     entries: SrtEntry[];
@@ -132,6 +135,7 @@ export interface ElectronAPI {
   loadAIAnalysis: (projectDir: string) => Promise<string | null>;
   loadProject: (projectDir: string) => Promise<string>;
   saveProjectSection: (projectDir: string, section: string, data: string) => Promise<void>;
+  getInitialGlobalSettings: () => string | null;
   loadGlobalSettings: () => Promise<string | null>;
   saveGlobalSettings: (data: string) => Promise<void>;
   getProjectMetadata: (projectDir: string) => Promise<ProjectMetadata>;

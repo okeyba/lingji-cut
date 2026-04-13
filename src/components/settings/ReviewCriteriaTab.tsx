@@ -1,21 +1,78 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { loadReviewCriteria, saveReviewCriteria } from '../../lib/settings-storage';
 import { Alert, SaveButton, SettingsPageHeader, Textarea } from '../../ui';
+import { hasUnsavedAIConfigChanges } from './ai-config-utils';
+import { useSettingsTabGuard } from './useSettingsTabGuard';
 import styles from './SettingsCommon.module.css';
 
-export function ReviewCriteriaTab() {
+interface ReviewCriteriaTabProps {
+  onRegisterLeaveGuard?: (guard: (() => Promise<boolean>) | null) => void;
+}
+
+function createReviewCriteriaSnapshot(criteria: string): string {
+  return JSON.stringify({ criteria: criteria.trim() });
+}
+
+export function ReviewCriteriaTab({ onRegisterLeaveGuard }: ReviewCriteriaTabProps) {
   const [criteria, setCriteria] = useState('');
   const [saved, setSaved] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState('');
+  const saveFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setCriteria(loadReviewCriteria());
+    const nextCriteria = loadReviewCriteria();
+    setCriteria(nextCriteria);
+    setLastSavedSnapshot(createReviewCriteriaSnapshot(nextCriteria));
+    setHasLoaded(true);
   }, []);
 
-  const handleSave = () => {
-    saveReviewCriteria(criteria);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
+  useEffect(
+    () => () => {
+      if (saveFeedbackTimerRef.current) {
+        clearTimeout(saveFeedbackTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const currentSnapshot = useMemo(
+    () => createReviewCriteriaSnapshot(criteria),
+    [criteria],
+  );
+
+  const hasUnsavedChanges =
+    hasLoaded && hasUnsavedAIConfigChanges(lastSavedSnapshot, currentSnapshot);
+
+  useEffect(() => {
+    if (hasUnsavedChanges && saved) {
+      setSaved(false);
+    }
+  }, [hasUnsavedChanges, saved]);
+
+  const handleSave = useCallback(async () => {
+    try {
+      await saveReviewCriteria(criteria);
+      setCriteria(criteria.trim());
+      setLastSavedSnapshot(createReviewCriteriaSnapshot(criteria));
+      setSaved(true);
+      if (saveFeedbackTimerRef.current) {
+        clearTimeout(saveFeedbackTimerRef.current);
+      }
+      saveFeedbackTimerRef.current = setTimeout(() => setSaved(false), 2000);
+      return true;
+    } catch (error) {
+      window.alert(error instanceof Error ? `保存审查规范失败：${error.message}` : '保存审查规范失败，请稍后重试。');
+      return false;
+    }
+  }, [criteria]);
+
+  useSettingsTabGuard({
+    title: '审查规范',
+    hasUnsavedChanges,
+    onSave: handleSave,
+    onRegisterLeaveGuard,
+  });
 
   return (
     <>
@@ -40,8 +97,11 @@ export function ReviewCriteriaTab() {
       />
 
       <SaveButton
-        onClick={handleSave}
+        onClick={() => {
+          void handleSave();
+        }}
         saved={saved}
+        disabled={!hasLoaded || !hasUnsavedChanges}
         defaultLabel="保存审查规范"
         className={styles.saveButton}
       />

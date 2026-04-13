@@ -11,7 +11,6 @@ import { getMcpServerStatus } from '../mcp/server';
 import type { PermissionPolicy } from './types';
 
 const CONFIG_PATH = path.join(os.homedir(), '.lingji', 'agent-config.json');
-const LEGACY_CONVERSATION_ID = 0;
 
 const config = new AgentConfig(CONFIG_PATH);
 const binaryManager = new BinaryManager();
@@ -24,26 +23,6 @@ interface RuntimeConnectPayload {
   agentType?: string;
 }
 
-function normalizeLegacyConnectArgs(
-  projectDirOrPayload: string | RuntimeConnectPayload,
-  sessionId?: string | null,
-): RuntimeConnectPayload {
-  if (typeof projectDirOrPayload === 'string') {
-    return {
-      conversationId: LEGACY_CONVERSATION_ID,
-      projectDir: projectDirOrPayload,
-      sessionId: sessionId ?? null,
-      agentType: 'claude-acp',
-    };
-  }
-  return {
-    conversationId: projectDirOrPayload.conversationId,
-    projectDir: projectDirOrPayload.projectDir,
-    sessionId: projectDirOrPayload.sessionId ?? null,
-    agentType: projectDirOrPayload.agentType ?? 'claude-acp',
-  };
-}
-
 export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): void {
   // 启动时确保 nvm/fnm/volta 的 node 在 PATH 中
   binaryManager.ensureNodeInPath();
@@ -51,10 +30,6 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
   const sendToRenderer = (channel: string, ...args: unknown[]) => {
     getMainWindow()?.webContents.send(channel, ...args);
   };
-
-  ipcMain.handle('agent:get-status', () => {
-    return connectionRegistry.get(LEGACY_CONVERSATION_ID)?.status ?? 'disconnected';
-  });
 
   async function connectRuntime(payload: RuntimeConnectPayload): Promise<void> {
     const configData = await config.load();
@@ -105,80 +80,40 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
 
   connectionRegistry.on('status', ({ conversationId, status }) => {
     sendToRenderer('agent:runtime-status', { conversationId, status });
-    if (conversationId === LEGACY_CONVERSATION_ID) {
-      sendToRenderer('agent:status', status);
-    }
   });
   connectionRegistry.on('event', ({ conversationId, event }) => {
     sendToRenderer('agent:runtime-event', { conversationId, event });
-    if (conversationId === LEGACY_CONVERSATION_ID) {
-      sendToRenderer('agent:event', event);
-    }
   });
   connectionRegistry.on('capabilities', ({ conversationId, capabilities }) => {
     sendToRenderer('agent:runtime-capabilities', { conversationId, capabilities });
-    if (conversationId === LEGACY_CONVERSATION_ID) {
-      sendToRenderer('agent:capabilities', capabilities);
-    }
   });
   connectionRegistry.on('file_changed', ({ conversationId, change }) => {
     const eventPayload = { type: 'file_changed', ...(change as object) };
     sendToRenderer('agent:runtime-event', { conversationId, event: eventPayload });
-    if (conversationId === LEGACY_CONVERSATION_ID) {
-      sendToRenderer('agent:event', eventPayload);
-    }
-  });
-
-  ipcMain.handle('agent:connect', async (_event, projectDirOrPayload: string | RuntimeConnectPayload, sessionId?: string | null) => {
-    await connectRuntime(normalizeLegacyConnectArgs(projectDirOrPayload, sessionId));
   });
 
   ipcMain.handle('agent:connect-runtime', async (_event, payload: RuntimeConnectPayload) => {
     await connectRuntime(payload);
   });
 
-  ipcMain.handle('agent:disconnect', async () => {
-    connectionRegistry.disconnect(LEGACY_CONVERSATION_ID);
-  });
-
   ipcMain.handle('agent:disconnect-runtime', async (_event, conversationId: number) => {
     connectionRegistry.disconnect(conversationId);
-  });
-
-  ipcMain.handle('agent:send-prompt', async (_event, contents: unknown[]) => {
-    await connectionRegistry.sendPrompt(LEGACY_CONVERSATION_ID, contents);
   });
 
   ipcMain.handle('agent:send-prompt-runtime', async (_event, conversationId: number, contents: unknown[]) => {
     await connectionRegistry.sendPrompt(conversationId, contents);
   });
 
-  ipcMain.handle('agent:cancel-turn', async () => {
-    await connectionRegistry.cancelTurn(LEGACY_CONVERSATION_ID);
-  });
-
   ipcMain.handle('agent:cancel-turn-runtime', async (_event, conversationId: number) => {
     await connectionRegistry.cancelTurn(conversationId);
-  });
-
-  ipcMain.handle('agent:set-mode', async (_event, modeId: string) => {
-    await connectionRegistry.setMode(LEGACY_CONVERSATION_ID, modeId);
   });
 
   ipcMain.handle('agent:set-mode-runtime', async (_event, conversationId: number, modeId: string) => {
     await connectionRegistry.setMode(conversationId, modeId);
   });
 
-  ipcMain.handle('agent:set-config-option', async (_event, configId: string, valueId: string) => {
-    await connectionRegistry.setConfigOption(LEGACY_CONVERSATION_ID, configId, valueId);
-  });
-
   ipcMain.handle('agent:set-config-option-runtime', async (_event, conversationId: number, configId: string, valueId: string) => {
     await connectionRegistry.setConfigOption(conversationId, configId, valueId);
-  });
-
-  ipcMain.handle('agent:respond-permission', async (_event, requestId: string, optionId: string) => {
-    await connectionRegistry.respondPermission(LEGACY_CONVERSATION_ID, requestId, optionId);
   });
 
   ipcMain.handle('agent:respond-permission-runtime', async (_event, conversationId: number, requestId: string, optionId: string) => {

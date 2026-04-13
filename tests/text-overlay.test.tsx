@@ -85,20 +85,23 @@ describe('TextOverlay', () => {
     expect(html).toContain('2px #FF0000');
   });
 
-  it('prefers overlay motion over legacy text animation fields', () => {
+  it('uses textData.animation as the source of truth for text overlays', () => {
+    // TextInspector 只会写入 textData.animation，timeline 归一化会把它物化到
+    // overlay.motion。如果渲染器还按 overlay.motion 优先，修改入场/出场/循环
+    // 就无法立刻生效。确保文字图层始终读取最新的 textData.animation。
     const animatedOverlay: OverlayItem = {
       ...mockOverlay,
       motion: {
-        enter: 'slideInLeft',
+        enter: 'none',
         enterDurationMs: 500,
         exit: 'none',
         exitDurationMs: 400,
         loop: 'none',
       },
       textData: createDefaultTextData({
-        content: 'Motion First',
+        content: 'Animation First',
         animation: {
-          enter: 'none',
+          enter: 'slideInLeft',
           enterDurationMs: 500,
           exit: 'none',
           exitDurationMs: 500,

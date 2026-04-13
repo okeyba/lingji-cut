@@ -3,6 +3,7 @@
   height: 100%;
   min-height: 0;
   background: var(--color-window-bg);
+  position: relative;
 }
 
 .workspace {

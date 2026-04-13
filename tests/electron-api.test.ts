@@ -18,6 +18,8 @@ describe('electron menu actions', () => {
       'export',
       'save-script',
       'go-back',
+      'find',
+      'find-replace',
     ]);
   });
 

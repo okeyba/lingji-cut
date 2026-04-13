@@ -45,6 +45,15 @@ describe('task-progress store', () => {
     expect(task!.phase).toBe('streaming');
   });
 
+  it('updateTask can switch category for multi-phase workflows', () => {
+    const store = useTaskProgressStore.getState();
+    store.startTask(makeTask({ id: 'task-2b', category: 'tts' }));
+    store.updateTask('task-2b', { category: 'cover', label: '封面图生成' });
+    const task = useTaskProgressStore.getState().tasks.get('task-2b');
+    expect(task!.category).toBe('cover');
+    expect(task!.label).toBe('封面图生成');
+  });
+
   it('completeTask sets completed status and auto-removes after 5s', () => {
     const store = useTaskProgressStore.getState();
     store.startTask(makeTask({ id: 'task-3' }));

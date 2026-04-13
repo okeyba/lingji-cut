@@ -47,7 +47,6 @@ export function Toolbar({
   onCommand,
 }: ToolbarProps) {
   const toggleAgent = useAgentStore((s) => s.toggleSidebar);
-  const agentStatus = useAgentStore((s) => s.status);
 
   const isEditorPage = page === 'editor';
   // 有项目时所有页面都显示项目名，无项目时显示页面标题
@@ -124,12 +123,7 @@ export function Toolbar({
               aria-label="AI Agent"
               onClick={toggleAgent}
             >
-              <BotMessageSquare
-                size={16}
-                style={{
-                  color: agentStatus === 'connected' || agentStatus === 'prompting' ? '#32D74B' : undefined,
-                }}
-              />
+              <BotMessageSquare size={16} />
             </Button.Icon>
           </TooltipTrigger>
           <TooltipContent side="bottom">AI Agent (⌘⇧A)</TooltipContent>

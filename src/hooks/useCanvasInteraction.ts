@@ -12,17 +12,24 @@ interface DragState {
   handle?: ResizeHandle;
 }
 
+interface StageRectSnapshot {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 interface UseCanvasInteractionParams {
   canvasWidth: number;
   canvasHeight: number;
-  stageRect: DOMRect | null;
+  getStageRect: () => StageRectSnapshot | null;
   onUpdatePosition: (overlayId: string, position: OverlayPosition) => void;
 }
 
 function screenToCanvas(
   mouseX: number,
   mouseY: number,
-  stageRect: DOMRect,
+  stageRect: StageRectSnapshot,
   canvasWidth: number,
   canvasHeight: number,
 ): { x: number; y: number } {
@@ -30,6 +37,10 @@ function screenToCanvas(
     x: ((mouseX - stageRect.left) / stageRect.width) * canvasWidth,
     y: ((mouseY - stageRect.top) / stageRect.height) * canvasHeight,
   };
+}
+
+function isStageRectUsable(rect: StageRectSnapshot | null): rect is StageRectSnapshot {
+  return !!rect && rect.width > 0 && rect.height > 0;
 }
 
 const MIN_SIZE_RATIO = 0.05;
@@ -52,7 +63,7 @@ function constrainPosition(
 export function useCanvasInteraction({
   canvasWidth,
   canvasHeight,
-  stageRect,
+  getStageRect,
   onUpdatePosition,
 }: UseCanvasInteractionParams) {
   const [state, setState] = useState<InteractionState>('idle');
@@ -91,7 +102,9 @@ export function useCanvasInteraction({
 
   const onMouseMove = useCallback(
     (mouseX: number, mouseY: number) => {
-      if (!stageRect || !dragRef.current || !activeOverlayRef.current) return;
+      if (!dragRef.current || !activeOverlayRef.current) return;
+      const stageRect = getStageRect();
+      if (!isStageRectUsable(stageRect)) return;
 
       const drag = dragRef.current;
       const current = screenToCanvas(mouseX, mouseY, stageRect, canvasWidth, canvasHeight);
@@ -118,7 +131,7 @@ export function useCanvasInteraction({
 
       onUpdatePosition(activeOverlayRef.current, constrainPosition(next, canvasWidth, canvasHeight));
     },
-    [canvasWidth, canvasHeight, stageRect, state, onUpdatePosition],
+    [canvasWidth, canvasHeight, getStageRect, state, onUpdatePosition],
   );
 
   const endInteraction = useCallback(() => {

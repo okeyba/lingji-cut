@@ -9,6 +9,7 @@ import type {
   PendingPermission,
 } from '../types/conversation';
 import { useConversationWorkspace } from './conversation-workspace-context';
+import { useAgentStore } from '../store/agent';
 
 type ConnectionsMap = Record<number, ConversationConnectionState>;
 
@@ -427,6 +428,34 @@ export function AcpConnectionsProvider({ children }: AcpConnectionsProviderProps
       unsubStatus();
       unsubEvent();
       unsubCaps();
+    };
+  }, []);
+
+  // ─── 将当前 active 会话的连接状态镜像到全局 useAgentStore ─────────
+  // 背景：AppStatusBar / Toolbar 等旧组件仍从 useAgentStore 读取 status / contextUsage，
+  // 但 ACP 已迁移到 per-conversation 的 connections map；如果不桥接，右下角会永远显示
+  // "未连接"。这里在 provider 作用域内维护一条单向同步。
+  useEffect(() => {
+    const store = useAgentStore.getState();
+    const conn = activeConversationId != null ? connections[activeConversationId] : null;
+    if (!conn) {
+      store.setStatus('disconnected');
+      store.setContextUsage(null);
+      store.setAutoConnectError(null);
+      return;
+    }
+    store.setStatus(conn.status);
+    store.setContextUsage(conn.usage ?? null);
+    store.setAutoConnectError(conn.error ?? null);
+  }, [activeConversationId, connections]);
+
+  // Provider 卸载（关闭 Agent 侧边栏）时，复位全局 store，避免残留上一次的状态。
+  useEffect(() => {
+    return () => {
+      const store = useAgentStore.getState();
+      store.setStatus('disconnected');
+      store.setContextUsage(null);
+      store.setAutoConnectError(null);
     };
   }, []);
 

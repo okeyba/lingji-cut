@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pencil, Plus, Trash2, Eye } from 'lucide-react';
 import { SCRIPT_TEMPLATES } from '../../lib/script-templates';
 import {
@@ -21,6 +21,10 @@ export function TemplateManagerTab() {
   const [description, setDescription] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
 
+  useEffect(() => {
+    setCustoms(loadCustomTemplates());
+  }, []);
+
   const startNew = () => {
     setIsNew(true);
     setEditing(null);
@@ -40,20 +44,24 @@ export function TemplateManagerTab() {
   const handleSave = useCallback(() => {
     if (!name.trim() || !systemPrompt.trim()) return;
 
-    if (isNew) {
-      addCustomTemplate({ name, description, systemPrompt });
-    } else if (editing) {
-      updateCustomTemplate(editing.id, { name, description, systemPrompt });
-    }
+    void (async () => {
+      if (isNew) {
+        await addCustomTemplate({ name, description, systemPrompt });
+      } else if (editing) {
+        await updateCustomTemplate(editing.id, { name, description, systemPrompt });
+      }
 
-    setCustoms(loadCustomTemplates());
-    setEditing(null);
-    setIsNew(false);
+      setCustoms(loadCustomTemplates());
+      setEditing(null);
+      setIsNew(false);
+    })();
   }, [description, editing, isNew, name, systemPrompt]);
 
   const handleDelete = useCallback((id: string) => {
-    deleteCustomTemplate(id);
-    setCustoms(loadCustomTemplates());
+    void (async () => {
+      await deleteCustomTemplate(id);
+      setCustoms(loadCustomTemplates());
+    })();
   }, []);
 
   const isEditorOpen = isNew || editing !== null;

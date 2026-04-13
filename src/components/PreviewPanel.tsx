@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Player, type PlayerRef } from '@remotion/player';
 import { fitPreviewStage } from '../lib/preview';
-import { formatTime, msToFrame } from '../lib/utils';
+import { formatTime, getEffectiveTimelineDurationMs, msToFrame } from '../lib/utils';
 import { PodcastComposition } from '../remotion/PodcastComposition';
 import { useTimelineStore } from '../store/timeline';
 import { Button, Card, Tooltip, TooltipContent, TooltipTrigger } from '../ui';
@@ -36,19 +36,32 @@ function PreviewPanelComponent({
 }: PreviewPanelProps) {
   const { timeline, srtEntries } = useTimelineStore();
   const fps = timeline.fps || 30;
+  // 把所有 overlay（含动画卡片、媒体）的最远结束时间纳入计算，避免没素材时
+  // Player 默认只有 1 秒导致动画播一秒就结束。
+  const effectiveDurationMs = useMemo(() => getEffectiveTimelineDurationMs(timeline), [timeline]);
   const durationInFrames = useMemo(
-    () => Math.max(1, msToFrame(timeline.podcast.durationMs || 1000, fps)),
-    [fps, timeline.podcast.durationMs],
+    () => Math.max(1, msToFrame(effectiveDurationMs, fps)),
+    [effectiveDurationMs, fps],
   );
   const playerInputProps = useMemo(() => ({ timeline, srtEntries }), [srtEntries, timeline]);
   const cardRef = useRef<HTMLDivElement>(null);
   const previewAreaRef = useRef<HTMLDivElement | null>(null);
   const stageFrameRef = useRef<HTMLDivElement>(null);
-  const [stageFrameRect, setStageFrameRect] = useState<DOMRect | null>(null);
   const [stageSize, setStageSize] = useState(() => ({
     width: timeline.width,
     height: timeline.height,
   }));
+  // 注意：不要把 stage rect 缓存到 state。
+  // stageRect 在初次挂载时可能还没完成布局（或被父级 max-width 约束成 0），
+  // 此时缓存的值会导致 screenToCanvas 除以 0，拖动时出现 NaN/Infinity，
+  // 最终被 clamp 到画布四个角。改为在真正拖动时从 ref 现读，避免任何时序问题。
+  const getStageRect = useCallback(() => {
+    const el = stageFrameRef.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+  }, []);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
@@ -81,9 +94,6 @@ function PreviewPanelComponent({
         timeline.height,
       );
       setStageSize(nextStageSize);
-      if (stageFrameRef.current) {
-        setStageFrameRect(stageFrameRef.current.getBoundingClientRect());
-      }
     };
 
     updateStageSize();
@@ -159,7 +169,7 @@ function PreviewPanelComponent({
               currentTimeMs={currentTimeMs}
               canvasWidth={timeline.width}
               canvasHeight={timeline.height}
-              stageRect={stageFrameRect}
+              getStageRect={getStageRect}
               onSelect={onSelectOverlay}
               onUpdatePosition={onUpdateOverlayPosition ?? (() => {})}
             />

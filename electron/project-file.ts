@@ -7,7 +7,6 @@ import {
   type ProjectData,
   type ProjectSection,
 } from '../src/lib/project-persistence';
-import { parsePersistedAIState } from '../src/lib/ai-persistence';
 import { parsePersistedScriptState } from '../src/lib/script-persistence';
 import { materializeTimelineWebCards, materializePersistedAIState } from './web-card-storage';
 import type { TimelineData } from '../src/types';
@@ -71,18 +70,6 @@ async function migrateFromLegacyFiles(projectDir: string): Promise<ProjectData> 
     data.timeline = legacyTimeline;
   }
 
-  // 迁移 ai-analysis.json
-  const legacyAI = await tryReadLegacyFile<unknown>(path.join(projectDir, 'ai-analysis.json'));
-  if (legacyAI) {
-    const parsed = parsePersistedAIState(legacyAI);
-    if (parsed) {
-      data.aiAnalysis = {
-        analysisResult: parsed.analysisResult,
-        coverCandidates: parsed.coverCandidates,
-      };
-    }
-  }
-
   // 迁移 script-state.json
   const legacyScript = await tryReadLegacyFile<unknown>(
     path.join(projectDir, 'script-state.json'),
@@ -120,6 +107,28 @@ async function migrateFromLegacyFiles(projectDir: string): Promise<ProjectData> 
   return data;
 }
 
+async function hydrateExistingProjectData(projectDir: string, data: ProjectData): Promise<ProjectData> {
+  const currentAI = data.aiAnalysis ?? {
+    analysisResult: null,
+    coverCandidates: [],
+    motionCards: [],
+  };
+  if (Array.isArray(currentAI.motionCards)) {
+    return data;
+  }
+  const nextData: ProjectData = {
+    ...data,
+    aiAnalysis: {
+      analysisResult: currentAI.analysisResult ?? null,
+      coverCandidates: currentAI.coverCandidates ?? [],
+      motionCards: [],
+    },
+  };
+
+  await writeProjectJson(projectDir, nextData);
+  return nextData;
+}
+
 /**
  * 加载项目文件：
  * 1. 若 project.json 存在，直接读取
@@ -128,7 +137,7 @@ async function migrateFromLegacyFiles(projectDir: string): Promise<ProjectData> 
  */
 export async function loadProjectFile(projectDir: string): Promise<ProjectData> {
   const existing = await readProjectJson(projectDir);
-  if (existing) return existing;
+  if (existing) return hydrateExistingProjectData(projectDir, existing);
 
   const hasLegacy =
     existsSync(path.join(projectDir, 'timeline.json')) ||
@@ -167,15 +176,18 @@ export async function saveProjectSection(
       const aiValue = sectionValue as {
         analysisResult: ProjectData['aiAnalysis']['analysisResult'];
         coverCandidates: ProjectData['aiAnalysis']['coverCandidates'];
+        motionCards?: ProjectData['aiAnalysis']['motionCards'];
       };
       const { data: materialized } = await materializePersistedAIState(projectDir, {
-        version: 1,
+        version: 2,
         analysisResult: aiValue.analysisResult,
         coverCandidates: aiValue.coverCandidates,
+        motionCards: aiValue.motionCards ?? [],
       });
       sectionValue = {
         analysisResult: materialized.analysisResult,
         coverCandidates: materialized.coverCandidates,
+        motionCards: materialized.motionCards ?? [],
       };
     }
 

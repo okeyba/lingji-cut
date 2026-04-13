@@ -1,6 +1,9 @@
-export type AICardType = 'summary' | 'data' | 'insight' | 'chapter' | 'quote';
+import type { MotionCardPayload } from './motion';
+export type { MotionCardPayload } from './motion';
+
+export type AICardType = 'summary' | 'data' | 'insight' | 'chapter' | 'quote' | 'motion';
 export type AICardDisplayMode = 'fullscreen' | 'pip';
-export type AICardRenderMode = 'legacy' | 'web-card';
+export type AICardRenderMode = 'legacy' | 'web-card' | 'motion-card';
 
 export interface DataContent {
   chartType: 'bar' | 'comparison' | 'ranking' | 'stat';
@@ -24,8 +27,18 @@ export interface WebCardPayload {
   lastGeneratedAt?: number;
 }
 
+export interface AISegment {
+  id: string;
+  title: string;
+  summary: string;
+  startMs: number;
+  endMs: number;
+  transcriptExcerpt?: string;
+}
+
 export interface AICard {
   id: string;
+  segmentId: string;
   type: AICardType;
   title: string;
   content: string | DataContent;
@@ -39,6 +52,7 @@ export interface AICard {
   renderMode?: AICardRenderMode;
   cardPrompt?: string;
   webCard?: WebCardPayload;
+  motionCard?: MotionCardPayload;
 }
 
 export interface CoverCandidate {
@@ -50,6 +64,7 @@ export interface CoverCandidate {
 }
 
 export interface AIAnalysisResult {
+  segments: AISegment[];
   cards: AICard[];
   coverPrompts: string[];
   summary: string;
@@ -95,6 +110,8 @@ export interface AISettings {
   minimaxModel?: string;
 }
 
+export const DEFAULT_JIMENG_MODEL = 'jimeng-5.0';
+
 export interface AICardOverlayData {
   sourceCardId?: string;
   cardType: AICardType;
@@ -106,6 +123,7 @@ export interface AICardOverlayData {
   renderMode?: AICardRenderMode;
   cardPrompt?: string;
   webCard?: WebCardPayload;
+  motionCard?: MotionCardPayload;
   sourceStartMs?: number;
   sourceEndMs?: number;
 }
@@ -125,6 +143,7 @@ export const DEFAULT_CARD_STYLE: Record<AICardType, CardStyle> = {
   insight: { primaryColor: '#ffb347', backgroundColor: DEFAULT_CARD_BACKGROUND, fontSize: 48 },
   chapter: { primaryColor: '#9eb7ff', backgroundColor: DEFAULT_CARD_BACKGROUND, fontSize: 48 },
   quote: { primaryColor: '#ff8f7a', backgroundColor: DEFAULT_CARD_BACKGROUND, fontSize: 48 },
+  motion: { primaryColor: '#7df9ff', backgroundColor: DEFAULT_CARD_BACKGROUND, fontSize: 48 },
 };
 
 export const DEFAULT_CARD_DURATION_MS = 5_000;
@@ -138,7 +157,7 @@ export function getDefaultCardStyle(type: AICardType): CardStyle {
 }
 
 export function isAICardType(value: unknown): value is AICardType {
-  return ['summary', 'data', 'insight', 'chapter', 'quote'].includes(String(value));
+  return ['summary', 'data', 'insight', 'chapter', 'quote', 'motion'].includes(String(value));
 }
 
 export function isDataContent(value: unknown): value is DataContent {
@@ -165,16 +184,28 @@ export function buildAICardOverlayData(card: AICard): AICardOverlayData {
     renderMode: card.renderMode ?? 'legacy',
     cardPrompt: card.cardPrompt,
     webCard: card.webCard,
+    motionCard: card.motionCard,
     sourceStartMs: card.startMs,
     sourceEndMs: card.endMs,
   };
 }
 
 export function buildAICardTimelineDraft(card: AICard): AICardTimelineDraft {
+  const sourceStartMs = Number.isFinite(card.startMs) ? Math.max(0, Math.round(card.startMs)) : 0;
+  const sourceEndMs = Number.isFinite(card.endMs)
+    ? Math.max(sourceStartMs, Math.round(card.endMs))
+    : sourceStartMs;
+  const durationMs =
+    Number.isFinite(card.displayDurationMs) && card.displayDurationMs > 0
+      ? Math.round(card.displayDurationMs)
+      : DEFAULT_CARD_DURATION_MS;
+  const topicSpanMs = Math.max(0, sourceEndMs - sourceStartMs);
+  const timelineStartMs = topicSpanMs > durationMs ? sourceEndMs - durationMs : sourceStartMs;
+
   return {
     sourceCardId: card.id,
-    startMs: card.startMs,
-    durationMs: card.displayDurationMs,
+    startMs: timelineStartMs,
+    durationMs,
     aiCardData: buildAICardOverlayData(card),
   };
 }

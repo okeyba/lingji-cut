@@ -6,7 +6,14 @@ import {
   updateCardInResult,
 } from '../lib/ai-persistence';
 import { migrateToProviders } from '../lib/llm/provider-utils';
-import type { AIAnalysisResult, AICard, AISettings, CoverCandidate } from '../types/ai';
+import { loadGlobalSettingsFile, updateGlobalSettingsFile } from '../lib/global-settings-client';
+import {
+  DEFAULT_JIMENG_MODEL,
+  type AIAnalysisResult,
+  type AICard,
+  type AISettings,
+  type CoverCandidate,
+} from '../types/ai';
 import type { SaveStatus } from './timeline';
 import { getCurrentProjectDir } from './timeline';
 
@@ -38,7 +45,7 @@ export const DEFAULT_WORKFLOW: WorkflowState = {
 
 const AI_SETTINGS_LEGACY_KEY = 'podcast-editor-ai-settings';
 
-export type AITab = 'cards' | 'cover';
+export type AITab = 'cards' | 'cover' | 'motion';
 
 export interface AIStore {
   analysisResult: AIAnalysisResult | null;
@@ -46,6 +53,9 @@ export interface AIStore {
   analysisError: string | null;
   coverCandidates: CoverCandidate[];
   isGeneratingCovers: boolean;
+  motionCards: AICard[];
+  isGeneratingMotion: boolean;
+  motionError: string | null;
   activeTab: AITab;
   setAnalysisResult: (result: AIAnalysisResult) => void;
   setAnalyzing: (analyzing: boolean) => void;
@@ -56,6 +66,12 @@ export interface AIStore {
   selectCover: (candidateId: string) => void;
   setGeneratingCovers: (generating: boolean) => void;
   setActiveTab: (tab: AITab) => void;
+  setMotionCards: (cards: AICard[]) => void;
+  addMotionCard: (card: AICard) => void;
+  updateMotionCard: (cardId: string, updates: Partial<AICard>) => void;
+  removeMotionCard: (cardId: string) => void;
+  setGeneratingMotion: (generating: boolean) => void;
+  setMotionError: (error: string | null) => void;
   clearAnalysis: () => void;
   workflow: WorkflowState;
   setWorkflow: (updates: Partial<WorkflowState>) => void;
@@ -68,10 +84,17 @@ export const useAIStore = create<AIStore>((set) => ({
   analysisError: null,
   coverCandidates: [],
   isGeneratingCovers: false,
+  motionCards: [],
+  isGeneratingMotion: false,
+  motionError: null,
   activeTab: 'cards',
   setAnalysisResult: (result) => set({ analysisResult: result, analysisError: null }),
   setAnalyzing: (analyzing) => set({ isAnalyzing: analyzing }),
-  setAnalysisError: (error) => set({ analysisError: error, isAnalyzing: false }),
+  setAnalysisError: (error) =>
+    set((state) => ({
+      analysisError: error,
+      isAnalyzing: error ? false : state.isAnalyzing,
+    })),
   toggleCardEnabled: (cardId) =>
     set((state) => ({
       analysisResult: toggleCardEnabledInResult(state.analysisResult, cardId),
@@ -87,7 +110,32 @@ export const useAIStore = create<AIStore>((set) => ({
     })),
   setGeneratingCovers: (generating) => set({ isGeneratingCovers: generating }),
   setActiveTab: (tab) => set({ activeTab: tab }),
-  clearAnalysis: () => set({ analysisResult: null, analysisError: null, coverCandidates: [] }),
+  setMotionCards: (cards) => set({ motionCards: cards }),
+  addMotionCard: (card) =>
+    set((state) => ({
+      motionCards: [...state.motionCards, card],
+    })),
+  updateMotionCard: (cardId, updates) =>
+    set((state) => ({
+      motionCards: state.motionCards.map((card) =>
+        card.id === cardId ? { ...card, ...updates } : card,
+      ),
+    })),
+  removeMotionCard: (cardId) =>
+    set((state) => ({
+      motionCards: state.motionCards.filter((card) => card.id !== cardId),
+    })),
+  setGeneratingMotion: (generating) => set({ isGeneratingMotion: generating }),
+  setMotionError: (error) => set({ motionError: error }),
+  clearAnalysis: () =>
+    set({
+      analysisResult: null,
+      analysisError: null,
+      coverCandidates: [],
+      motionCards: [],
+      motionError: null,
+      isGeneratingMotion: false,
+    }),
   workflow: { ...DEFAULT_WORKFLOW },
   setWorkflow: (updates) =>
     set((state) => ({
@@ -98,11 +146,10 @@ export const useAIStore = create<AIStore>((set) => ({
 
 export async function loadAISettings(): Promise<AISettings | null> {
   // 优先从 Electron 全局存储读取
-  if (typeof window !== 'undefined' && window.electronAPI?.loadGlobalSettings) {
+  if (typeof window !== 'undefined' && window.electronAPI) {
     try {
-      const raw = await window.electronAPI.loadGlobalSettings();
-      if (raw) {
-        const file = JSON.parse(raw) as { aiSettings: AISettings };
+      const file = await loadGlobalSettingsFile();
+      if (file?.aiSettings) {
         const hadProviders =
           Array.isArray(file.aiSettings.llmProviders) &&
           file.aiSettings.llmProviders.length > 0;
@@ -112,6 +159,7 @@ export async function loadAISettings(): Promise<AISettings | null> {
           defaultProviderId: file.aiSettings.defaultProviderId ?? null,
           defaultModel: file.aiSettings.defaultModel ?? null,
           enableThinking: file.aiSettings.enableThinking ?? true,
+          jimengModel: file.aiSettings.jimengModel?.trim() || DEFAULT_JIMENG_MODEL,
           minimaxApiKey: file.aiSettings.minimaxApiKey ?? '',
           minimaxVoiceId: file.aiSettings.minimaxVoiceId ?? 'male-qn-qingse',
           minimaxSpeed: file.aiSettings.minimaxSpeed ?? 1.0,
@@ -144,6 +192,7 @@ export async function loadAISettings(): Promise<AISettings | null> {
           defaultProviderId: parsed.defaultProviderId ?? null,
           defaultModel: parsed.defaultModel ?? null,
           enableThinking: parsed.enableThinking ?? true,
+          jimengModel: parsed.jimengModel?.trim() || DEFAULT_JIMENG_MODEL,
           minimaxApiKey: parsed.minimaxApiKey ?? '',
           minimaxVoiceId: parsed.minimaxVoiceId ?? 'male-qn-qingse',
           minimaxSpeed: parsed.minimaxSpeed ?? 1.0,
@@ -167,9 +216,14 @@ export async function loadAISettings(): Promise<AISettings | null> {
 }
 
 export async function saveAISettings(settings: AISettings): Promise<void> {
-  if (typeof window !== 'undefined' && window.electronAPI?.saveGlobalSettings) {
-    const file = { aiSettings: settings };
-    await window.electronAPI.saveGlobalSettings(JSON.stringify(file));
+  if (typeof window !== 'undefined' && window.electronAPI) {
+    await updateGlobalSettingsFile((current) => ({
+      ...current,
+      aiSettings: {
+        ...settings,
+        jimengModel: settings.jimengModel?.trim() || DEFAULT_JIMENG_MODEL,
+      },
+    }));
   }
 }
 
@@ -205,7 +259,8 @@ if (typeof window !== 'undefined') {
   useAIStore.subscribe((state, prevState) => {
     if (
       state.analysisResult === prevState.analysisResult &&
-      state.coverCandidates === prevState.coverCandidates
+      state.coverCandidates === prevState.coverCandidates &&
+      state.motionCards === prevState.motionCards
     ) {
       return;
     }
@@ -224,6 +279,7 @@ if (typeof window !== 'undefined') {
       const persistedState = createPersistedAIState(
         state.analysisResult,
         state.coverCandidates,
+        state.motionCards,
       );
       void window.electronAPI
         .saveProjectSection(projectDir, 'aiAnalysis', JSON.stringify(persistedState))

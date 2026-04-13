@@ -27,7 +27,6 @@ import { useTaskProgressStore } from '../store/task-progress';
 import { loadAISettings } from '../store/ai';
 import { useTimelineStore } from '../store/timeline';
 import { resolveProvider } from '../lib/llm/provider-utils';
-import { getAllTemplates, getRoleById } from '../lib/script-templates';
 import { replaceEditorContent } from '../lib/editor-document';
 import { clearVirtualCursor } from '../lib/virtual-cursor';
 import { openSearchPanel } from '@codemirror/search';
@@ -800,7 +799,9 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
           phase: '准备中',
           level: 2,
           canCancel: canInterrupt,
-          onCancel: canInterrupt ? () => window.agentAPI?.cancelTurn() : undefined,
+          // 工作台的生成流不是 ACP 会话，而是内部 LLM 流。取消时只能停止本地
+          // 的打字机播放器；底层网络请求没有 AbortController，会继续跑到结束。
+          onCancel: canInterrupt ? () => stopActivePlayback() : undefined,
         });
 
         stopActivePlayback();
@@ -1030,7 +1031,8 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
         phase: '等待响应',
         level: 2,
         canCancel: true,
-        onCancel: () => window.agentAPI?.cancelTurn(),
+        // AI 审稿同样走内部 LLM 流，取消只做本地光标 / 扫描动画停止。
+        onCancel: () => reviewAnimatorRef.current?.stop(),
       });
       state.setEditorAgent({ readOnly: true, virtualCursorPos: 0, streamingActive: false });
       state.setActiveStream({
@@ -1351,41 +1353,6 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
     if (!window.mcpAPI) return;
     const unsubs: Array<() => void> = [];
 
-    // 获取编辑器状态
-    unsubs.push(
-      window.mcpAPI.onGetEditorState((payload: any) => {
-        const state = useScriptStore.getState();
-        window.mcpAPI!.reply(payload._replyChannel, {
-          projectDir: state.projectDir,
-          openFiles: state.fileEntries.map((f) => f.name),
-          activeFile: state.openedFile,
-          cursorPosition: null,
-        });
-      }),
-    );
-
-    // 读取脚本文件内容
-    unsubs.push(
-      window.mcpAPI.onReadScript((payload: any) => {
-        const state = useScriptStore.getState();
-        let filePath = payload.filePath || state.openedFile || 'script.md';
-        // 标准化：将绝对路径转为项目目录下的相对路径
-        if (state.projectDir && filePath.startsWith(state.projectDir)) {
-          filePath = filePath.slice(state.projectDir.length).replace(/^\//, '');
-        }
-        let content = '';
-        if (filePath === 'script.md') {
-          content = state.scriptText;
-        } else if (filePath === 'original.md') {
-          content = state.originalText;
-        } else {
-          content = state.extraFileContents[filePath] ?? '';
-        }
-        const lineCount = content ? content.split('\n').length : 0;
-        window.mcpAPI!.reply(payload._replyChannel, { filePath, content, lineCount });
-      }),
-    );
-
     // 生成脚本草稿（真实流式写入编辑器）
     unsubs.push(
       window.mcpAPI.onGenerateScript(async (payload: any) => {
@@ -1545,137 +1512,6 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
           success: true,
           filePath,
           linesChanged: changedLines.length,
-        });
-      }),
-    );
-
-    // 提交审查批注
-    unsubs.push(
-      window.mcpAPI.onSubmitReview((payload: any) => {
-        const state = useScriptStore.getState();
-        const annotationsInput: Array<{
-          quotedText?: string;
-          line?: number;
-          endLine?: number;
-          text: string;
-          suggestion?: string;
-          severity?: string;
-        }> = payload.annotations ?? [];
-        const scriptContent = state.scriptText;
-        const scriptLines = scriptContent.split('\n');
-
-        // 预计算行偏移表（仅在需要行号定位时使用）
-        const lineOffsets: number[] = [0];
-        for (let i = 0; i < scriptLines.length; i++) {
-          lineOffsets.push(lineOffsets[i] + scriptLines[i].length + 1);
-        }
-
-        const newAnnotations: typeof state.annotations = [];
-        let skipped = 0;
-
-        for (let idx = 0; idx < annotationsInput.length; idx++) {
-          const a = annotationsInput[idx];
-          let startOffset: number;
-          let endOffset: number;
-          let originalText: string;
-
-          if (a.quotedText) {
-            // 优先使用 quotedText 精确匹配（与 script-review.ts 同逻辑）
-            const matchIdx = scriptContent.indexOf(a.quotedText);
-            if (matchIdx === -1) {
-              skipped++;
-              continue; // 找不到匹配，跳过此批注
-            }
-            startOffset = matchIdx;
-            endOffset = matchIdx + a.quotedText.length;
-            originalText = a.quotedText;
-          } else if (a.line != null) {
-            // 降级到行号定位
-            const startLine = Math.max(1, Math.min(a.line, scriptLines.length));
-            const endLine = Math.max(startLine, Math.min(a.endLine ?? startLine, scriptLines.length));
-            startOffset = lineOffsets[startLine - 1];
-            endOffset = lineOffsets[endLine] - 1; // 不含末尾换行
-            originalText = scriptLines.slice(startLine - 1, endLine).join('\n');
-          } else {
-            skipped++;
-            continue; // 既无 quotedText 也无 line，跳过
-          }
-
-          newAnnotations.push({
-            id: `mcp-review-${Date.now()}-${idx}`,
-            startOffset,
-            endOffset,
-            originalText,
-            quotedText: originalText,
-            docVersion: state.scriptDocVersion,
-            issue: a.text,
-            // 仅当 agent 明确提供 suggestion 时才设置，否则留空
-            suggestion: a.suggestion ?? '',
-            severity: (['error', 'warning', 'info'].includes(a.severity ?? '') ? a.severity as 'error' | 'warning' | 'info' : 'info'),
-            status: 'pending' as const,
-          });
-        }
-
-        state.setAnnotations(newAnnotations);
-        state.setReviewState(newAnnotations.length > 0 ? 'issues' : 'clean');
-
-        window.mcpAPI!.reply(payload._replyChannel, {
-          success: true,
-          filePath: 'script.md',
-          annotationCount: newAnnotations.length,
-          skipped,
-        });
-      }),
-    );
-
-    // 列出项目文件
-    unsubs.push(
-      window.mcpAPI.onListProjectFiles((payload: any) => {
-        const state = useScriptStore.getState();
-        window.mcpAPI!.reply(payload._replyChannel, {
-          projectDir: state.projectDir,
-          files: state.fileEntries.map((f) => ({
-            path: f.name,
-            name: f.name,
-            isDirectory: f.type === 'directory',
-          })),
-        });
-      }),
-    );
-
-    // 获取项目上下文
-    unsubs.push(
-      window.mcpAPI.onGetProjectContext((payload: any) => {
-        const state = useScriptStore.getState();
-        const templates = getAllTemplates();
-        const selectedTpl = templates.find((t) => t.id === state.selectedTemplate);
-        const selectedRole = getRoleById(state.selectedRole);
-        window.mcpAPI!.reply(payload._replyChannel, {
-          projectName: state.projectDir?.split('/').pop() ?? null,
-          projectDir: state.projectDir,
-          selectedTemplate: state.selectedTemplate,
-          // 返回当前选中模板的完整写作指令，供 agent 按风格写稿
-          selectedTemplatePrompt: selectedTpl?.systemPrompt ?? null,
-          // 返回当前选中的角色设定
-          selectedRole: selectedRole ? {
-            id: selectedRole.id,
-            name: selectedRole.name,
-            description: selectedRole.description,
-            rolePrompt: selectedRole.rolePrompt,
-          } : null,
-          // 角色使用说明
-          roleInstruction: selectedRole && selectedRole.id !== 'none'
-            ? `【重要】用户已选择「${selectedRole.name}」作为口播角色。写稿时请严格遵循以下角色设定：\n${selectedRole.rolePrompt}\n请将此角色风格融入模板要求中生成口播稿。`
-            : null,
-          templates: templates.map((t) => ({
-            id: t.id,
-            name: t.name,
-            description: t.description,
-            // 返回完整 systemPrompt，让 agent 能按风格写稿
-            systemPrompt: t.systemPrompt,
-          })),
-          hasOriginalFile: state.workspaceFiles.hasOriginalFile,
-          hasScriptFile: state.workspaceFiles.hasScriptFile,
         });
       }),
     );
@@ -1945,7 +1781,10 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor }: ScriptWorkbenchP
                           onAcceptAnnotation={activeFile === 'script.md' ? acceptAnnotation : undefined}
                           onDismissAnnotation={activeFile === 'script.md' ? dismissAnnotation : undefined}
                           editorViewRef={editorViewRef}
-                          readOnly={editorAgent.readOnly || historyPreview.active}
+                          readOnly={
+                            ((activeFile === 'script.md' || activeFile === 'original.md') && editorAgent.readOnly) ||
+                            historyPreview.active
+                          }
                           streamingActive={editorAgent.streamingActive}
                           mcpChangeHighlightLines={mcpChangeHighlightLines}
                         />

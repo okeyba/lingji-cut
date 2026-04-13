@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ArrowLeft, Bot, Cpu, FileText, MessageSquare, Server, Volume2 } from 'lucide-react';
 import { AIConfigTab } from '../components/settings/AIConfigTab';
 import { TemplateManagerTab } from '../components/settings/TemplateManagerTab';
@@ -8,6 +8,7 @@ import { AgentSettingsTab } from '../components/settings/AgentSettingsTab';
 import { McpSettingsTab } from '../components/settings/McpSettingsTab';
 import { Button } from '../ui';
 import styles from './Settings.module.css';
+import type { SettingsLeaveGuard } from '../components/settings/useSettingsTabGuard';
 
 type SettingsTab = 'ai-config' | 'templates' | 'review' | 'tts' | 'agent' | 'mcp';
 
@@ -26,13 +27,49 @@ interface SettingsProps {
 
 export function Settings({ onBack }: SettingsProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('ai-config');
+  const tabLeaveGuardRef = useRef<SettingsLeaveGuard | null>(null);
+
+  const handleProtectedLeave = useCallback(
+    async (action: () => void) => {
+      if (tabLeaveGuardRef.current) {
+        const canLeave = await tabLeaveGuardRef.current();
+        if (!canLeave) {
+          return;
+        }
+      }
+
+      action();
+    },
+    [],
+  );
 
   const renderTab = () => {
     switch (activeTab) {
-      case 'ai-config': return <AIConfigTab />;
+      case 'ai-config':
+        return (
+          <AIConfigTab
+            onRegisterLeaveGuard={(guard) => {
+              tabLeaveGuardRef.current = guard;
+            }}
+          />
+        );
       case 'templates': return <TemplateManagerTab />;
-      case 'review': return <ReviewCriteriaTab />;
-      case 'tts': return <TTSConfigTab />;
+      case 'review':
+        return (
+          <ReviewCriteriaTab
+            onRegisterLeaveGuard={(guard) => {
+              tabLeaveGuardRef.current = guard;
+            }}
+          />
+        );
+      case 'tts':
+        return (
+          <TTSConfigTab
+            onRegisterLeaveGuard={(guard) => {
+              tabLeaveGuardRef.current = guard;
+            }}
+          />
+        );
       case 'agent': return <AgentSettingsTab />;
       case 'mcp': return <McpSettingsTab />;
     }
@@ -44,7 +81,9 @@ export function Settings({ onBack }: SettingsProps) {
         <div className={styles.sidebarHeader}>
           <Button.Icon
             type="button"
-            onClick={onBack}
+            onClick={() => {
+              void handleProtectedLeave(onBack);
+            }}
             variant="ghost"
             size="sm"
             className={styles.backButton}
@@ -60,7 +99,12 @@ export function Settings({ onBack }: SettingsProps) {
             <Button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                if (tab.id === activeTab) {
+                  return;
+                }
+                void handleProtectedLeave(() => setActiveTab(tab.id));
+              }}
               variant={activeTab === tab.id ? 'accent' : 'ghost'}
               size="sm"
               className={`${styles.tabButton} ${activeTab === tab.id ? styles.tabButtonActive : ''}`}

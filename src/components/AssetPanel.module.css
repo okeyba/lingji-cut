@@ -135,6 +135,35 @@
   color: var(--color-text-primary);
 }
 
+.podcastRegenerateButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(167, 139, 250, 0.28);
+  background: rgba(167, 139, 250, 0.08);
+  color: #c7b6ff;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--motion-fast, 120ms), border-color var(--motion-fast, 120ms), color var(--motion-fast, 120ms);
+}
+
+.podcastRegenerateButton:hover:not(:disabled) {
+  background: rgba(167, 139, 250, 0.16);
+  border-color: rgba(167, 139, 250, 0.48);
+  color: #dcccff;
+}
+
+.podcastRegenerateButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .compact .podcastSection {
   padding: 8px;
 }

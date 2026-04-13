@@ -13,7 +13,11 @@ describe('project-persistence', () => {
     const data = createDefaultProjectData();
     expect(data.version).toBe(1);
     expect(data.timeline).toBeNull();
-    expect(data.aiAnalysis).toEqual({ analysisResult: null, coverCandidates: [] });
+    expect(data.aiAnalysis).toEqual({
+      analysisResult: null,
+      coverCandidates: [],
+      motionCards: [],
+    });
     expect(data.script).toEqual({
       templateId: 'news-broadcast',
       annotations: [],
@@ -44,7 +48,11 @@ describe('project-persistence', () => {
 
   it('mergeProjectSection 合并 aiAnalysis 段', () => {
     const data = createDefaultProjectData();
-    const aiData = { analysisResult: { cards: [], coverPrompts: [], summary: 'test', keywords: [] }, coverCandidates: [] };
+    const aiData = {
+      analysisResult: { cards: [], coverPrompts: [], summary: 'test', keywords: [] },
+      coverCandidates: [],
+      motionCards: [],
+    };
     const merged = mergeProjectSection(data, 'aiAnalysis', aiData);
     expect(merged.aiAnalysis).toEqual(aiData);
   });

@@ -1,18 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   analyzeSrt,
-  buildCardRegenerationPrompt,
-  buildAnalysisPrompt,
   buildCoverPromptRegenerationPrompt,
+  buildSegmentCardPrompt,
+  buildSegmentPlanningPrompt,
   buildSrtText,
-  chunkSrtEntries,
-  getCardContextEntries,
-  mergeAnalysisResults,
+  generateCardForSegment,
+  planTranscriptSegments,
   regenerateAICard,
   regenerateCoverPrompt,
 } from '../src/lib/ai-analysis';
 import type { SrtEntry } from '../src/types';
-import type { AIAnalysisResult, AISettings } from '../src/types/ai';
+import type { AICard, AISegment, AISettings } from '../src/types/ai';
 import { generateStructuredData } from '../src/lib/llm';
 
 const makeSrtEntry = (index: number, startMs: number, endMs: number, text: string): SrtEntry => ({
@@ -30,61 +29,95 @@ const settings: AISettings = {
   jimengSessionId: '',
 };
 
+const baseEntries = [
+  makeSrtEntry(1, 0, 3_000, '欢迎收听本期节目，我们先聊 AI 视频生产的背景。'),
+  makeSrtEntry(2, 3_000, 7_000, '接下来进入第二部分，重点分析工作流拆分与卡片生成方式。'),
+];
+
+const fullTranscript = buildSrtText(baseEntries);
+
+const baseSegment: AISegment = {
+  id: 'seg-1',
+  title: 'AI 视频生产背景',
+  summary: '概括节目开场对 AI 视频生产现状的说明',
+  startMs: 0,
+  endMs: 3_000,
+  transcriptExcerpt: '欢迎收听本期节目，我们先聊 AI 视频生产的背景。',
+};
+
+const secondSegment: AISegment = {
+  id: 'seg-2',
+  title: '工作流拆分',
+  summary: '分析为什么要先做 segment planning，再逐段生成卡片',
+  startMs: 3_000,
+  endMs: 7_000,
+  transcriptExcerpt: '接下来进入第二部分，重点分析工作流拆分与卡片生成方式。',
+};
+
+const baseCard: AICard = {
+  id: 'card-1',
+  segmentId: 'seg-1',
+  type: 'summary',
+  title: '旧标题',
+  content: '旧内容',
+  startMs: 0,
+  endMs: 3_000,
+  displayDurationMs: 5_000,
+  displayMode: 'fullscreen',
+  template: 'summary-default',
+  enabled: true,
+  style: {
+    primaryColor: '#79c4ff',
+    backgroundColor: '#151922',
+    fontSize: 48,
+  },
+  cardPrompt: '做成更像商业海报',
+};
+
 describe('buildSrtText', () => {
   it('formats subtitle entries into readable timestamped lines', () => {
-    const entries = [
-      makeSrtEntry(1, 0, 3_000, '你好，欢迎收听'),
-      makeSrtEntry(2, 3_000, 6_000, '今天我们讨论 AI'),
-    ];
-
-    const text = buildSrtText(entries);
+    const text = buildSrtText(baseEntries);
 
     expect(text).toContain('[00:00.000 --> 00:03.000]');
-    expect(text).toContain('你好，欢迎收听');
-    expect(text).toContain('[00:03.000 --> 00:06.000]');
-    expect(text).toContain('今天我们讨论 AI');
+    expect(text).toContain('欢迎收听本期节目');
+    expect(text).toContain('[00:03.000 --> 00:07.000]');
+    expect(text).toContain('重点分析工作流拆分与卡片生成方式');
   });
 });
 
-describe('chunkSrtEntries', () => {
-  it('returns a single chunk for short content', () => {
-    const entries = [makeSrtEntry(1, 0, 3_000, '短内容')];
-    const chunks = chunkSrtEntries(entries, 8_000);
+describe('buildSegmentPlanningPrompt', () => {
+  it('asks the model to plan segments instead of generating cards directly', () => {
+    const prompt = buildSegmentPlanningPrompt('整体偏商业分析风');
 
-    expect(chunks).toHaveLength(1);
-    expect(chunks[0]).toHaveLength(1);
-  });
-
-  it('splits long subtitles into multiple chunks', () => {
-    const entries = Array.from({ length: 120 }, (_, index) =>
-      makeSrtEntry(
-        index + 1,
-        index * 3_000,
-        (index + 1) * 3_000,
-        `这是第 ${index + 1} 段非常长的字幕内容，包含了很多很多的文字信息`,
-      ),
-    );
-
-    const chunks = chunkSrtEntries(entries, 500);
-
-    expect(chunks.length).toBeGreaterThan(1);
-  });
-});
-
-describe('buildAnalysisPrompt', () => {
-  it('returns a prompt that requests JSON card output', () => {
-    const prompt = buildAnalysisPrompt('整体偏商业分析风');
-
-    expect(prompt).toContain('JSON');
-    expect(prompt).toContain('cards');
+    expect(prompt).toContain('segments');
     expect(prompt).toContain('coverPrompts');
-    expect(prompt).toContain('数组中只能有 1 条');
-    expect(prompt).toContain('webCard');
     expect(prompt).toContain('整体偏商业分析风');
-    expect(prompt).toContain('必须使用简体中文');
+    expect(prompt).not.toContain('webCard');
+    expect(prompt).not.toContain('srcDoc');
+  });
+});
+
+describe('buildSegmentCardPrompt', () => {
+  it('includes full transcript, segment info, and current card cues', () => {
+    const prompt = buildSegmentCardPrompt({
+      fullTranscript,
+      segment: baseSegment,
+      globalPrompt: '整体偏商业分析风',
+      cardPrompt: '这一张做成更像封面海报',
+      currentCard: baseCard,
+      programSummary: '节目总结',
+      keywords: ['AI', '工作流'],
+    });
+
+    expect(prompt).toContain(fullTranscript);
+    expect(prompt).toContain('AI 视频生产背景');
+    expect(prompt).toContain('概括节目开场对 AI 视频生产现状的说明');
+    expect(prompt).toContain('旧标题');
+    expect(prompt).toContain('summary-default');
+    expect(prompt).toContain('整体偏商业分析风');
+    expect(prompt).toContain('这一张做成更像封面海报');
+    expect(prompt).toContain('webCard');
     expect(prompt).toContain('统一视觉基线（首次生成与二次重生成都必须遵守）');
-    expect(prompt).toContain('summary: #79c4ff');
-    expect(prompt).toContain('禁止输出任何“数据来源”');
   });
 });
 
@@ -102,218 +135,161 @@ describe('buildCoverPromptRegenerationPrompt', () => {
   });
 });
 
-describe('buildCardRegenerationPrompt', () => {
-  it('reuses the first-pass visual baseline and includes current card cues', () => {
-    const prompt = buildCardRegenerationPrompt(
+describe('planTranscriptSegments', () => {
+  it('plans segments from the full transcript', async () => {
+    const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
+      segments: [baseSegment, secondSegment],
+      coverPrompts: ['封面提示词'],
+      summary: '节目总结',
+      keywords: ['AI', '播客'],
+      globalPrompt: '整体偏商业分析风',
+    });
+
+    const result = await planTranscriptSegments(baseEntries, settings, {
+      generateStructuredData: modelCaller,
+      globalPrompt: '整体偏商业分析风',
+    });
+
+    expect(result.segments).toHaveLength(2);
+    expect(result.segments[0]?.id).toBe('seg-1');
+    expect(result.coverPrompts).toEqual(['封面提示词']);
+    expect(result.summary).toBe('节目总结');
+    expect(result.keywords).toEqual(['AI', '播客']);
+    expect(modelCaller).toHaveBeenCalledTimes(1);
+    expect(modelCaller.mock.calls[0]?.[2]).toBe(fullTranscript);
+  });
+});
+
+describe('generateCardForSegment', () => {
+  it('generates a single card with full-transcript context and segmentId', async () => {
+    const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
+      id: 'generated-card-1',
+      type: 'summary',
+      title: '新标题',
+      content: '新内容',
+      startMs: 100,
+      endMs: 2_900,
+      displayDurationMs: 5_500,
+      displayMode: 'fullscreen',
+      template: 'summary-default',
+      enabled: true,
+      renderMode: 'web-card',
+      webCard: {
+        srcDoc: '<!doctype html><html><body><h1>新网页卡</h1></body></html>',
+      },
+      style: {
+        primaryColor: '#79c4ff',
+        backgroundColor: '#151922',
+        fontSize: 48,
+      },
+    });
+
+    const result = await generateCardForSegment(
+      baseEntries,
       {
-        id: 'card-1',
+        segments: [baseSegment],
+        coverPrompts: ['封面提示词'],
+        summary: '节目总结',
+        keywords: ['AI'],
+        globalPrompt: '整体偏商业分析风',
+      },
+      baseSegment,
+      settings,
+      {
+        generateStructuredData: modelCaller,
+        globalPrompt: '整体偏商业分析风',
+        cardPrompt: '做成更像封面',
+        currentCard: baseCard,
+      },
+    );
+
+    expect(result.segmentId).toBe('seg-1');
+    expect(result.title).toBe('新标题');
+    expect(result.renderMode).toBe('web-card');
+    expect(result.webCard?.srcDoc).toContain('新网页卡');
+    expect(modelCaller).toHaveBeenCalledTimes(1);
+    expect(modelCaller.mock.calls[0]?.[2]).toBe(fullTranscript);
+    expect(modelCaller.mock.calls[0]?.[1]).toContain('AI 视频生产背景');
+    expect(modelCaller.mock.calls[0]?.[1]).toContain('旧标题');
+  });
+});
+
+describe('analyzeSrt', () => {
+  it('uses one planning call plus one card-generation call per segment', async () => {
+    const modelCaller = vi.fn<typeof generateStructuredData>()
+      .mockResolvedValueOnce({
+        segments: [baseSegment, secondSegment],
+        coverPrompts: ['封面提示词'],
+        summary: '节目总结',
+        keywords: ['AI', '播客'],
+        globalPrompt: '整体偏商业分析风',
+      })
+      .mockResolvedValueOnce({
+        id: 'card-seg-1',
         type: 'summary',
-        title: '本期要点',
-        content: '内容',
+        title: '第一段卡片',
+        content: '第一段内容',
         startMs: 0,
-        endMs: 5_000,
+        endMs: 3_000,
         displayDurationMs: 5_000,
         displayMode: 'fullscreen',
         template: 'summary-default',
         enabled: true,
+        renderMode: 'web-card',
+        webCard: {
+          srcDoc: '<!doctype html><html><body><div>第一段网页卡片</div></body></html>',
+        },
         style: {
           primaryColor: '#79c4ff',
           backgroundColor: '#151922',
           fontSize: 48,
         },
-      },
-      {
-        globalPrompt: '整体偏商业分析风',
-        cardPrompt: '这一张做成更像封面海报',
-      },
-    );
-
-    expect(prompt).toContain('整体偏商业分析风');
-    expect(prompt).toContain('这一张做成更像封面海报');
-    expect(prompt).toContain('webCard');
-    expect(prompt).toContain('统一视觉基线（首次生成与二次重生成都必须遵守）');
-    expect(prompt).toContain('template: summary-default');
-    expect(prompt).toContain('style.primaryColor: #79c4ff');
-    expect(prompt).toContain('视觉风格必须与首次生成保持一致');
-    expect(prompt).toContain('禁止输出任何“数据来源”');
-  });
-});
-
-describe('mergeAnalysisResults', () => {
-  it('merges partial results and deduplicates cards by startMs', () => {
-    const resultA: AIAnalysisResult = {
-      cards: [
-        {
-          id: '1',
-          type: 'summary',
-          title: 'A',
-          content: 'a',
-          startMs: 0,
-          endMs: 5_000,
-          displayDurationMs: 5_000,
-          displayMode: 'fullscreen',
-          template: 'summary-default',
-          enabled: true,
-          style: {
-            primaryColor: '#6366f1',
-            backgroundColor: '#0f172a',
-            fontSize: 48,
-          },
+      })
+      .mockResolvedValueOnce({
+        id: 'card-seg-2',
+        type: 'motion',
+        title: '第二段卡片',
+        content: '第二段内容',
+        startMs: 3_000,
+        endMs: 7_000,
+        displayDurationMs: 5_000,
+        displayMode: 'fullscreen',
+        template: 'motion-default',
+        enabled: true,
+        renderMode: 'motion-card',
+        cardPrompt: '做一个粒子聚合动画',
+        motionCard: {
+          sourceCode: 'const MotionComponent = () => React.createElement("div", null, "motion");',
+          compiledCode: 'compiled-motion',
+          compiledAt: 123,
+          prompt: '做一个粒子聚合动画',
+          retryCount: 0,
         },
-      ],
-      coverPrompts: [],
-      summary: '部分1',
-      keywords: ['AI'],
-      globalPrompt: '整体偏商业分析风',
-    };
-    const resultB: AIAnalysisResult = {
-      cards: [
-        {
-          id: '2',
-          type: 'insight',
-          title: 'B',
-          content: 'b',
-          startMs: 60_000,
-          endMs: 65_000,
-          displayDurationMs: 5_000,
-          displayMode: 'fullscreen',
-          template: 'insight-default',
-          enabled: true,
-          style: {
-            primaryColor: '#f59e0b',
-            backgroundColor: '#0f172a',
-            fontSize: 48,
-          },
+        style: {
+          primaryColor: '#7df9ff',
+          backgroundColor: '#151922',
+          fontSize: 48,
         },
-        {
-          id: '3',
-          type: 'quote',
-          title: 'C',
-          content: 'c',
-          startMs: 0,
-          endMs: 8_000,
-          displayDurationMs: 5_000,
-          displayMode: 'fullscreen',
-          template: 'quote-default',
-          enabled: true,
-          style: {
-            primaryColor: '#ec4899',
-            backgroundColor: '#0f172a',
-            fontSize: 48,
-          },
-        },
-      ],
-      coverPrompts: ['prompt-1'],
-      summary: '部分2',
-      keywords: ['编程'],
-    };
-
-    const merged = mergeAnalysisResults([resultA, resultB]);
-
-    expect(merged.cards).toHaveLength(2);
-    expect(merged.cards.map((card) => card.startMs)).toEqual([0, 60_000]);
-    expect(merged.keywords).toEqual(['AI', '编程']);
-    expect(merged.coverPrompts).toEqual(['prompt-1']);
-    expect(merged.globalPrompt).toBe('整体偏商业分析风');
-  });
-});
-
-describe('getCardContextEntries', () => {
-  it('returns subtitle context around the card time range', () => {
-    const entries = [
-      makeSrtEntry(1, 0, 2_000, '开场'),
-      makeSrtEntry(2, 5_000, 7_000, '中段'),
-      makeSrtEntry(3, 15_000, 18_000, '结尾'),
-    ];
-
-    const result = getCardContextEntries(entries, { startMs: 6_000, endMs: 8_000 }, 3_000);
-
-    expect(result.map((entry) => entry.index)).toEqual([2]);
-  });
-});
-
-describe('analyzeSrt', () => {
-  it('calls the model for each chunk and merges the valid responses', async () => {
-    const entries = Array.from({ length: 40 }, (_, index) =>
-      makeSrtEntry(index + 1, index * 1_000, index * 1_000 + 800, `内容段落 ${index + 1}`),
-    );
-    const modelCaller = vi.fn<typeof generateStructuredData>()
-      .mockImplementation(async (_settings, _systemPrompt, userMessage) => {
-        if (userMessage.includes('内容段落 1')) {
-          return {
-            cards: [
-              {
-                id: 'card-1',
-                type: 'summary',
-                title: '第一段',
-                content: '总结',
-                startMs: 0,
-                endMs: 5_000,
-              displayDurationMs: 5_000,
-              displayMode: 'fullscreen',
-              template: 'summary-default',
-              enabled: true,
-              renderMode: 'web-card',
-              webCard: {
-                srcDoc: '<!doctype html><html><body><div>第一段网页卡片</div></body></html>',
-              },
-              style: {
-                primaryColor: '#6366f1',
-                backgroundColor: '#0f172a',
-                  fontSize: 48,
-                },
-              },
-            ],
-            coverPrompts: [],
-            summary: '前半段',
-            keywords: ['AI'],
-          };
-        }
-
-        return {
-          cards: [
-            {
-              id: 'card-2',
-              type: 'insight',
-              title: '第二段',
-              content: '观点',
-              startMs: 20_000,
-              endMs: 25_000,
-              displayDurationMs: 5_000,
-              displayMode: 'fullscreen',
-              template: 'insight-default',
-              enabled: true,
-              renderMode: 'web-card',
-              webCard: {
-                srcDoc: '<!doctype html><html><body><div>第二段网页卡片</div></body></html>',
-              },
-              style: {
-                primaryColor: '#f59e0b',
-                backgroundColor: '#0f172a',
-                fontSize: 48,
-              },
-            },
-          ],
-          coverPrompts: ['封面提示词'],
-          summary: '后半段',
-          keywords: ['播客'],
-        };
       });
 
-    const result = await analyzeSrt(entries, settings, {
-      maxTokens: 500,
+    const result = await analyzeSrt(baseEntries, settings, {
       generateStructuredData: modelCaller,
       globalPrompt: '整体偏商业分析风',
     });
 
-    expect(modelCaller.mock.calls.length).toBeGreaterThan(1);
+    expect(modelCaller).toHaveBeenCalledTimes(3);
+    expect(modelCaller.mock.calls.every((call) => call[2] === fullTranscript)).toBe(true);
+    expect(modelCaller.mock.calls[0]?.[1]).toContain('segments');
+    expect(modelCaller.mock.calls[1]?.[1]).toContain('AI 视频生产背景');
+    expect(modelCaller.mock.calls[2]?.[1]).toContain('工作流拆分');
+    expect(result.segments).toHaveLength(2);
     expect(result.cards).toHaveLength(2);
+    expect(result.cards.map((card) => card.segmentId)).toEqual(['seg-1', 'seg-2']);
+    expect(result.cards[1]?.renderMode).toBe('motion-card');
+    expect(result.cards[1]?.motionCard?.compiledCode).toBe('compiled-motion');
     expect(result.coverPrompts).toEqual(['封面提示词']);
     expect(result.keywords).toEqual(['AI', '播客']);
-    expect(result.cards[0]?.renderMode).toBe('web-card');
-    expect(result.cards[0]?.webCard?.srcDoc).toContain('网页卡片');
     expect(result.globalPrompt).toBe('整体偏商业分析风');
-    expect(modelCaller.mock.calls[0]?.[1]).toContain('统一视觉基线（首次生成与二次重生成都必须遵守）');
   });
 });
 
@@ -323,18 +299,11 @@ describe('regenerateCoverPrompt', () => {
       coverPrompts: ['新的封面提示词', '不应保留的第二条'],
     });
 
-    const result = await regenerateCoverPrompt(
-      [
-        makeSrtEntry(1, 0, 2_000, '第一句'),
-        makeSrtEntry(2, 2_000, 4_000, '第二句'),
-      ],
-      settings,
-      {
-        generateStructuredData: modelCaller,
-        globalPrompt: '整体偏商业媒体封面',
-        currentPrompt: '旧提示词',
-      },
-    );
+    const result = await regenerateCoverPrompt(baseEntries, settings, {
+      generateStructuredData: modelCaller,
+      globalPrompt: '整体偏商业媒体封面',
+      currentPrompt: '旧提示词',
+    });
 
     expect(result).toEqual(['新的封面提示词']);
     expect(modelCaller).toHaveBeenCalledTimes(1);
@@ -344,32 +313,14 @@ describe('regenerateCoverPrompt', () => {
 });
 
 describe('regenerateAICard', () => {
-  it('regenerates a single card with web-card payload and preserves card id', async () => {
-    const card = {
-      id: 'card-1',
-      type: 'summary' as const,
-      title: '旧标题',
-      content: '旧内容',
-      startMs: 3_000,
-      endMs: 8_000,
-      displayDurationMs: 5_000,
-      displayMode: 'fullscreen' as const,
-      template: 'summary-default',
-      enabled: true,
-      style: {
-        primaryColor: '#79c4ff',
-        backgroundColor: '#151922',
-        fontSize: 48,
-      },
-      cardPrompt: '做成更像封面',
-    };
-    const modelCaller = vi.fn().mockResolvedValue({
+  it('regenerates a single card from the provided segment and preserves card id', async () => {
+    const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
       id: 'another-id',
       type: 'summary',
       title: '新标题',
       content: '新内容',
-      startMs: 3_500,
-      endMs: 8_500,
+      startMs: 100,
+      endMs: 2_900,
       displayDurationMs: 6_000,
       displayMode: 'fullscreen',
       template: 'summary-default',
@@ -387,11 +338,9 @@ describe('regenerateAICard', () => {
     });
 
     const result = await regenerateAICard(
-      [
-        makeSrtEntry(1, 0, 2_000, '开场'),
-        makeSrtEntry(2, 4_000, 7_000, '上下文内容'),
-      ],
-      card,
+      baseEntries,
+      baseCard,
+      baseSegment,
       settings,
       {
         generateStructuredData: modelCaller,
@@ -400,13 +349,28 @@ describe('regenerateAICard', () => {
     );
 
     expect(result.id).toBe('card-1');
+    expect(result.segmentId).toBe('seg-1');
     expect(result.title).toBe('新标题');
     expect(result.displayDurationMs).toBe(6_000);
     expect(result.renderMode).toBe('web-card');
     expect(result.webCard?.srcDoc).toContain('新网页卡');
     expect(modelCaller).toHaveBeenCalledTimes(1);
-    expect(modelCaller.mock.calls[0]?.[1]).toContain('统一视觉基线（首次生成与二次重生成都必须遵守）');
-    expect(modelCaller.mock.calls[0]?.[1]).toContain('template: summary-default');
-    expect(modelCaller.mock.calls[0]?.[1]).toContain('style.primaryColor: #79c4ff');
+    expect(modelCaller.mock.calls[0]?.[2]).toBe(fullTranscript);
+    expect(modelCaller.mock.calls[0]?.[1]).toContain('AI 视频生产背景');
+    expect(modelCaller.mock.calls[0]?.[1]).toContain('summary-default');
+  });
+
+  it('fails fast when segment is missing', async () => {
+    await expect(
+      regenerateAICard(
+        baseEntries,
+        baseCard,
+        null as unknown as AISegment,
+        settings,
+        {
+          generateStructuredData: vi.fn(),
+        },
+      ),
+    ).rejects.toThrow('缺少卡片对应的段落信息');
   });
 });

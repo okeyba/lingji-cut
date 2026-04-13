@@ -137,7 +137,7 @@ async function uploadAudio(
     const partResponse = await fetchImpl(uploadUrls[index], {
       method: 'PUT',
       headers: BCUT_HEADERS,
-      body: audioBuffer.subarray(start, end),
+      body: new Uint8Array(audioBuffer.subarray(start, end)),
     });
     if (!partResponse.ok) {
       throw new Error(`Bcut 分片上传失败: ${partResponse.status}`);

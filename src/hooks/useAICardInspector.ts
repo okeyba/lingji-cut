@@ -8,6 +8,7 @@ import {
 } from '../lib/ai-persistence';
 import { getAICardSequenceLabel } from '../lib/ai-card-inspector';
 import { loadAISettings, useAIStore } from '../store/ai';
+import { useTaskProgressStore } from '../store/task-progress';
 import { getProjectDir, useTimelineStore } from '../store/timeline';
 import { buildAICardTimelineDraft, type AICard, type CoverCandidate } from '../types/ai';
 
@@ -45,7 +46,8 @@ export function useAICardInspector(cardId: string | null) {
 
   const persistAIState = useCallback(
     async (result: typeof analysisResult, candidates: CoverCandidate[]) => {
-      const fallbackState = createPersistedAIState(result, candidates);
+      const motionCards = useAIStore.getState().motionCards;
+      const fallbackState = createPersistedAIState(result, candidates, motionCards);
       const projectDir = getProjectDir();
       if (!projectDir) {
         return fallbackState;
@@ -120,8 +122,20 @@ export function useAICardInspector(cardId: string | null) {
         return null;
       }
 
-      setIsRegeneratingCard(true);
       setAnalysisError(null);
+      setIsRegeneratingCard(true);
+
+      const regenerateTaskId = `ai-regenerate-card-${card.id}-${Date.now()}`;
+      useTaskProgressStore.getState().startTask({
+        id: regenerateTaskId,
+        category: 'ai-analyze',
+        label: `重生成卡片：${card.title}`,
+        mode: 'indeterminate',
+        progress: 0,
+        phase: '生成网页卡片',
+        level: 2,
+        canCancel: false,
+      });
 
       try {
         const draftCard = {
@@ -129,12 +143,21 @@ export function useAICardInspector(cardId: string | null) {
           ...draftUpdates,
           id: card.id,
         };
+        const segment = analysisResult.segments.find((item) => item.id === draftCard.segmentId);
+        if (!segment) {
+          setAnalysisError('未找到卡片对应的段落信息');
+          useTaskProgressStore.getState().failTask(regenerateTaskId, '未找到卡片对应的段落信息');
+          return null;
+        }
         const regeneratedCard = await window.electronAPI.regenerateAICard({
           entries: srtEntries,
           card: draftCard,
+          segment,
           settings,
           globalPrompt: analysisResult.globalPrompt?.trim() || undefined,
           cardPrompt: draftCard.cardPrompt,
+          programSummary: analysisResult.summary,
+          keywords: analysisResult.keywords,
         });
 
         const nextResult = updateCardInResult(analysisResult, card.id, {
@@ -162,10 +185,13 @@ export function useAICardInspector(cardId: string | null) {
           addAICardsToTimeline([buildAICardTimelineDraft(persistedCard)]);
         }
 
+        useTaskProgressStore.getState().completeTask(regenerateTaskId);
         return persistedCard ?? null;
       } catch (error) {
         console.error('单卡重生成失败:', error);
-        setAnalysisError(error instanceof Error ? error.message : '单卡重生成失败');
+        const errorMessage = error instanceof Error ? error.message : '单卡重生成失败';
+        setAnalysisError(errorMessage);
+        useTaskProgressStore.getState().failTask(regenerateTaskId, errorMessage);
         return null;
       } finally {
         setIsRegeneratingCard(false);

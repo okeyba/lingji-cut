@@ -51,30 +51,41 @@ export async function materializePersistedAIState(
   projectDir: string,
   state: PersistedAIState,
 ): Promise<MaterializeResult<PersistedAIState>> {
-  if (!state.analysisResult) {
+  let changed = false;
+  const materializeCards = async (
+    cards: NonNullable<PersistedAIState['motionCards']>,
+  ): Promise<NonNullable<PersistedAIState['motionCards']>> => {
+    return Promise.all(
+      cards.map(async (card) => {
+        const result = await materializeWebCardPayload(projectDir, card.id, card.webCard);
+        changed = changed || result.changed;
+        return result.changed ? { ...card, webCard: result.data } : card;
+      }),
+    );
+  };
+
+  const analysisCards = state.analysisResult
+    ? await materializeCards(state.analysisResult.cards)
+    : undefined;
+  const motionCards = state.motionCards ? await materializeCards(state.motionCards) : undefined;
+
+  if (!changed) {
     return { data: state, changed: false };
   }
 
-  let changed = false;
-  const cards = await Promise.all(
-    state.analysisResult.cards.map(async (card) => {
-      const result = await materializeWebCardPayload(projectDir, card.id, card.webCard);
-      changed = changed || result.changed;
-      return result.changed ? { ...card, webCard: result.data } : card;
-    }),
-  );
-
   return {
     changed,
-    data: changed
-      ? {
-          ...state,
-          analysisResult: {
-            ...state.analysisResult,
-            cards,
-          },
-        }
-      : state,
+    data: {
+      ...state,
+      analysisResult:
+        state.analysisResult && analysisCards
+          ? {
+              ...state.analysisResult,
+              cards: analysisCards,
+            }
+          : state.analysisResult,
+      motionCards,
+    },
   };
 }
 

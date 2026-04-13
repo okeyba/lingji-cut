@@ -118,6 +118,13 @@ describe('llm-client langchain adapter', () => {
     expect(parseLLMJsonResponse('```json\n{"cards":[]}\n```')).toEqual({ cards: [] });
   });
 
+  it('parses the first JSON object even when the model adds surrounding prose', () => {
+    expect(parseLLMJsonResponse('好的，以下是结果：\n{"cards":[],"summary":"ok"}\n请查收')).toEqual({
+      cards: [],
+      summary: 'ok',
+    });
+  });
+
   it('returns null for invalid structured output', () => {
     expect(parseLLMJsonResponse('not json')).toBeNull();
   });

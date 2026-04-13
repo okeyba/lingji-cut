@@ -163,8 +163,35 @@ describe('AI type definitions', () => {
 
     expect(buildAICardTimelineDraft(card)).toEqual({
       sourceCardId: 'card-helper',
-      startMs: 12_000,
+      startMs: 24_000,
       durationMs: 4_000,
+      aiCardData: buildAICardOverlayData(card),
+    });
+  });
+
+  it('anchors a short timeline card near the end of its source topic window', () => {
+    const card: AICard = {
+      id: 'card-anchor',
+      type: 'summary',
+      title: '滞后出现的核心观点',
+      content: '真正的主题在后半段才说出来',
+      startMs: 30_000,
+      endMs: 42_000,
+      displayDurationMs: 5_000,
+      displayMode: 'fullscreen',
+      template: 'summary-default',
+      enabled: true,
+      style: {
+        primaryColor: '#6366f1',
+        backgroundColor: '#0f172a',
+        fontSize: 48,
+      },
+    };
+
+    expect(buildAICardTimelineDraft(card)).toEqual({
+      sourceCardId: 'card-anchor',
+      startMs: 37_000,
+      durationMs: 5_000,
       aiCardData: buildAICardOverlayData(card),
     });
   });

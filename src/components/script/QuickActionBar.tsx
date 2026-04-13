@@ -205,7 +205,7 @@ export function QuickActionBar({ onImportText, onImportDouyin }: QuickActionBarP
     stageHint,
     <>
       {(canGenerateScript || canReviewScript || canRegenerateScript) ? roleSelector : null}
-      {canGenerateScript ? <ModelSelector /> : null}
+      {(canGenerateScript || canRegenerateScript) ? <ModelSelector /> : null}
       {canGenerateScript ? (
         <button
           type="button"

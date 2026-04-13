@@ -9,6 +9,7 @@ import {
 } from '../lib/ai-persistence';
 import { getAISettingsIssue } from '../lib/ai-settings';
 import { useAIStore, loadAISettings } from '../store/ai';
+import { useTaskProgressStore } from '../store/task-progress';
 import { getProjectDir, useTimelineStore } from '../store/timeline';
 import {
   buildAICardTimelineDraft,
@@ -18,7 +19,19 @@ import {
 import { AICardList, type AICardPlacement } from './AICardList';
 import { AppIcon } from './AppIcon';
 import { AICoverPanel } from './AICoverPanel';
-import { Alert, Button, Spinner, StepIndicator, Textarea } from '../ui';
+import { MotionPanel } from './MotionPanel';
+import {
+  Alert,
+  Badge,
+  Button,
+  Spinner,
+  StepIndicator,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  Textarea,
+} from '../ui';
 import styles from './AIPanel.module.css';
 
 interface AIPanelProps {
@@ -30,10 +43,14 @@ interface AIPanelProps {
   onOpenSettings?: () => void;
 }
 
-const TAB_META: Record<'cards' | 'cover', { label: string; shortLabel: string }> = {
+type AITabKey = 'cards' | 'cover' | 'motion';
+
+const TAB_META: Record<AITabKey, { label: string; shortLabel: string }> = {
   cards: { label: '内容卡片', shortLabel: '卡片' },
   cover: { label: '封面', shortLabel: '封面' },
+  motion: { label: '动画', shortLabel: '动画' },
 };
+const SUB_TABS: AITabKey[] = ['cards', 'cover', 'motion'];
 
 export function AIPanel({
   compact,
@@ -51,20 +68,38 @@ export function AIPanel({
     setGlobalBackground,
   } = useTimelineStore();
   const {
-    analysisResult,
-    isAnalyzing,
-    analysisError,
-    coverCandidates,
-    isGeneratingCovers,
-    activeTab,
-    setAnalysisResult,
-    setAnalyzing,
-    setAnalysisError,
-    setCoverCandidates,
-    selectCover,
-    setGeneratingCovers,
-    setActiveTab,
-  } = useAIStore();
+  analysisResult,
+  isAnalyzing,
+  analysisError,
+  coverCandidates,
+  isGeneratingCovers,
+  activeTab: storeActiveTab,
+  setAnalysisResult,
+  setAnalyzing,
+  setAnalysisError,
+  setCoverCandidates,
+  selectCover,
+  setGeneratingCovers,
+  setActiveTab,
+} = useAIStore();
+
+  const [activeTab, setActiveTabLocal] = useState<AITabKey>(storeActiveTab);
+
+  useEffect(() => {
+    setActiveTabLocal(storeActiveTab);
+  }, [storeActiveTab]);
+
+  const handleTabChange = useCallback(
+    (tab: AITabKey) => {
+      if (tab === 'motion') {
+        setActiveTabLocal(tab);
+        return;
+      }
+      setActiveTabLocal(tab);
+      setActiveTab(tab);
+    },
+    [setActiveTab],
+  );
 
   const [isRegeneratingCoverPrompt, setIsRegeneratingCoverPrompt] = useState(false);
   const [globalPromptDraft, setGlobalPromptDraft] = useState('');
@@ -126,7 +161,8 @@ export function AIPanel({
 
   const persistAIState = useCallback(
     async (result: AIAnalysisResult | null, candidates: CoverCandidate[]) => {
-      const fallbackState = createPersistedAIState(result, candidates);
+      const motionCards = useAIStore.getState().motionCards;
+      const fallbackState = createPersistedAIState(result, candidates, motionCards);
       const projectDir = getProjectDir();
       if (!projectDir) {
         return fallbackState;
@@ -224,8 +260,20 @@ export function AIPanel({
       return;
     }
 
-    setAnalyzing(true);
     setAnalysisError(null);
+    setAnalyzing(true);
+
+    const analyzeTaskId = `ai-analyze-cards-${Date.now()}`;
+    useTaskProgressStore.getState().startTask({
+      id: analyzeTaskId,
+      category: 'ai-analyze',
+      label: analysisResult ? '内容卡片重新分析' : '内容卡片分析',
+      mode: 'indeterminate',
+      progress: 0,
+      phase: analysisResult ? '重新组织卡片' : '解析字幕',
+      level: 2,
+      canCancel: false,
+    });
 
     try {
       const result = (await window.electronAPI.analyzeSrt({
@@ -236,12 +284,16 @@ export function AIPanel({
       const persistedState = await persistAIState(result, []);
       setAnalysisResult(persistedState.analysisResult ?? result);
       setCoverCandidates(persistedState.coverCandidates);
+      useTaskProgressStore.getState().completeTask(analyzeTaskId);
     } catch (error) {
-      setAnalysisError(error instanceof Error ? error.message : '分析失败');
+      const errorMessage = error instanceof Error ? error.message : '分析失败';
+      setAnalysisError(errorMessage);
+      useTaskProgressStore.getState().failTask(analyzeTaskId, errorMessage);
     } finally {
       setAnalyzing(false);
     }
   }, [
+    analysisResult,
     globalPromptDraft,
     persistAIState,
     setAnalysisError,
@@ -480,7 +532,9 @@ export function AIPanel({
           </span>
           <span className={styles.headerTitle}>AI 分析</span>
           {hasGeneratedCards ? (
-            <span className={styles.headerBadge}>已选 {enabledCount}/{analysisResult?.cards.length ?? 0}</span>
+            <Badge color="#0A84FF" size="xs" className={styles.headerBadge}>
+              已选 {enabledCount}/{analysisResult?.cards.length ?? 0}
+            </Badge>
           ) : null}
         </div>
         <div className={styles.headerActions}>
@@ -505,28 +559,28 @@ export function AIPanel({
         </div>
       </div>
 
-      <div className={styles.subTabs} role="tablist" aria-label="AI 助手子标签">
-        {(['cards', 'cover'] as const).map((tab) => (
-          <Button
-            key={tab}
-            role="tab"
-            aria-selected={activeTab === tab}
-            variant="ghost"
-            size="sm"
-            className={joinClassNames(
-              styles.subTab,
-              activeTab === tab ? styles.subTabActive : '',
-            )}
-            onClick={() => setActiveTab(tab)}
-          >
-            {compact ? TAB_META[tab].shortLabel : TAB_META[tab].label}
-          </Button>
-        ))}
-      </div>
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => handleTabChange(value as AITabKey)}
+        className={styles.tabsShell}
+      >
+        <TabsList className={styles.subTabs}>
+          {SUB_TABS.map((tab) => (
+            <TabsTrigger
+              key={tab}
+              value={tab}
+              className={joinClassNames(
+                styles.subTab,
+                activeTab === tab ? styles.subTabActive : '',
+              )}
+            >
+              {compact ? TAB_META[tab].shortLabel : TAB_META[tab].label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
-      <div className={styles.body}>
-        {activeTab === 'cards' ? (
-          <>
+        <div className={styles.body}>
+          <TabsContent value="cards" className={styles.tabContent}>
             <section className={styles.promptSection}>
               <label className={styles.promptLabel}>整体创作提示词</label>
               <div className={styles.promptCard}>
@@ -551,7 +605,9 @@ export function AIPanel({
 
             {showCardGenerationState ? (
               <section className={styles.emptyState} aria-busy={isAnalyzing}>
-                <div className={styles.stateBadge}>{generationStateBadgeLabel}</div>
+                <Badge variant="glass" size="xs" className={styles.stateBadge}>
+                  {generationStateBadgeLabel}
+                </Badge>
                 <div className={styles.emptyStateText}>{generationStateText}</div>
                 {aiSettingsIssue ? <div className={styles.hintText}>{aiSettingsIssue}</div> : null}
                 <Button
@@ -612,7 +668,9 @@ export function AIPanel({
                 <div className={styles.analysisWorkspace}>
                   {analysisResult && hasGeneratedCards && isAnalyzing ? (
                     <div className={styles.analysisBanner}>
-                      <div className={styles.analysisBannerBadge}>重新分析中</div>
+                      <Badge variant="secondary" size="xs" className={styles.analysisBannerBadge}>
+                        重新分析中
+                      </Badge>
                       <div className={styles.analysisBannerTitle}>{analysisOverlayTitle}</div>
                       <div className={styles.analysisBannerText}>{analysisOverlayText}</div>
                     </div>
@@ -630,21 +688,30 @@ export function AIPanel({
                 </div>
               </section>
             ) : null}
-          </>
-        ) : (
-          <AICoverPanel
-            coverPrompts={analysisResult?.coverPrompts ?? []}
-            candidates={coverCandidates}
-            isGenerating={isGeneratingCovers}
-            isRegeneratingPrompt={isRegeneratingCoverPrompt}
-            selectedCandidateId={selectedCoverCandidate?.id}
-            onGenerateCovers={handleGenerateCovers}
-            onRegeneratePrompt={handleRegenerateCoverPrompt}
-            onSelectCover={handleSelectCover}
-            onAddToTimeline={handleAddCoverToTimeline}
-          />
-        )}
-      </div>
+          </TabsContent>
+
+          <TabsContent value="motion" className={styles.tabContent}>
+            <MotionPanel
+              onOpenCardInspector={onOpenCardInspector}
+              onOpenSettings={onOpenSettings}
+            />
+          </TabsContent>
+
+          <TabsContent value="cover" className={styles.tabContent}>
+            <AICoverPanel
+              coverPrompts={analysisResult?.coverPrompts ?? []}
+              candidates={coverCandidates}
+              isGenerating={isGeneratingCovers}
+              isRegeneratingPrompt={isRegeneratingCoverPrompt}
+              selectedCandidateId={selectedCoverCandidate?.id}
+              onGenerateCovers={handleGenerateCovers}
+              onRegeneratePrompt={handleRegenerateCoverPrompt}
+              onSelectCover={handleSelectCover}
+              onAddToTimeline={handleAddCoverToTimeline}
+            />
+          </TabsContent>
+        </div>
+      </Tabs>
 
       {activeTab === 'cards' && hasGeneratedCards ? (
         <div className={styles.footer}>

@@ -41,17 +41,6 @@
 }
 
 .headerBadge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 20px;
-  padding: 0 7px;
-  border-radius: 10px;
-  background: rgba(10, 132, 255, 0.2);
-  color: var(--color-selection-blue);
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
   white-space: nowrap;
 }
 
@@ -88,32 +77,45 @@
   transform: scale(0.88);
 }
 
+.tabsShell {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .subTabs {
   display: flex;
   align-items: stretch;
   height: 28px;
   border-bottom: 1px solid var(--color-separator);
+  width: 100%;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border-left: none;
+  border-right: none;
+  border-top: none;
 }
 
 .subTab {
   flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   padding: 0 8px;
-  border: none;
   border-bottom: 2px solid transparent;
-  background: transparent;
   color: var(--color-text-muted);
   font-size: 11px;
   font-weight: 500;
-  cursor: pointer;
 }
 
 .subTabActive {
   border-bottom-color: var(--color-selection-blue);
   color: var(--color-text-primary);
   font-weight: 600;
+}
+
+.tabContent {
+  margin-top: 0;
+  min-height: 0;
 }
 
 .body {
@@ -183,18 +185,7 @@
 }
 
 .stateBadge {
-  display: inline-flex;
   align-self: flex-start;
-  align-items: center;
-  justify-content: center;
-  min-height: 18px;
-  padding: 0 6px;
-  border-radius: 5px;
-  background: rgba(58, 58, 60, 0.9);
-  color: var(--color-text-primary);
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 1;
 }
 
 .emptyStateText,
@@ -313,18 +304,7 @@
 }
 
 .analysisBannerBadge {
-  display: inline-flex;
   align-self: flex-start;
-  align-items: center;
-  justify-content: center;
-  min-height: 18px;
-  padding: 0 6px;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--color-text-primary);
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 1;
 }
 
 .footer {

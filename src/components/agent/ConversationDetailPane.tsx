@@ -102,7 +102,7 @@ export function ConversationDetailPane({
   }
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col">
+    <div className="flex-1 min-w-0 min-h-0 flex flex-col">
       <div className="px-4 py-3 border-b border-mac-separator shrink-0">
         <div className="text-sm font-semibold text-white truncate">
           {detail?.title ?? `会话 ${conversationId}`}
@@ -119,7 +119,7 @@ export function ConversationDetailPane({
         ) : null}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3">
         {turns.length === 0 ? (
           <EmptyState
             title="暂无消息"

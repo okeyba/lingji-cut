@@ -4,6 +4,7 @@ import { useScriptStore } from '../store/script';
 import { getOriginalStats, getGeneratedScriptStats, getAnnotationSummary } from '../lib/script-utils';
 import { Popover, PopoverContent, PopoverTrigger, Tooltip, TooltipContent, TooltipTrigger } from '../ui';
 import styles from './AppStatusBar.module.css';
+import { StatusBarProgressLine } from './StatusBarProgressLine';
 import { StatusBarTaskSummary } from './StatusBarTaskSummary';
 import { TaskProgressPanel } from './TaskProgressPanel';
 
@@ -173,6 +174,7 @@ function WorkbenchStatsIndicator() {
 export function AppStatusBar() {
   return (
     <div className={styles.statusBar}>
+      <StatusBarProgressLine />
       <TaskProgressPanel />
       <div className={styles.left}>
         <WorkbenchStatsIndicator />

@@ -1,8 +1,17 @@
 import { useState } from 'react';
 import { ChevronRight, ChevronDown, FileText, Terminal } from 'lucide-react';
-import type { ToolCallBlock as ToolCallBlockType } from '../../store/agent';
 import { Badge } from '../../ui';
 import { Spinner } from '../../ui/primitives/Spinner';
+
+interface ToolCallBlockType {
+  type: 'tool_call';
+  toolCallId: string;
+  title: string;
+  kind: string;
+  status: string;
+  rawInput?: string;
+  rawOutput?: string;
+}
 
 const TOOL_ICONS: Record<string, typeof FileText> = {
   read_text_file: FileText,

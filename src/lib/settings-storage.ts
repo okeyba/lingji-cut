@@ -1,38 +1,245 @@
-// src/lib/settings-storage.ts
+import {
+  DEFAULT_REVIEW_CRITERIA,
+  DEFAULT_SELECTED_ROLE,
+  normalizeGlobalSettingsFile,
+  type CustomRole,
+  type CustomScriptTemplate,
+} from '../types/global-settings';
+import {
+  getInitialGlobalSettings,
+  loadGlobalSettingsFile,
+  updateGlobalSettingsFile,
+} from './global-settings-client';
 
-// ── Keys ──
 const CUSTOM_TEMPLATES_KEY = 'podcast-editor-custom-templates';
 const REVIEW_CRITERIA_KEY = 'podcast-editor-review-criteria';
-const TTS_SETTINGS_KEY = 'podcast-editor-tts-settings';
 const SELECTED_ROLE_KEY = 'podcast-editor-selected-role';
 const CUSTOM_ROLES_KEY = 'podcast-editor-custom-roles';
 
-// ── Custom Templates ──
-export interface CustomScriptTemplate {
-  id: string;
-  name: string;
-  description: string;
-  systemPrompt: string;
-  createdAt: string;
-  updatedAt: string;
+export type { CustomRole, CustomScriptTemplate } from '../types/global-settings';
+
+interface SettingsCache {
+  customTemplates: CustomScriptTemplate[];
+  reviewCriteria: string;
+  customRoles: CustomRole[];
+  selectedRole: string;
 }
 
-export function loadCustomTemplates(): CustomScriptTemplate[] {
+function getStorage(): Storage | null {
+  if (typeof globalThis !== 'undefined' && 'localStorage' in globalThis && globalThis.localStorage) {
+    return globalThis.localStorage;
+  }
+  if (typeof window !== 'undefined' && window.localStorage) {
+    return window.localStorage;
+  }
+  return null;
+}
+
+function readLegacyJson<T>(key: string, fallback: T): T {
+  const storage = getStorage();
+  if (!storage) {
+    return fallback;
+  }
+
   try {
-    const raw = localStorage.getItem(CUSTOM_TEMPLATES_KEY);
-    return raw ? (JSON.parse(raw) as CustomScriptTemplate[]) : [];
+    const raw = storage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
-    return [];
+    return fallback;
   }
 }
 
-export function saveCustomTemplates(templates: CustomScriptTemplate[]): void {
-  localStorage.setItem(CUSTOM_TEMPLATES_KEY, JSON.stringify(templates));
+function readLegacyText(key: string, fallback: string): string {
+  const storage = getStorage();
+  if (!storage) {
+    return fallback;
+  }
+
+  try {
+    return storage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
 }
 
-export function addCustomTemplate(
+function clearLegacyKeys(): void {
+  const storage = getStorage();
+  if (!storage) {
+    return;
+  }
+
+  storage.removeItem(CUSTOM_TEMPLATES_KEY);
+  storage.removeItem(REVIEW_CRITERIA_KEY);
+  storage.removeItem(SELECTED_ROLE_KEY);
+  storage.removeItem(CUSTOM_ROLES_KEY);
+}
+
+function buildCacheFromSettings(): SettingsCache {
+  const normalized = normalizeGlobalSettingsFile(getInitialGlobalSettings());
+
+  const legacyTemplates = readLegacyJson<CustomScriptTemplate[]>(CUSTOM_TEMPLATES_KEY, []);
+  const legacyReviewCriteria = readLegacyText(REVIEW_CRITERIA_KEY, DEFAULT_REVIEW_CRITERIA);
+  const legacyCustomRoles = readLegacyJson<CustomRole[]>(CUSTOM_ROLES_KEY, []);
+  const legacySelectedRole = readLegacyText(SELECTED_ROLE_KEY, DEFAULT_SELECTED_ROLE);
+
+  return {
+    customTemplates:
+      normalized.customTemplates && normalized.customTemplates.length > 0
+        ? normalized.customTemplates
+        : legacyTemplates,
+    reviewCriteria:
+      normalized.reviewCriteria !== DEFAULT_REVIEW_CRITERIA ||
+      !legacyReviewCriteria
+        ? normalized.reviewCriteria ?? DEFAULT_REVIEW_CRITERIA
+        : legacyReviewCriteria,
+    customRoles:
+      normalized.customRoles && normalized.customRoles.length > 0
+        ? normalized.customRoles
+        : legacyCustomRoles,
+    selectedRole:
+      normalized.selectedRole && normalized.selectedRole !== DEFAULT_SELECTED_ROLE
+        ? normalized.selectedRole
+        : legacySelectedRole,
+  };
+}
+
+let cache: SettingsCache | null = null;
+let hydrationPromise: Promise<void> | null = null;
+
+function ensureCache(): SettingsCache {
+  if (!cache) {
+    cache = buildCacheFromSettings();
+  }
+  return cache;
+}
+
+function hasLegacySettings(): boolean {
+  const storage = getStorage();
+  if (!storage) {
+    return false;
+  }
+
+  return [
+    CUSTOM_TEMPLATES_KEY,
+    REVIEW_CRITERIA_KEY,
+    SELECTED_ROLE_KEY,
+    CUSTOM_ROLES_KEY,
+  ].some((key) => storage.getItem(key) !== null);
+}
+
+async function persistPatch(
+  patch: Partial<{
+    customTemplates: CustomScriptTemplate[];
+    reviewCriteria: string;
+    customRoles: CustomRole[];
+    selectedRole: string;
+  }>,
+): Promise<void> {
+  const next = await updateGlobalSettingsFile((current) => ({
+    ...current,
+    ...patch,
+  }));
+  cache = {
+    customTemplates: next.customTemplates ?? [],
+    reviewCriteria: next.reviewCriteria ?? DEFAULT_REVIEW_CRITERIA,
+    customRoles: next.customRoles ?? [],
+    selectedRole: next.selectedRole ?? DEFAULT_SELECTED_ROLE,
+  };
+  clearLegacyKeys();
+}
+
+export async function hydrateSettingsStorage(): Promise<void> {
+  if (hydrationPromise) {
+    return hydrationPromise;
+  }
+
+  hydrationPromise = (async () => {
+    const globalSettings = normalizeGlobalSettingsFile(await loadGlobalSettingsFile());
+    const currentCache = ensureCache();
+
+    cache = {
+      customTemplates:
+        globalSettings.customTemplates && globalSettings.customTemplates.length > 0
+          ? globalSettings.customTemplates
+          : currentCache.customTemplates,
+      reviewCriteria:
+        globalSettings.reviewCriteria &&
+        globalSettings.reviewCriteria !== DEFAULT_REVIEW_CRITERIA
+          ? globalSettings.reviewCriteria
+          : currentCache.reviewCriteria,
+      customRoles:
+        globalSettings.customRoles && globalSettings.customRoles.length > 0
+          ? globalSettings.customRoles
+          : currentCache.customRoles,
+      selectedRole:
+        globalSettings.selectedRole && globalSettings.selectedRole !== DEFAULT_SELECTED_ROLE
+          ? globalSettings.selectedRole
+          : currentCache.selectedRole,
+    };
+
+    if (!hasLegacySettings()) {
+      return;
+    }
+
+    const patch: Partial<{
+      customTemplates: CustomScriptTemplate[];
+      reviewCriteria: string;
+      customRoles: CustomRole[];
+      selectedRole: string;
+    }> = {};
+
+    if (
+      (!globalSettings.customTemplates || globalSettings.customTemplates.length === 0) &&
+      cache.customTemplates.length > 0
+    ) {
+      patch.customTemplates = cache.customTemplates;
+    }
+    if (
+      (!globalSettings.reviewCriteria ||
+        globalSettings.reviewCriteria === DEFAULT_REVIEW_CRITERIA) &&
+      cache.reviewCriteria.trim()
+    ) {
+      patch.reviewCriteria = cache.reviewCriteria;
+    }
+    if (
+      (!globalSettings.customRoles || globalSettings.customRoles.length === 0) &&
+      cache.customRoles.length > 0
+    ) {
+      patch.customRoles = cache.customRoles;
+    }
+    if (
+      (!globalSettings.selectedRole ||
+        globalSettings.selectedRole === DEFAULT_SELECTED_ROLE) &&
+      cache.selectedRole
+    ) {
+      patch.selectedRole = cache.selectedRole;
+    }
+
+    if (Object.keys(patch).length > 0) {
+      await persistPatch(patch);
+      return;
+    }
+
+    clearLegacyKeys();
+  })().finally(() => {
+    hydrationPromise = null;
+  });
+
+  return hydrationPromise;
+}
+
+export function loadCustomTemplates(): CustomScriptTemplate[] {
+  return ensureCache().customTemplates;
+}
+
+export async function saveCustomTemplates(templates: CustomScriptTemplate[]): Promise<void> {
+  cache = { ...ensureCache(), customTemplates: templates };
+  await persistPatch({ customTemplates: templates });
+}
+
+export async function addCustomTemplate(
   template: Omit<CustomScriptTemplate, 'id' | 'createdAt' | 'updatedAt'>,
-): CustomScriptTemplate {
+): Promise<CustomScriptTemplate> {
   const templates = loadCustomTemplates();
   const now = new Date().toISOString();
   const newTemplate: CustomScriptTemplate = {
@@ -41,80 +248,50 @@ export function addCustomTemplate(
     createdAt: now,
     updatedAt: now,
   };
-  templates.push(newTemplate);
-  saveCustomTemplates(templates);
+  await saveCustomTemplates([...templates, newTemplate]);
   return newTemplate;
 }
 
-export function updateCustomTemplate(
+export async function updateCustomTemplate(
   id: string,
   updates: Partial<Omit<CustomScriptTemplate, 'id' | 'createdAt'>>,
-): void {
+): Promise<void> {
   const templates = loadCustomTemplates();
-  const index = templates.findIndex((t) => t.id === id);
-  if (index === -1) return;
-  templates[index] = { ...templates[index], ...updates, updatedAt: new Date().toISOString() };
-  saveCustomTemplates(templates);
+  const index = templates.findIndex((template) => template.id === id);
+  if (index === -1) {
+    return;
+  }
+
+  const next = [...templates];
+  next[index] = {
+    ...next[index],
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  };
+  await saveCustomTemplates(next);
 }
 
-export function deleteCustomTemplate(id: string): void {
-  const templates = loadCustomTemplates().filter((t) => t.id !== id);
-  saveCustomTemplates(templates);
+export async function deleteCustomTemplate(id: string): Promise<void> {
+  await saveCustomTemplates(loadCustomTemplates().filter((template) => template.id !== id));
 }
-
-// ── Review Criteria ──
-const DEFAULT_REVIEW_CRITERIA = `请重点关注：
-1. 数据引用是否标注来源
-2. 是否有过于书面化的表达
-3. 段落过渡是否自然
-4. 口播节奏是否合理`;
 
 export function loadReviewCriteria(): string {
-  return localStorage.getItem(REVIEW_CRITERIA_KEY) ?? DEFAULT_REVIEW_CRITERIA;
+  return ensureCache().reviewCriteria;
 }
 
-export function saveReviewCriteria(criteria: string): void {
-  localStorage.setItem(REVIEW_CRITERIA_KEY, criteria);
+export async function saveReviewCriteria(criteria: string): Promise<void> {
+  cache = { ...ensureCache(), reviewCriteria: criteria };
+  await persistPatch({ reviewCriteria: criteria });
 }
-
-// ── TTS Settings ──
-export interface TTSSettings {
-  apiKey: string;
-  voiceId: string;
-  speed: number;
-}
-
-const DEFAULT_TTS_SETTINGS: TTSSettings = {
-  apiKey: '',
-  voiceId: 'male-qn-qingse',
-  speed: 1.0,
-};
-
-export function loadTTSSettings(): TTSSettings {
-  try {
-    const raw = localStorage.getItem(TTS_SETTINGS_KEY);
-    return raw ? { ...DEFAULT_TTS_SETTINGS, ...(JSON.parse(raw) as Partial<TTSSettings>) } : DEFAULT_TTS_SETTINGS;
-  } catch {
-    return DEFAULT_TTS_SETTINGS;
-  }
-}
-
-export function saveTTSSettings(settings: TTSSettings): void {
-  localStorage.setItem(TTS_SETTINGS_KEY, JSON.stringify(settings));
-}
-
-// ── Script Roles (口播角色) ──
 
 export interface ScriptRole {
   id: string;
   name: string;
   description: string;
-  /** 注入到 systemPrompt 中的角色指令 */
   rolePrompt: string;
   isBuiltin: boolean;
 }
 
-/** "不指定角色"占位项 */
 export const NONE_ROLE: ScriptRole = {
   id: 'none',
   name: '不指定角色',
@@ -123,42 +300,20 @@ export const NONE_ROLE: ScriptRole = {
   isBuiltin: true,
 };
 
-export interface CustomRole {
-  id: string;
-  name: string;
-  description: string;
-  rolePrompt: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export function loadCustomRoles(): CustomRole[] {
-  try {
-    const raw = localStorage.getItem(CUSTOM_ROLES_KEY);
-    return raw ? (JSON.parse(raw) as CustomRole[]) : [];
-  } catch {
-    return [];
-  }
+  return ensureCache().customRoles;
 }
 
-export function saveCustomRoles(roles: CustomRole[]): void {
-  localStorage.setItem(CUSTOM_ROLES_KEY, JSON.stringify(roles));
+export async function saveCustomRoles(roles: CustomRole[]): Promise<void> {
+  cache = { ...ensureCache(), customRoles: roles };
+  await persistPatch({ customRoles: roles });
 }
-
-// getAllRoles / getRoleById 已移至 script-templates.ts，从口播模板中派生角色
 
 export function loadSelectedRole(): string {
-  try {
-    return localStorage.getItem(SELECTED_ROLE_KEY) ?? 'none';
-  } catch {
-    return 'none';
-  }
+  return ensureCache().selectedRole;
 }
 
 export function saveSelectedRole(roleId: string): void {
-  try {
-    localStorage.setItem(SELECTED_ROLE_KEY, roleId);
-  } catch {
-    // localStorage 不可用时忽略
-  }
+  cache = { ...ensureCache(), selectedRole: roleId };
+  void persistPatch({ selectedRole: roleId });
 }

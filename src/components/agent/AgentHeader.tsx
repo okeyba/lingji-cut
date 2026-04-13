@@ -1,19 +1,20 @@
 import { useEffect, useState } from 'react';
-import { Server, Trash2, X } from 'lucide-react';
+import { Server, X } from 'lucide-react';
 import { useAgentStore } from '../../store/agent';
 import { Button } from '../../ui';
 
 export function AgentHeader() {
+  // 注意：status 由 AcpConnectionsProvider 将 active 会话状态镜像进来，
+  // AgentHeader 本身挂在 provider 作用域之外，只能通过 store 读全局镜像值。
   const status = useAgentStore((s) => s.status);
   const toggleSidebar = useAgentStore((s) => s.toggleSidebar);
-  const clearMessages = useAgentStore((s) => s.clearMessages);
 
   const [mcpStatus, setMcpStatus] = useState<{ running: boolean; url: string } | null>(null);
 
   useEffect(() => {
     if (!window.mcpAPI) return;
     window.mcpAPI.getStatus().then((s) => setMcpStatus({ running: s.running, url: s.url }));
-  }, [status]); // status 变化时刷新
+  }, [status]); // status 变化时刷新 MCP 状态展示
 
   const statusColor =
     status === 'connected' || status === 'prompting'
@@ -32,10 +33,6 @@ export function AgentHeader() {
           style={{ background: statusColor }}
         />
         <span className="text-[13px] font-semibold flex-1">Claude Code</span>
-
-        <Button variant="ghost" size="sm" iconOnly onClick={clearMessages} title="清空对话">
-          <Trash2 size={14} />
-        </Button>
 
         <Button variant="ghost" size="sm" iconOnly onClick={toggleSidebar} title="关闭面板">
           <X size={14} />

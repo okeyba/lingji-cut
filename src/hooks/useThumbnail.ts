@@ -1,9 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { AssetType } from '../types';
-
-function toFileUrl(filePath: string): string {
-  return filePath.startsWith('/') ? `file://${filePath}` : `file:///${filePath}`;
-}
+import { toFileSrc } from '../lib/utils';
 
 function extractVideoFrame(filePath: string): Promise<string | null> {
   return new Promise((resolve) => {
@@ -40,7 +37,7 @@ function extractVideoFrame(filePath: string): Promise<string | null> {
       resolve(null);
     });
 
-    video.src = toFileUrl(filePath);
+    video.src = toFileSrc(filePath);
   });
 }
 
@@ -52,7 +49,7 @@ function extractVideoFrame(filePath: string): Promise<string | null> {
  */
 export function useThumbnail(filePath: string, type: AssetType): string | null {
   const [thumbnail, setThumbnail] = useState<string | null>(
-    type === 'image' ? toFileUrl(filePath) : null,
+    type === 'image' ? toFileSrc(filePath) : null,
   );
 
   useEffect(() => {

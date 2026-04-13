@@ -1,10 +1,12 @@
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
-import type { AISettings } from '../src/types/ai';
+import {
+  normalizeGlobalSettingsFile,
+  type GlobalSettingsFile,
+} from '../src/types/global-settings';
 
-export interface GlobalSettingsFile {
-  aiSettings: AISettings;
-}
+export type { GlobalSettingsFile } from '../src/types/global-settings';
 
 const SETTINGS_FILE = 'settings.json';
 
@@ -16,7 +18,16 @@ export async function loadGlobalSettings(
       path.join(userDataPath, SETTINGS_FILE),
       'utf-8',
     );
-    return JSON.parse(raw) as GlobalSettingsFile;
+    return normalizeGlobalSettingsFile(JSON.parse(raw) as GlobalSettingsFile);
+  } catch {
+    return null;
+  }
+}
+
+export function loadGlobalSettingsSync(userDataPath: string): GlobalSettingsFile | null {
+  try {
+    const raw = fsSync.readFileSync(path.join(userDataPath, SETTINGS_FILE), 'utf-8');
+    return normalizeGlobalSettingsFile(JSON.parse(raw) as GlobalSettingsFile);
   } catch {
     return null;
   }

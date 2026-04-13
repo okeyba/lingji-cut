@@ -1,6 +1,7 @@
 import type { ComponentProps, ComponentType } from 'react';
 import { Composition } from 'remotion';
 import type { ExportRenderConfig } from '../lib/export-settings';
+import { getEffectiveTimelineDurationMs } from '../lib/utils';
 import { createDefaultTimeline } from '../types';
 import { PodcastComposition } from './PodcastComposition';
 
@@ -32,7 +33,7 @@ export function RemotionRoot() {
           fps: timeline.fps,
           durationInFrames: Math.max(
             1,
-            Math.round((timeline.podcast.durationMs / 1000) * timeline.fps),
+            Math.round((getEffectiveTimelineDurationMs(timeline) / 1000) * timeline.fps),
           ),
         };
       }}

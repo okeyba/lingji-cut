@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createPersistedAIState,
+  mergeCoverCandidatesFromScannedAssets,
   parsePersistedAIState,
   removeCardsInResult,
   setAllCardsEnabledInResult,
@@ -10,10 +11,21 @@ import {
 } from '../src/lib/ai-persistence';
 import type { AIAnalysisResult } from '../src/types/ai';
 
-const baseAnalysisResult: AIAnalysisResult = {
+const baseAnalysisResult = {
+  segments: [
+    {
+      id: 'seg-1',
+      title: '本期要点',
+      summary: '这一段主要概括节目主旨',
+      startMs: 0,
+      endMs: 45_000,
+      transcriptExcerpt: '这里是这一段的核心字幕摘录',
+    },
+  ],
   cards: [
     {
       id: 'card-1',
+      segmentId: 'seg-1',
       type: 'summary',
       title: '本期要点',
       content: '重点内容',
@@ -35,20 +47,16 @@ const baseAnalysisResult: AIAnalysisResult = {
   summary: '播客总结',
   keywords: ['AI'],
   globalPrompt: '整体偏商业分析风',
-};
+} as AIAnalysisResult;
 
 describe('AI persistence helpers', () => {
-  it('parses the legacy ai-analysis.json shape', () => {
+  it('rejects the legacy ai-analysis.json shape without versioned wrapper', () => {
     const persisted = parsePersistedAIState(baseAnalysisResult);
 
-    expect(persisted).toEqual({
-      version: 1,
-      analysisResult: baseAnalysisResult,
-      coverCandidates: [],
-    });
+    expect(persisted).toBeNull();
   });
 
-  it('round-trips the persisted ai state with cover candidates', () => {
+  it('round-trips the persisted ai state with cover candidates under version 2', () => {
     const persisted = createPersistedAIState(baseAnalysisResult, [
       {
         id: 'cover-1',
@@ -58,7 +66,71 @@ describe('AI persistence helpers', () => {
       },
     ]);
 
+    expect(persisted.version).toBe(2);
     expect(parsePersistedAIState(persisted)).toEqual(persisted);
+  });
+
+  it('round-trips persisted motion cards', () => {
+    const persisted = createPersistedAIState(baseAnalysisResult, [], [
+      {
+        id: 'motion-1',
+        segmentId: 'motion-1',
+        type: 'motion',
+        title: '动画卡片',
+        content: '动画卡片内容',
+        startMs: 0,
+        endMs: 5_000,
+        displayDurationMs: 5_000,
+        displayMode: 'fullscreen',
+        template: 'motion-default',
+        enabled: true,
+        style: {
+          primaryColor: '#7df9ff',
+          backgroundColor: '#151922',
+          fontSize: 48,
+        },
+        renderMode: 'motion-card',
+        motionCard: {
+          prompt: '做一个标题放大动画',
+          sourceCode: 'const MotionComponent = () => null;',
+          compiledCode: 'const MotionComponent = () => null;',
+          compiledAt: 1,
+          retryCount: 0,
+        },
+      },
+    ]);
+
+    expect(persisted.version).toBe(2);
+    expect(parsePersistedAIState(persisted)).toEqual(persisted);
+  });
+
+  it('rejects persisted ai state when segments are missing', () => {
+    const persisted = {
+      version: 2,
+      analysisResult: {
+        cards: baseAnalysisResult.cards,
+        coverPrompts: baseAnalysisResult.coverPrompts,
+        summary: baseAnalysisResult.summary,
+        keywords: baseAnalysisResult.keywords,
+        globalPrompt: baseAnalysisResult.globalPrompt,
+      },
+      coverCandidates: [],
+    };
+
+    expect(parsePersistedAIState(persisted)).toBeNull();
+  });
+
+  it('rejects persisted ai state when card segmentId is missing', () => {
+    const persisted = {
+      version: 2,
+      analysisResult: {
+        ...baseAnalysisResult,
+        cards: baseAnalysisResult.cards.map(({ segmentId: _segmentId, ...card }) => card),
+      },
+      coverCandidates: [],
+    };
+
+    expect(parsePersistedAIState(persisted)).toBeNull();
   });
 
   it('updates cards and cover selection without mutating the original state', () => {
@@ -72,6 +144,7 @@ describe('AI persistence helpers', () => {
           {
             ...baseAnalysisResult.cards[0],
             id: 'card-2',
+            segmentId: 'seg-1',
             enabled: false,
           },
         ],
@@ -102,6 +175,7 @@ describe('AI persistence helpers', () => {
         {
           ...baseAnalysisResult.cards[0],
           id: 'card-2',
+          segmentId: 'seg-1',
           title: '第二张卡',
         },
       ],
@@ -111,5 +185,92 @@ describe('AI persistence helpers', () => {
 
     expect(resultWithTwoCards.cards).toHaveLength(2);
     expect(removed?.cards.map((card) => card.id)).toEqual(['card-2']);
+  });
+
+  it('merges scanned cover directory images back into cover candidates', () => {
+    const merged = mergeCoverCandidatesFromScannedAssets(
+      '/tmp/project',
+      [
+        {
+          id: 'cover-existing',
+          prompt: '旧封面',
+          imageUrl: '/tmp/project/covers/existing.png',
+          selected: true,
+        },
+        {
+          id: 'cover-error',
+          prompt: '失败封面',
+          imageUrl: '',
+          selected: false,
+          error: '下载失败',
+        },
+      ],
+      [
+        {
+          path: '/tmp/project/covers/existing.png',
+          type: 'image',
+          durationMs: 5_000,
+        },
+        {
+          path: '/tmp/project/covers/new-cover.png',
+          type: 'image',
+          durationMs: 5_000,
+        },
+        {
+          path: '/tmp/project/cover/legacy-cover.webp',
+          type: 'image',
+          durationMs: 5_000,
+        },
+        {
+          path: '/tmp/project/assets/not-a-cover.png',
+          type: 'image',
+          durationMs: 5_000,
+        },
+        {
+          path: '/tmp/project/covers/intro.mp4',
+          type: 'video',
+          durationMs: 8_000,
+        },
+      ],
+      '封面提示词',
+    );
+
+    expect(merged).toHaveLength(4);
+    expect(merged.find((candidate) => candidate.id === 'cover-existing')?.selected).toBe(true);
+    expect(merged.some((candidate) => candidate.imageUrl === '/tmp/project/covers/new-cover.png')).toBe(
+      true,
+    );
+    expect(
+      merged.some((candidate) => candidate.imageUrl === '/tmp/project/cover/legacy-cover.webp'),
+    ).toBe(true);
+    expect(
+      merged.some((candidate) => candidate.imageUrl === '/tmp/project/assets/not-a-cover.png'),
+    ).toBe(false);
+    expect(
+      merged.find((candidate) => candidate.imageUrl === '/tmp/project/covers/new-cover.png')?.prompt,
+    ).toBe('封面提示词');
+  });
+
+  it('selects the first scanned cover when no existing candidate is selected', () => {
+    const merged = mergeCoverCandidatesFromScannedAssets(
+      '/tmp/project',
+      [],
+      [
+        {
+          path: '/tmp/project/covers/cover-a.png',
+          type: 'image',
+          durationMs: 5_000,
+        },
+        {
+          path: '/tmp/project/covers/cover-b.png',
+          type: 'image',
+          durationMs: 5_000,
+        },
+      ],
+      '扫描封面',
+    );
+
+    expect(merged).toHaveLength(2);
+    expect(merged.map((candidate) => candidate.selected)).toEqual([true, false]);
   });
 });

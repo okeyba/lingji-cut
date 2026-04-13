@@ -42,6 +42,7 @@ describe('AI settings store helpers', () => {
 
     await expect(loadAISettings()).resolves.toMatchObject({
       enableThinking: true,
+      jimengModel: 'jimeng-5.0',
       minimaxApiKey: '',
       minimaxVoiceId: 'male-qn-qingse',
       minimaxSpeed: 1.0,
@@ -74,6 +75,45 @@ describe('AI settings store helpers', () => {
     });
   });
 
+  it('merges aiSettings into existing global settings instead of overwriting other sections', async () => {
+    const loadGlobalSettings = vi.fn().mockResolvedValue(
+      JSON.stringify({
+        reviewCriteria: '保留这段审查规则',
+        selectedRole: 'deep-insight-podcast',
+      }),
+    );
+    const saveGlobalSettings = vi.fn().mockResolvedValue(undefined);
+
+    vi.stubGlobal('window', {
+      electronAPI: {
+        loadGlobalSettings,
+        saveGlobalSettings,
+      },
+    });
+
+    await saveAISettings({
+      llmProviders: [],
+      defaultProviderId: null,
+      defaultModel: null,
+      llmBaseUrl: 'https://api.openai.com/v1',
+      llmApiKey: 'sk-test',
+      llmModel: 'gpt-4o',
+      jimengApiUrl: 'http://47.109.159.194:8330',
+      jimengSessionId: 'session-test',
+      minimaxApiKey: '',
+      minimaxVoiceId: 'male-qn-qingse',
+      minimaxSpeed: 1.0,
+    });
+
+    expect(loadGlobalSettings).toHaveBeenCalledTimes(1);
+    expect(saveGlobalSettings).toHaveBeenCalledTimes(1);
+
+    const savedPayload = JSON.parse(saveGlobalSettings.mock.calls[0][0] as string);
+    expect(savedPayload.reviewCriteria).toBe('保留这段审查规则');
+    expect(savedPayload.selectedRole).toBe('deep-insight-podcast');
+    expect(savedPayload.aiSettings.llmApiKey).toBe('sk-test');
+  });
+
   it('supports workflow updates and reset', () => {
     useAIStore.getState().setWorkflow({
       step: 'tts_generating',
@@ -99,5 +139,13 @@ describe('AI settings store helpers', () => {
       error: null,
       canCancel: false,
     });
+  });
+
+  it('clearing analysis error does not cancel an in-flight analyze state', () => {
+    useAIStore.getState().setAnalyzing(true);
+    useAIStore.getState().setAnalysisError(null);
+
+    expect(useAIStore.getState().isAnalyzing).toBe(true);
+    expect(useAIStore.getState().analysisError).toBeNull();
   });
 });

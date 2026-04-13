@@ -8,7 +8,7 @@ import {
   useAIStore,
 } from '../store/ai';
 import { getProjectDir, useTimelineStore } from '../store/timeline';
-import { useTaskProgressStore } from '../store/task-progress';
+import { useTaskProgressStore, type TaskProgressItem } from '../store/task-progress';
 import {
   buildAICardTimelineDraft,
   type AIAnalysisResult,
@@ -17,6 +17,13 @@ import {
 
 interface WorkflowStartOptions {
   pauseAfterTts?: boolean;
+  /**
+   * 仅重跑 TTS：TTS 完成后直接把 workflow 状态回到 idle，
+   * 不触发 Editor 侧的 tts_done 自动续跑（AI 分析/封面/排版）。
+   * 用于"从文稿重新生成口播"的场景。
+   */
+  ttsOnly?: boolean;
+  startFromStep?: Extract<WorkflowStep, 'tts_generating' | 'ai_analyzing'>;
 }
 
 interface WorkflowSessionState {
@@ -25,6 +32,7 @@ interface WorkflowSessionState {
   scriptText: string;
   projectDir: string;
   pauseAfterTts: boolean;
+  ttsOnly: boolean;
   cancelled: boolean;
 }
 
@@ -40,6 +48,7 @@ const workflowSession: WorkflowSessionState = {
   scriptText: '',
   projectDir: '',
   pauseAfterTts: false,
+  ttsOnly: false,
   cancelled: false,
 };
 
@@ -49,6 +58,7 @@ function resetWorkflowSession(): void {
   workflowSession.scriptText = '';
   workflowSession.projectDir = '';
   workflowSession.pauseAfterTts = false;
+  workflowSession.ttsOnly = false;
   workflowSession.cancelled = false;
 }
 
@@ -60,6 +70,57 @@ function buildWorkflowError(prefix: string, error: unknown): string {
   return prefix;
 }
 
+function ensureWorkflowTask(
+  taskId: string,
+  task: Omit<TaskProgressItem, 'startedAt' | 'status'>,
+): void {
+  const store = useTaskProgressStore.getState();
+
+  if (store.tasks.has(taskId)) {
+    store.updateTask(taskId, {
+      category: task.category,
+      label: task.label,
+      mode: task.mode,
+      progress: task.progress,
+      phase: task.phase,
+      canCancel: task.canCancel,
+    });
+    return;
+  }
+
+  store.startTask(task);
+}
+
+async function hydrateReusablePodcastMedia(): Promise<void> {
+  const timelineState = useTimelineStore.getState();
+  const audioPath = timelineState.timeline.podcast.audioPath?.trim() ?? '';
+  const srtPath = timelineState.timeline.podcast.srtPath?.trim() ?? '';
+
+  if (!srtPath) {
+    throw new Error('未找到可复用的字幕文件，请重新生成音频与字幕');
+  }
+
+  if (timelineState.srtEntries.length > 0 && timelineState.timeline.podcast.durationMs > 0) {
+    return;
+  }
+
+  const { entries, durationMs } = await window.electronAPI.parseSrtFile(srtPath);
+  const actualDurationMs = audioPath
+    ? await window.electronAPI.getAudioDuration(audioPath).catch(() => 0)
+    : 0;
+
+  timelineState.setSrtEntries(entries);
+  timelineState.setPodcast(
+    audioPath,
+    srtPath,
+    actualDurationMs > 0
+      ? actualDurationMs
+      : timelineState.timeline.podcast.durationMs > 0
+        ? timelineState.timeline.podcast.durationMs
+        : durationMs,
+  );
+}
+
 async function persistAIState(
   projectDir: string,
   analysisResult: AIAnalysisResult | null,
@@ -69,7 +130,12 @@ async function persistAIState(
     return;
   }
 
-  const persistedState = createPersistedAIState(analysisResult, coverCandidates);
+  const motionCards = useAIStore.getState().motionCards;
+  const persistedState = createPersistedAIState(
+    analysisResult,
+    coverCandidates,
+    motionCards,
+  );
   await window.electronAPI.saveProjectSection(
     projectDir,
     'aiAnalysis',
@@ -211,6 +277,20 @@ export function useAIVideoWorkflow() {
             actualDurationMs > 0 ? actualDurationMs : ttsResult.durationMs,
           );
 
+          // ttsOnly：仅重跑口播，完成后立刻收回到 idle，
+          // 避免 Editor 里 tts_done 自动续跑 AI 分析/封面/排版。
+          if (workflowSession.ttsOnly) {
+            useTaskProgressStore.getState().updateTask(workflowTaskId, {
+              label: '口播音频已更新',
+              phase: '完成',
+              progress: 100,
+            });
+            useTaskProgressStore.getState().completeTask(workflowTaskId);
+            setWorkflow({ ...DEFAULT_WORKFLOW });
+            workflowSession.retryStep = 'tts_generating';
+            return;
+          }
+
           setWorkflow({
             step: 'tts_done',
             progress: 100,
@@ -252,6 +332,33 @@ export function useAIVideoWorkflow() {
       }
 
       if (fromStep === 'ai_analyzing' || fromStep === 'tts_done') {
+        ensureWorkflowTask(workflowTaskId, {
+          id: workflowTaskId,
+          category: 'ai-analyze',
+          label: '准备分析素材',
+          mode: 'determinate',
+          progress: 5,
+          phase: '准备中',
+          level: 2,
+          canCancel: false,
+        });
+
+        try {
+          await hydrateReusablePodcastMedia();
+        } catch (error) {
+          const reuseErrorMsg = buildWorkflowError('复用已有音频与字幕失败', error);
+          setWorkflow({
+            step: 'error',
+            progress: 0,
+            stepLabel: '',
+            error: reuseErrorMsg,
+            canCancel: false,
+          });
+          useTaskProgressStore.getState().failTask(workflowTaskId, reuseErrorMsg);
+          workflowSession.retryStep = 'tts_generating';
+          return;
+        }
+
         setWorkflow({
           step: 'ai_analyzing',
           progress: 12,
@@ -260,10 +367,15 @@ export function useAIVideoWorkflow() {
           canCancel: false,
         });
 
-        useTaskProgressStore.getState().updateTask(workflowTaskId, {
+        ensureWorkflowTask(workflowTaskId, {
+          id: workflowTaskId,
+          category: 'ai-analyze',
           label: 'AI 内容分析',
-          phase: '分析中',
+          mode: 'determinate',
           progress: 12,
+          phase: '分析中',
+          level: 2,
+          canCancel: false,
         });
 
         try {
@@ -311,6 +423,17 @@ export function useAIVideoWorkflow() {
       if (fromStep === 'cover_generating') {
         const { analysisResult } = useAIStore.getState();
         const coverPrompts = analysisResult?.coverPrompts ?? [];
+
+        ensureWorkflowTask(workflowTaskId, {
+          id: workflowTaskId,
+          category: 'cover',
+          label: '封面图生成',
+          mode: 'determinate',
+          progress: 36,
+          phase: '生成中',
+          level: 2,
+          canCancel: false,
+        });
 
         if (coverPrompts.length > 0) {
           try {
@@ -365,6 +488,17 @@ export function useAIVideoWorkflow() {
             .filter((card) => card.enabled)
             .map(buildAICardTimelineDraft);
 
+          ensureWorkflowTask(workflowTaskId, {
+            id: workflowTaskId,
+            category: 'ai-analyze',
+            label: '时间轴排布',
+            mode: 'determinate',
+            progress: 72,
+            phase: '排布中',
+            level: 2,
+            canCancel: false,
+          });
+
           if (isStaleRun()) {
             return;
           }
@@ -378,9 +512,17 @@ export function useAIVideoWorkflow() {
               }
 
               timelineStore.addAICardsToTimeline([draft]);
+              const arrangingProgress = Math.round(72 + ((index + 1) / drafts.length) * 24);
               setWorkflow({
-                progress: Math.round(72 + ((index + 1) / drafts.length) * 24),
+                progress: arrangingProgress,
                 stepLabel: `正在排布时间轴… ${index + 1}/${drafts.length}`,
+              });
+              useTaskProgressStore.getState().updateTask(workflowTaskId, {
+                category: 'ai-analyze',
+                label: '时间轴排布',
+                phase: '排布中',
+                progress: arrangingProgress,
+                canCancel: false,
               });
               await sleep(90);
             }
@@ -415,9 +557,11 @@ export function useAIVideoWorkflow() {
     async (scriptText: string, options?: WorkflowStartOptions) => {
       resetWorkflowSession();
       workflowSession.requestId = crypto.randomUUID();
-      workflowSession.retryStep = 'tts_generating';
+      const initialStep = options?.startFromStep ?? 'tts_generating';
+      workflowSession.retryStep = initialStep;
       workflowSession.projectDir = getProjectDir() ?? '';
       workflowSession.pauseAfterTts = options?.pauseAfterTts ?? false;
+      workflowSession.ttsOnly = options?.ttsOnly ?? false;
 
       // 优先使用传入文本，否则从磁盘读取 script.md
       let text = scriptText;
@@ -430,7 +574,7 @@ export function useAIVideoWorkflow() {
       }
       workflowSession.scriptText = text;
 
-      void runFromStep('tts_generating', text, workflowSession.projectDir);
+      void runFromStep(initialStep, text, workflowSession.projectDir);
     },
     [runFromStep],
   );

@@ -8,7 +8,7 @@ import {
 } from '../lib/timeline-context-menu';
 import { getRenderableVisualTracks, getVisualTracks } from '../lib/timeline-tracks';
 import { filterValidSubtitleHighlights } from '../lib/subtitle-highlights';
-import { formatTime } from '../lib/utils';
+import { formatTime, getEffectiveTimelineDurationMs } from '../lib/utils';
 import {
   getAnchoredTimelineScrollLeft,
   getContinuousTimelineZoom,
@@ -90,7 +90,8 @@ export function Timeline({
     srtEntries,
     timeline,
   } = useTimelineStore();
-  const durationMs = Math.max(1000, timeline.podcast.durationMs);
+  // 考虑动画 / 媒体 overlay 末端，没素材时也保证尺子能容纳已经添加的卡片
+  const durationMs = useMemo(() => getEffectiveTimelineDurationMs(timeline), [timeline]);
   const outerPadding = compact ? 8 : 10;
   const sidebarWidth = compact ? 86 : 104;
   const toolbarHeight = compact ? 36 : 40;

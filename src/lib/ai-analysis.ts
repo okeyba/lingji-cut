@@ -7,10 +7,12 @@ import {
   isDataContent,
   type AIAnalysisResult,
   type AICard,
+  type AISegment,
   type AISettings,
   type CardStyle,
   type WebCardPayload,
 } from '../types/ai';
+import type { MotionCardPayload } from '../types/motion';
 import { generateStructuredData } from './llm';
 
 interface AnalyzeSrtOptions {
@@ -23,13 +25,22 @@ interface RegenerateCardOptions {
   generateStructuredData?: typeof generateStructuredData;
   globalPrompt?: string;
   cardPrompt?: string;
-  contextPaddingMs?: number;
+  programSummary?: string;
+  keywords?: string[];
 }
 
 interface RegenerateCoverPromptOptions {
   generateStructuredData?: typeof generateStructuredData;
   globalPrompt?: string;
   currentPrompt?: string;
+}
+
+interface SegmentPlanningResult {
+  segments: AISegment[];
+  coverPrompts: string[];
+  summary: string;
+  keywords: string[];
+  globalPrompt?: string;
 }
 
 function msToTimestamp(ms: number): string {
@@ -39,10 +50,6 @@ function msToTimestamp(ms: number): string {
   const millis = ms % 1_000;
 
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(millis).padStart(3, '0')}`;
-}
-
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length * 1.3);
 }
 
 function normalizeStyle(type: AICard['type'], style: unknown): CardStyle {
@@ -86,7 +93,68 @@ function normalizeWebCardPayload(value: unknown): WebCardPayload | undefined {
   };
 }
 
-function normalizeCard(rawCard: unknown, index: number): AICard | null {
+function isMotionCardPayload(value: unknown): value is MotionCardPayload {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      typeof (value as MotionCardPayload).sourceCode === 'string' &&
+      typeof (value as MotionCardPayload).compiledCode === 'string',
+  );
+}
+
+function normalizeMotionCardPayload(value: unknown, promptFallback: string): MotionCardPayload | undefined {
+  if (!isMotionCardPayload(value)) {
+    return undefined;
+  }
+
+  return {
+    sourceCode: value.sourceCode,
+    compiledCode: value.compiledCode,
+    compiledAt: Number.isFinite(value.compiledAt) ? Number(value.compiledAt) : Date.now(),
+    compileError: typeof value.compileError === 'string' ? value.compileError : undefined,
+    prompt: typeof value.prompt === 'string' && value.prompt.trim() ? value.prompt.trim() : promptFallback,
+    retryCount:
+      Number.isFinite(value.retryCount) && Number(value.retryCount) >= 0 ? Number(value.retryCount) : 0,
+  };
+}
+
+function normalizeSegment(rawSegment: unknown, index: number): AISegment | null {
+  if (!rawSegment || typeof rawSegment !== 'object') {
+    return null;
+  }
+
+  const candidate = rawSegment as Record<string, unknown>;
+  const startMs = Number(candidate.startMs);
+  const endMs = Number(candidate.endMs);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+    return null;
+  }
+
+  return {
+    id: typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id.trim() : `segment-${index + 1}`,
+    title:
+      typeof candidate.title === 'string' && candidate.title.trim()
+        ? candidate.title.trim()
+        : `段落 ${index + 1}`,
+    summary:
+      typeof candidate.summary === 'string' && candidate.summary.trim()
+        ? candidate.summary.trim()
+        : `段落 ${index + 1}`,
+    startMs,
+    endMs,
+    transcriptExcerpt:
+      typeof candidate.transcriptExcerpt === 'string' && candidate.transcriptExcerpt.trim()
+        ? candidate.transcriptExcerpt.trim()
+        : undefined,
+  };
+}
+
+function normalizeCard(
+  rawCard: unknown,
+  index: number,
+  segmentId: string,
+  promptFallback?: string,
+): AICard | null {
   if (!rawCard || typeof rawCard !== 'object') {
     return null;
   }
@@ -107,11 +175,27 @@ function normalizeCard(rawCard: unknown, index: number): AICard | null {
       ? candidate.content
       : '';
   const webCard = normalizeWebCardPayload(candidate.webCard);
+  const cardPrompt =
+    typeof candidate.cardPrompt === 'string' && candidate.cardPrompt.trim()
+      ? candidate.cardPrompt.trim()
+      : promptFallback?.trim() || undefined;
+  const motionCard = normalizeMotionCardPayload(candidate.motionCard, cardPrompt ?? '');
   const renderMode =
-    candidate.renderMode === 'web-card' || webCard ? 'web-card' : 'legacy';
+    candidate.renderMode === 'motion-card' || motionCard
+      ? 'motion-card'
+      : candidate.renderMode === 'web-card' || webCard
+        ? 'web-card'
+        : 'legacy';
 
   return {
-    id: typeof candidate.id === 'string' && candidate.id ? candidate.id : `card-${index + 1}`,
+    id:
+      typeof candidate.id === 'string' && candidate.id.trim()
+        ? candidate.id.trim()
+        : `${segmentId}-card-${index + 1}`,
+    segmentId:
+      typeof candidate.segmentId === 'string' && candidate.segmentId.trim()
+        ? candidate.segmentId.trim()
+        : segmentId,
     type: candidate.type,
     title: typeof candidate.title === 'string' ? candidate.title : `卡片 ${index + 1}`,
     content,
@@ -129,13 +213,10 @@ function normalizeCard(rawCard: unknown, index: number): AICard | null {
     enabled: candidate.enabled !== false,
     style: normalizeStyle(candidate.type, candidate.style),
     renderMode,
-    cardPrompt: typeof candidate.cardPrompt === 'string' ? candidate.cardPrompt : undefined,
+    cardPrompt,
     webCard,
+    motionCard,
   };
-}
-
-function formatCardContentForPrompt(content: AICard['content']): string {
-  return typeof content === 'string' ? content : JSON.stringify(content, null, 2);
 }
 
 function buildUnifiedVisualPromptSection(): string {
@@ -159,6 +240,16 @@ function buildUnifiedVisualPromptSection(): string {
 整体风格建议：
 - 偏 macOS desktop dark / Swift UI 的半透明磨砂层次
 - 高光和阴影要克制，避免霓虹紫、强饱和电商橙、网页营销页式渐变`;
+}
+
+function buildTimelinePromptSection(): string {
+  return `时间轴约束（非常重要）：
+- startMs 必须对应“观众真正听到该主题”的那句字幕开始时间
+- 不要把铺垫、转场、提问或上一话题的时间提前算进来
+- endMs 必须对应该主题核心表达完成的那句字幕结束时间
+- displayDurationMs 必须覆盖这张卡片对应的核心表达，不能在主题刚讲到时就结束
+- 如果一个主题在后半段才真正展开，宁可把 startMs 设晚，也不要让卡片提前出现
+- startMs、endMs、displayDurationMs 必须输出毫秒数字`;
 }
 
 function normalizeCoverPrompts(value: unknown): string[] {
@@ -185,20 +276,24 @@ function parseCoverPromptResult(value: unknown): string[] {
   return normalizeCoverPrompts(candidate.coverPrompts);
 }
 
-function parsePartialResult(value: unknown): AIAnalysisResult | null {
+function parseSegmentPlanningResult(value: unknown): SegmentPlanningResult | null {
   if (!value || typeof value !== 'object') {
     return null;
   }
 
   const candidate = value as Record<string, unknown>;
-  const cards = Array.isArray(candidate.cards)
-    ? candidate.cards
-        .map(normalizeCard)
-        .filter((card): card is AICard => card !== null)
+  const segments = Array.isArray(candidate.segments)
+    ? candidate.segments
+        .map(normalizeSegment)
+        .filter((segment): segment is AISegment => segment !== null)
     : [];
 
+  if (segments.length === 0) {
+    return null;
+  }
+
   return {
-    cards,
+    segments,
     coverPrompts: normalizeCoverPrompts(candidate.coverPrompts),
     summary: typeof candidate.summary === 'string' ? candidate.summary : '',
     keywords: Array.isArray(candidate.keywords)
@@ -214,92 +309,38 @@ export function buildSrtText(entries: SrtEntry[]): string {
     .join('\n');
 }
 
-export function chunkSrtEntries(
-  entries: SrtEntry[],
-  maxTokens: number,
-  overlapEntries = 1,
-): SrtEntry[][] {
-  if (entries.length === 0) {
-    return [];
-  }
-
-  if (estimateTokens(buildSrtText(entries)) <= maxTokens) {
-    return [entries];
-  }
-
-  const chunks: SrtEntry[][] = [];
-  let currentChunk: SrtEntry[] = [];
-  let currentTokens = 0;
-
-  for (const entry of entries) {
-    const entryTokens = estimateTokens(buildSrtText([entry]));
-    if (currentChunk.length > 0 && currentTokens + entryTokens > maxTokens) {
-      chunks.push(currentChunk);
-      currentChunk = currentChunk.slice(-overlapEntries);
-      currentTokens = estimateTokens(buildSrtText(currentChunk));
-    }
-
-    currentChunk.push(entry);
-    currentTokens += entryTokens;
-  }
-
-  if (currentChunk.length > 0) {
-    chunks.push(currentChunk);
-  }
-
-  return chunks;
-}
-
-export function buildAnalysisPrompt(globalPrompt?: string): string {
+export function buildSegmentPlanningPrompt(globalPrompt?: string): string {
   const promptLine = globalPrompt?.trim()
     ? `\n额外创作要求：${globalPrompt.trim()}\n`
     : '\n';
-  const visualPrompt = buildUnifiedVisualPromptSection();
 
-  return `你是一个播客内容分析助手，同时也是一个网页信息卡设计师。请分析字幕并输出严格 JSON。${promptLine}
+  return `你是一个播客内容分析助手。请先完整理解整篇字幕，再把节目拆成有明确语义边界的段落，并输出严格 JSON。${promptLine}
 
 输出结构必须包含：
-- cards: 3-8 张卡片，类型只能是 summary、data、insight、chapter、quote
+- segments: 2-8 个段落
 - coverPrompts: 1 组封面提示词，数组中只能有 1 条
 - summary: 一句话总结
 - keywords: 关键词数组
 - globalPrompt: 沿用输入的整期创作提示词，没有则返回空字符串
 
-cards 中每一项必须包含：
+segments 中每一项必须包含：
 - id
-- type
 - title
-- content
+- summary
 - startMs
 - endMs
-- displayDurationMs
-- displayMode
-- template
-- enabled
-- style
-- renderMode
-- webCard
+- transcriptExcerpt
 
-data 类型的 content 使用对象：
-{
-  "chartType": "bar|comparison|ranking|stat",
-  "items": [{ "label": "标签", "value": 72, "highlight": true }]
-}
+段落拆分要求：
+- 必须按真实话题边界拆分，而不是按 token 长度硬切
+- startMs / endMs 必须对应该段真正开始与结束的字幕时间
+- 如果前面只是铺垫，不要把时间提前算进该段
+- transcriptExcerpt 保留该段最关键的原始字幕摘录，便于后续逐段生成卡片
 
-renderMode 默认输出 "web-card"。
-
-webCard 使用对象：
-{
-  "srcDoc": "<!doctype html>...</html>"
-}
-
-srcDoc 要求：
-- 必须是完整 HTML 文档
-- 允许 HTML/CSS/JS
-- 允许外部图片、脚本、字体和样式
-- coverPrompts 必须使用简体中文撰写，适合直接用于封面图生成
-- coverPrompts 避免英文，除非品牌名、专有名词或必要缩写
-${visualPrompt}
+coverPrompts 要求：
+- 必须使用简体中文
+- 适合直接用于 16:9 播客封面生成
+- 除品牌名、专有名词或必要缩写外，不要使用英文
 
 请只返回 JSON，不要附加解释。`;
 }
@@ -334,44 +375,65 @@ ${currentPrompt || '无'}
 请只返回 JSON，不要附加解释。`;
 }
 
-export function buildCardRegenerationPrompt(
-  card: AICard,
-  options: {
-    globalPrompt?: string;
-    cardPrompt?: string;
-  } = {},
-): string {
-  const globalPrompt = options.globalPrompt?.trim();
-  const cardPrompt = options.cardPrompt?.trim();
-  const visualPrompt = buildUnifiedVisualPromptSection();
-  const currentContent = formatCardContentForPrompt(card.content);
+export function buildSegmentCardPrompt(params: {
+  fullTranscript: string;
+  segment: AISegment;
+  globalPrompt?: string;
+  cardPrompt?: string;
+  currentCard?: AICard;
+  programSummary?: string;
+  keywords?: string[];
+}): string {
+  const {
+    fullTranscript,
+    segment,
+    globalPrompt,
+    cardPrompt,
+    currentCard,
+    programSummary,
+    keywords = [],
+  } = params;
 
-  return `你是一个播客内容分析助手，同时也是一个网页信息卡设计师。现在要重生成一张播客信息卡，请输出严格 JSON，且只返回单张卡片对象。
+  const currentCardSection = currentCard
+    ? `当前卡片线索（仅用于延续已有风格和信息结构，不要机械照抄）：
+- id: ${currentCard.id}
+- type: ${currentCard.type}
+- title: ${currentCard.title}
+- content: ${typeof currentCard.content === 'string' ? currentCard.content : JSON.stringify(currentCard.content, null, 2)}
+- displayMode: ${currentCard.displayMode}
+- template: ${currentCard.template}
+- style.primaryColor: ${currentCard.style.primaryColor}
+- style.backgroundColor: ${currentCard.style.backgroundColor}
+- style.fontSize: ${currentCard.style.fontSize}
+`
+    : '当前卡片线索：无\n';
 
-这次重生成必须沿用首次生成时的统一视觉基线；如果没有明确要求，不要另起一套新的设计语言。
-
-当前卡片信息：
-- id: ${card.id}
-- type: ${card.type}
-- title: ${card.title}
-- content: ${currentContent}
-- startMs: ${card.startMs}
-- endMs: ${card.endMs}
-- displayDurationMs: ${card.displayDurationMs}
-- displayMode: ${card.displayMode}
-- template: ${card.template}
-- style.primaryColor: ${card.style.primaryColor}
-- style.backgroundColor: ${card.style.backgroundColor}
-- style.fontSize: ${card.style.fontSize}
+  return `你是一个播客内容分析助手，同时也是一个网页信息卡设计师。现在要围绕单个内容段落生成一张网页信息卡，请输出严格 JSON，且只返回单张卡片对象。
 
 整期创作提示词：
-${globalPrompt || '无'}
+${globalPrompt?.trim() || '无'}
+
+节目级总结：
+${programSummary?.trim() || '无'}
+
+节目关键词：
+${keywords.length > 0 ? keywords.join('、') : '无'}
+
+当前 segment 信息：
+- id: ${segment.id}
+- title: ${segment.title}
+- summary: ${segment.summary}
+- startMs: ${segment.startMs}
+- endMs: ${segment.endMs}
+- transcriptExcerpt: ${segment.transcriptExcerpt || '无'}
 
 单卡追加提示词：
-${cardPrompt || '无'}
+${cardPrompt?.trim() || '无'}
 
+${currentCardSection}
 输出字段必须包含：
 - id
+- segmentId
 - type
 - title
 - content
@@ -390,67 +452,95 @@ ${cardPrompt || '无'}
 - renderMode 默认输出 "web-card"
 - webCard.srcDoc 必须是完整 HTML 文档
 - 允许 HTML/CSS/JS 和外部资源
-${visualPrompt}
-- 可以基于当前卡片信息和追加提示词调整文案组织与排版细节
-- 视觉风格必须与首次生成保持一致
-- 优先延续当前卡片的 template 与 style 线索
+${buildTimelinePromptSection()}
+${buildUnifiedVisualPromptSection()}
+- 必须围绕当前 segment 生成，不要偏离整期主线
+- 可以参考“当前卡片线索”延续排版与视觉方向，但不要照抄旧内容
+- 请基于整篇全文理解这段内容在整期中的作用，再决定卡片信息结构
+
+完整字幕全文如下：
+${fullTranscript}
 
 请只返回 JSON 对象，不要附加解释。`;
 }
 
-export function mergeAnalysisResults(results: AIAnalysisResult[]): AIAnalysisResult {
-  const seenStartMs = new Set<number>();
-  const cards: AICard[] = [];
-  const keywords = new Set<string>();
-  let coverPrompts: string[] = [];
-  const summaries: string[] = [];
-  let globalPrompt = '';
+export async function planTranscriptSegments(
+  entries: SrtEntry[],
+  settings: AISettings,
+  options: AnalyzeSrtOptions = {},
+): Promise<SegmentPlanningResult> {
+  const {
+    generateStructuredData: requestStructuredData = generateStructuredData,
+    globalPrompt,
+  } = options;
 
-  for (const result of results) {
-    for (const card of result.cards) {
-      if (seenStartMs.has(card.startMs)) {
-        continue;
-      }
+  if (entries.length === 0) {
+    throw new Error('没有可分析的字幕内容');
+  }
 
-      seenStartMs.add(card.startMs);
-      cards.push(card);
-    }
-
-    for (const keyword of result.keywords) {
-      keywords.add(keyword);
-    }
-
-    if (result.coverPrompts.length > 0) {
-      coverPrompts = normalizeCoverPrompts(result.coverPrompts);
-    }
-
-    if (result.summary) {
-      summaries.push(result.summary);
-    }
-
-    if (result.globalPrompt) {
-      globalPrompt = result.globalPrompt;
-    }
+  const payload = await requestStructuredData(
+    settings,
+    buildSegmentPlanningPrompt(globalPrompt),
+    buildSrtText(entries),
+  );
+  const parsed = parseSegmentPlanningResult(payload);
+  if (!parsed) {
+    throw new Error('LLM 未返回有效的段落规划结果');
   }
 
   return {
-    cards: cards.sort((left, right) => left.startMs - right.startMs),
-    coverPrompts,
-    summary: summaries.join('；'),
-    keywords: [...keywords],
-    globalPrompt: globalPrompt || undefined,
+    ...parsed,
+    globalPrompt: globalPrompt?.trim() || parsed.globalPrompt,
   };
 }
 
-export function getCardContextEntries(
+export async function generateCardForSegment(
   entries: SrtEntry[],
-  card: Pick<AICard, 'startMs' | 'endMs'>,
-  paddingMs = 10_000,
-): SrtEntry[] {
-  const startMs = Math.max(0, card.startMs - paddingMs);
-  const endMs = card.endMs + paddingMs;
+  planning: SegmentPlanningResult,
+  segment: AISegment,
+  settings: AISettings,
+  options: {
+    generateStructuredData?: typeof generateStructuredData;
+    globalPrompt?: string;
+    cardPrompt?: string;
+    currentCard?: AICard;
+  } = {},
+): Promise<AICard> {
+  const {
+    generateStructuredData: requestStructuredData = generateStructuredData,
+    globalPrompt,
+    cardPrompt,
+    currentCard,
+  } = options;
 
-  return entries.filter((entry) => entry.endMs >= startMs && entry.startMs <= endMs);
+  if (entries.length === 0) {
+    throw new Error('没有可用于生成卡片的字幕内容');
+  }
+
+  const fullTranscript = buildSrtText(entries);
+  const payload = await requestStructuredData(
+    settings,
+    buildSegmentCardPrompt({
+      fullTranscript,
+      segment,
+      globalPrompt: globalPrompt?.trim() || planning.globalPrompt,
+      cardPrompt,
+      currentCard,
+      programSummary: planning.summary,
+      keywords: planning.keywords,
+    }),
+    fullTranscript,
+  );
+  const parsed = normalizeCard(payload, 0, segment.id, cardPrompt);
+  if (!parsed) {
+    throw new Error('LLM 未返回有效的卡片结果');
+  }
+
+  return {
+    ...parsed,
+    segmentId: segment.id,
+    cardPrompt: cardPrompt?.trim() || parsed.cardPrompt,
+  };
 }
 
 export async function analyzeSrt(
@@ -459,40 +549,39 @@ export async function analyzeSrt(
   options: AnalyzeSrtOptions = {},
 ): Promise<AIAnalysisResult> {
   const {
-    maxTokens = 8_000,
     generateStructuredData: requestStructuredData = generateStructuredData,
     globalPrompt,
   } = options;
-  const chunks = chunkSrtEntries(entries, maxTokens);
-  if (chunks.length === 0) {
-    throw new Error('没有可分析的字幕内容');
-  }
 
-  const systemPrompt = buildAnalysisPrompt(globalPrompt);
-  const partialResults: AIAnalysisResult[] = [];
+  const planning = await planTranscriptSegments(entries, settings, {
+    generateStructuredData: requestStructuredData,
+    globalPrompt,
+  });
 
-  for (const chunk of chunks) {
-    const payload = await requestStructuredData(settings, systemPrompt, buildSrtText(chunk));
-    const parsed = parsePartialResult(payload);
-    if (parsed) {
-      partialResults.push(parsed);
-      continue;
-    }
-  }
-
-  if (partialResults.length === 0) {
-    throw new Error('LLM 未返回有效的分析结果');
+  const cards: AICard[] = [];
+  for (const segment of planning.segments) {
+    cards.push(
+      await generateCardForSegment(entries, planning, segment, settings, {
+        generateStructuredData: requestStructuredData,
+        globalPrompt: planning.globalPrompt,
+      }),
+    );
   }
 
   return {
-    ...mergeAnalysisResults(partialResults),
-    globalPrompt: globalPrompt?.trim() || undefined,
+    segments: planning.segments,
+    cards,
+    coverPrompts: planning.coverPrompts,
+    summary: planning.summary,
+    keywords: planning.keywords,
+    globalPrompt: planning.globalPrompt,
   };
 }
 
 export async function regenerateAICard(
   entries: SrtEntry[],
   card: AICard,
+  segment: AISegment,
   settings: AISettings,
   options: RegenerateCardOptions = {},
 ): Promise<AICard> {
@@ -500,31 +589,38 @@ export async function regenerateAICard(
     generateStructuredData: requestStructuredData = generateStructuredData,
     globalPrompt,
     cardPrompt = card.cardPrompt,
-    contextPaddingMs = 10_000,
+    programSummary,
+    keywords = [],
   } = options;
 
-  const contextEntries = getCardContextEntries(entries, card, contextPaddingMs);
-  if (contextEntries.length === 0) {
-    throw new Error('未找到与该卡片对应的字幕上下文');
+  if (!segment) {
+    throw new Error('缺少卡片对应的段落信息');
   }
 
-  const payload = await requestStructuredData(
+  const regenerated = await generateCardForSegment(
+    entries,
+    {
+      segments: [segment],
+      coverPrompts: [],
+      summary: programSummary ?? '',
+      keywords,
+      globalPrompt: globalPrompt?.trim() || undefined,
+    },
+    segment,
     settings,
-    buildCardRegenerationPrompt(card, {
+    {
+      generateStructuredData: requestStructuredData,
       globalPrompt,
       cardPrompt,
-    }),
-    buildSrtText(contextEntries),
+      currentCard: card,
+    },
   );
-  const parsed = normalizeCard(payload, 0);
-  if (!parsed) {
-    throw new Error('LLM 未返回有效的卡片结果');
-  }
 
   return {
     ...card,
-    ...parsed,
+    ...regenerated,
     id: card.id,
+    segmentId: segment.id,
     enabled: card.enabled,
     cardPrompt: cardPrompt?.trim() || undefined,
   };

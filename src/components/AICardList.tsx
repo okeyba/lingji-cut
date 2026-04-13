@@ -26,6 +26,7 @@ const CARD_TYPE_META: Record<AICardType, { label: string; color: string; tone: s
   insight: { label: '观点', color: '#FF9F0A', tone: 'orange' },
   chapter: { label: '章节', color: '#BF5AF2', tone: 'purple' },
   quote: { label: '金句', color: '#FFD60A', tone: 'yellow' },
+  motion: { label: '动画', color: '#c084fc', tone: 'purple' },
 };
 
 export function AICardList({

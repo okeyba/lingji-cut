@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useAgentStore } from '../../store/agent';
 import { useScriptStore } from '../../store/script';
 import { getCurrentProjectDir } from '../../store/timeline';
 import { useConversationList } from '../../hooks/use-conversation-list';
@@ -109,9 +108,9 @@ function SidebarWorkspaceShell({ projectDir }: { projectDir: string }) {
   }, [projectDir, setActiveConversation]);
 
   return (
-    <div className="flex-1 min-w-0 flex">
+    <div className="flex-1 min-w-0 min-h-0 flex">
       <div
-        className={`border-r border-mac-separator bg-white/[0.02] flex flex-col transition-[width] duration-200 ease-out ${
+        className={`border-r border-mac-separator bg-white/[0.02] flex flex-col min-h-0 transition-[width] duration-200 ease-out ${
           sessionListCollapsed ? 'w-[64px] min-w-[64px] max-w-[64px]' : 'w-[240px] min-w-[220px] max-w-[280px]'
         }`}
       >

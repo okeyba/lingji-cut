@@ -7,13 +7,20 @@ type ResizeHandle = 'nw' | 'n' | 'ne' | 'w' | 'e' | 'sw' | 's' | 'se';
 
 const HANDLES: ResizeHandle[] = ['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'];
 
+interface StageRectSnapshot {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 interface CanvasInteractionLayerProps {
   overlays: OverlayItem[];
   selectedOverlayId: string | null;
   currentTimeMs: number;
   canvasWidth: number;
   canvasHeight: number;
-  stageRect: DOMRect | null;
+  getStageRect: () => StageRectSnapshot | null;
   onSelect: (overlayId: string | null) => void;
   onUpdatePosition: (overlayId: string, position: OverlayPosition) => void;
 }
@@ -33,7 +40,7 @@ export function CanvasInteractionLayer({
   currentTimeMs,
   canvasWidth,
   canvasHeight,
-  stageRect,
+  getStageRect,
   onSelect,
   onUpdatePosition,
 }: CanvasInteractionLayerProps) {
@@ -54,7 +61,7 @@ export function CanvasInteractionLayer({
     startResize,
     onMouseMove,
     endInteraction,
-  } = useCanvasInteraction({ canvasWidth, canvasHeight, stageRect, onUpdatePosition });
+  } = useCanvasInteraction({ canvasWidth, canvasHeight, getStageRect, onUpdatePosition });
 
   // 避免 lint 报 unused（selectedOverlay 未来可用于扩展）
   void selectedOverlay;

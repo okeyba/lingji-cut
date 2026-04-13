@@ -15,6 +15,7 @@ import {
   Select,
 } from '../../ui';
 import type { SelectOption } from '../../ui';
+import { normalizeProviderDraft, validateProviderDraft } from './ai-config-utils';
 import styles from './ProviderListSection.module.css';
 
 /** 生成唯一 ID */
@@ -52,15 +53,32 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
   const [form, setForm] = useState<LLMProvider>({ ...initial });
   const [setAsDefault, setSetAsDefault] = useState(isDefault);
   const [newModel, setNewModel] = useState('');
+  const [errors, setErrors] = useState<ReturnType<typeof validateProviderDraft>>({});
   const title = initial.name ? '编辑 Provider' : '添加 Provider';
 
-  const set = <K extends keyof LLMProvider>(key: K, value: LLMProvider[K]) =>
+  const clearFieldError = (key: keyof ReturnType<typeof validateProviderDraft>) =>
+    setErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+
+  const set = <K extends keyof LLMProvider>(
+    key: K,
+    value: LLMProvider[K],
+    errorKey?: keyof ReturnType<typeof validateProviderDraft>,
+  ) => {
     setForm((f) => ({ ...f, [key]: value }));
+    if (errorKey) {
+      clearFieldError(errorKey);
+    }
+  };
 
   const addModel = () => {
     const m = newModel.trim();
     if (m && !form.models.includes(m)) {
-      set('models', [...form.models, m]);
+      set('models', [...form.models, m], 'models');
     }
     setNewModel('');
   };
@@ -69,7 +87,32 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
     set(
       'models',
       form.models.filter((_, i) => i !== idx),
+      'models',
     );
+
+  const handleConfirm = () => {
+    const pendingModel = newModel.trim();
+    const nextForm =
+      pendingModel && !form.models.includes(pendingModel)
+        ? { ...form, models: [...form.models, pendingModel] }
+        : form;
+
+    const nextErrors = validateProviderDraft(nextForm);
+    setErrors(nextErrors);
+
+    if (pendingModel) {
+      setNewModel('');
+      if (nextForm !== form) {
+        setForm(nextForm);
+      }
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    onSave(normalizeProviderDraft(nextForm), setAsDefault);
+  };
 
   return (
     <Dialog open onOpenChange={(open) => (!open ? onCancel() : undefined)}>
@@ -79,13 +122,18 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
         </DialogHeader>
         <DialogBody className={styles.dialogBody}>
           <label className={styles.field}>
-            <span className={styles.fieldLabel}>名称</span>
+            <span className={styles.fieldLabelRow}>
+              <span className={styles.fieldLabel}>名称</span>
+              <span className={styles.requiredMark}>*</span>
+            </span>
             <Input
               value={form.name}
-              onChange={(e) => set('name', e.target.value)}
+              onChange={(e) => set('name', e.target.value, 'name')}
               placeholder="例如：本地 Ollama"
               size="sm"
+              aria-invalid={Boolean(errors.name)}
             />
+            {errors.name ? <span className={styles.fieldError}>{errors.name}</span> : null}
           </label>
 
           <div className={styles.field}>
@@ -98,28 +146,41 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
           </div>
 
           <label className={styles.field}>
-            <span className={styles.fieldLabel}>Base URL</span>
+            <span className={styles.fieldLabelRow}>
+              <span className={styles.fieldLabel}>Base URL</span>
+              <span className={styles.requiredMark}>*</span>
+            </span>
             <Input
               value={form.baseUrl}
-              onChange={(e) => set('baseUrl', e.target.value)}
+              onChange={(e) => set('baseUrl', e.target.value, 'baseUrl')}
               placeholder="https://api.openai.com/v1"
               size="sm"
+              aria-invalid={Boolean(errors.baseUrl)}
             />
+            {errors.baseUrl ? <span className={styles.fieldError}>{errors.baseUrl}</span> : null}
           </label>
 
           <label className={styles.field}>
-            <span className={styles.fieldLabel}>API Key</span>
+            <span className={styles.fieldLabelRow}>
+              <span className={styles.fieldLabel}>API Key</span>
+              <span className={styles.requiredMark}>*</span>
+            </span>
             <Input
               variant="password"
               value={form.apiKey}
-              onChange={(e) => set('apiKey', e.target.value)}
+              onChange={(e) => set('apiKey', e.target.value, 'apiKey')}
               placeholder="sk-..."
               size="sm"
+              aria-invalid={Boolean(errors.apiKey)}
             />
+            {errors.apiKey ? <span className={styles.fieldError}>{errors.apiKey}</span> : null}
           </label>
 
           <div className={styles.field}>
-            <span className={styles.fieldLabel}>模型列表</span>
+            <span className={styles.fieldLabelRow}>
+              <span className={styles.fieldLabel}>模型列表</span>
+              <span className={styles.requiredMark}>*</span>
+            </span>
             {form.models.length > 0 ? (
               <div className={styles.modelList}>
                 {form.models.map((m, idx) => (
@@ -155,11 +216,13 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
                 placeholder="输入模型名后按 Enter 或点击添加"
                 size="sm"
                 wrapperClassName={styles.modelInput}
+                aria-invalid={Boolean(errors.models)}
               />
               <Button type="button" variant="secondary" size="sm" onClick={addModel}>
                 添加
               </Button>
             </div>
+            {errors.models ? <span className={styles.fieldError}>{errors.models}</span> : null}
           </div>
 
           <Checkbox
@@ -172,8 +235,13 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
 
           <ModalFooter
             onCancel={onCancel}
-            onConfirm={() => onSave(form, setAsDefault)}
+            onConfirm={handleConfirm}
             confirmLabel="保存"
+            extra={
+              Object.keys(errors).length > 0 ? (
+                <span className={styles.footerError}>请先补全 Provider 的必填项</span>
+              ) : null
+            }
           />
         </DialogBody>
       </DialogContent>

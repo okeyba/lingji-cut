@@ -64,24 +64,16 @@ export interface AgentCapabilities {
 }
 
 // ─── AgentAPI 接口（window.agentAPI）────────────────────────
+//
+// 只包含两类 API：
+//   1. 全局配置 / 预检 / 安装管理 —— 和单个会话无关
+//   2. Per-conversation runtime —— 多会话架构的唯一入口
+//
+// 历史上的"单例 ACP 连接" API（connect/disconnect/getStatus/sendPrompt/
+// cancelTurn/setMode/setConfigOption/respondPermission/onStatusChanged/
+// onEvent/onCapabilities）已经在多会话迁移中彻底移除。
 
 export interface AgentAPI {
-  // 连接管理
-  connect(projectDir: string, sessionId?: string | null): Promise<void>;
-  disconnect(): Promise<void>;
-  getStatus(): Promise<string>;
-
-  // 对话
-  sendPrompt(contents: PromptInputBlock[]): Promise<void>;
-  cancelTurn(): Promise<void>;
-
-  // 模式与配置
-  setMode(modeId: string): Promise<void>;
-  setConfigOption(configId: string, valueId: string): Promise<void>;
-
-  // 权限
-  respondPermission(requestId: string, optionId: string): Promise<void>;
-
   // 设置
   getConfig(): Promise<AgentConfigData>;
   saveConfig(data: AgentConfigData): Promise<void>;
@@ -95,11 +87,6 @@ export interface AgentAPI {
   installAgent(version: string): Promise<void>;
   uninstallAgent(): Promise<void>;
   getLatestVersion(): Promise<string | null>;
-
-  // 事件监听（Main → Renderer）
-  onStatusChanged(callback: (status: ConnectionStatus) => void): () => void;
-  onEvent(callback: (block: ContentBlock) => void): () => void;
-  onCapabilities(callback: (caps: AgentCapabilities) => void): () => void;
 
   // 多会话 runtime API
   connectRuntime(input: {

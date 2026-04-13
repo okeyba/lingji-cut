@@ -21,9 +21,9 @@ vi.mock('../src/store/timeline', () => ({
         locked: true,
       },
       {
-        path: '/tmp/cover.png',
+        path: '/tmp/cover #1.png',
         type: 'image',
-        name: 'cover.png',
+        name: 'cover #1.png',
         durationMs: 5_000,
       },
       {
@@ -51,7 +51,7 @@ describe('AssetPanel', () => {
     const html = renderToStaticMarkup(<AssetPanel compact={false} />);
 
     expect(html).toContain(`<img`);
-    expect(html).toContain(`src="${toFileSrc('/tmp/cover.png')}"`);
+    expect(html).toContain(`src="${toFileSrc('/tmp/cover #1.png')}"`);
     expect(html).not.toContain(`<video`);
     expect(html).toContain('placeholder="搜索素材…"');
     expect(html).toContain('全部');
@@ -59,9 +59,10 @@ describe('AssetPanel', () => {
     expect(html).toContain('音频');
     expect(html).toContain('podcast.mp3');
     expect(html).toContain('subtitles.srt');
-    expect(html).toContain('cover.png');
+    expect(html).toContain('cover #1.png');
     expect(html).toContain('intro.mp4');
     expect(html).toContain('导入');
+    expect((html.match(/data-asset-context-menu="image-background"/g) ?? []).length).toBe(1);
   });
 
   it('renders dedicated timeline attach actions for audio and srt assets', () => {

@@ -95,7 +95,7 @@ export function reconcileExpandedDirectories(
   previous: Record<string, boolean>,
 ): Record<string, boolean> {
   return collectDirectoryPaths(fileEntries).reduce<Record<string, boolean>>((next, path) => {
-    next[path] = previous[path] ?? true;
+    next[path] = previous[path] ?? false;
     return next;
   }, {});
 }
@@ -152,7 +152,7 @@ function TreeNode({
   const relativePath = buildRelativePath(pathPrefix, entry.name);
 
   if (entry.type === 'directory') {
-    const expanded = expandedDirectories[relativePath] ?? true;
+    const expanded = expandedDirectories[relativePath] ?? false;
 
     return (
       <div className={styles.treeBranch}>
@@ -317,7 +317,7 @@ export function FileTreePanel({
   function handleToggleDirectory(path: string) {
     setExpandedDirectories((previous) => ({
       ...previous,
-      [path]: !(previous[path] ?? true),
+      [path]: !(previous[path] ?? false),
     }));
   }
 

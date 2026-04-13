@@ -10,7 +10,7 @@ import type {
 } from '../src/lib/electron-api';
 import type { ExportConfig } from '../src/lib/export-settings';
 import type { SrtEntry } from '../src/types';
-import type { AICard, AISettings } from '../src/types/ai';
+import type { AICard, AISegment, AISettings } from '../src/types/ai';
 import type { ConversationAPI } from '../src/types/conversation';
 import type { VideoImportRequest } from '../src/lib/video-import-types';
 
@@ -27,9 +27,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   regenerateAICard: (args: {
     entries: SrtEntry[];
     card: AICard;
+    segment: AISegment;
     settings: AISettings;
     globalPrompt?: string;
     cardPrompt?: string;
+    programSummary?: string;
+    keywords?: string[];
   }) => ipcRenderer.invoke('regenerate-ai-card', args),
   regenerateCoverPrompt: (args: {
     entries: SrtEntry[];
@@ -49,6 +52,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('load-project', projectDir),
   saveProjectSection: (projectDir: string, section: string, data: string) =>
     ipcRenderer.invoke('save-project-section', projectDir, section, data),
+  getInitialGlobalSettings: () =>
+    ipcRenderer.sendSync('load-global-settings-sync') as string | null,
   loadGlobalSettings: () =>
     ipcRenderer.invoke('load-global-settings'),
   saveGlobalSettings: (data: string) =>
@@ -161,18 +166,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 // ─── Agent API ────────────────────────────────────────────
 
 contextBridge.exposeInMainWorld('agentAPI', {
-  connect: (projectDir: string, sessionId?: string | null) =>
-    ipcRenderer.invoke('agent:connect', projectDir, sessionId ?? null),
-  disconnect: () => ipcRenderer.invoke('agent:disconnect'),
-  getStatus: () => ipcRenderer.invoke('agent:get-status') as Promise<string>,
-  sendPrompt: (contents: unknown[]) => ipcRenderer.invoke('agent:send-prompt', contents),
-  cancelTurn: () => ipcRenderer.invoke('agent:cancel-turn'),
-  setMode: (modeId: string) => ipcRenderer.invoke('agent:set-mode', modeId),
-  setConfigOption: (configId: string, valueId: string) =>
-    ipcRenderer.invoke('agent:set-config-option', configId, valueId),
-  respondPermission: (requestId: string, optionId: string) =>
-    ipcRenderer.invoke('agent:respond-permission', requestId, optionId),
-
   getConfig: () => ipcRenderer.invoke('agent:get-config'),
   saveConfig: (data: unknown) => ipcRenderer.invoke('agent:save-config', data),
   getApiKey: (agentId: string) => ipcRenderer.invoke('agent:get-api-key', agentId),
@@ -184,22 +177,6 @@ contextBridge.exposeInMainWorld('agentAPI', {
   installAgent: (version: string) => ipcRenderer.invoke('agent:install', version),
   uninstallAgent: () => ipcRenderer.invoke('agent:uninstall'),
   getLatestVersion: () => ipcRenderer.invoke('agent:get-latest-version'),
-
-  onStatusChanged: (callback: (status: string) => void) => {
-    const handler = (_event: unknown, status: string) => callback(status);
-    ipcRenderer.on('agent:status', handler);
-    return () => ipcRenderer.removeListener('agent:status', handler);
-  },
-  onEvent: (callback: (block: unknown) => void) => {
-    const handler = (_event: unknown, block: unknown) => callback(block);
-    ipcRenderer.on('agent:event', handler);
-    return () => ipcRenderer.removeListener('agent:event', handler);
-  },
-  onCapabilities: (callback: (caps: unknown) => void) => {
-    const handler = (_event: unknown, caps: unknown) => callback(caps);
-    ipcRenderer.on('agent:capabilities', handler);
-    return () => ipcRenderer.removeListener('agent:capabilities', handler);
-  },
 
   connectRuntime: (input: { conversationId: number; projectDir: string; sessionId?: string | null; agentType?: string }) =>
     ipcRenderer.invoke('agent:connect-runtime', input),

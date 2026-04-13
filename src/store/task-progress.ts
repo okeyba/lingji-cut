@@ -35,7 +35,9 @@ export interface TaskProgressItem {
 }
 
 type StartTaskInput = Omit<TaskProgressItem, 'startedAt' | 'status'>;
-type UpdateTaskPatch = Partial<Pick<TaskProgressItem, 'progress' | 'phase' | 'mode' | 'label'>>;
+type UpdateTaskPatch = Partial<
+  Pick<TaskProgressItem, 'progress' | 'phase' | 'mode' | 'label' | 'category' | 'canCancel'>
+>;
 
 interface TaskProgressStore {
   tasks: Map<string, TaskProgressItem>;

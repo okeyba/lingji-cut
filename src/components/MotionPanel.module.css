@@ -1,0 +1,248 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ─────────── Section ─────────── */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sectionTitle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--color-text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.sectionDot {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-selection-blue);
+  display: inline-block;
+  transform: translateY(-1px);
+}
+
+.sectionMeta {
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* ─────────── Examples (horizontal scroll chips) ─────────── */
+.examplesRow {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+  margin: 0 -2px;
+  padding-left: 2px;
+  padding-right: 2px;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+}
+
+.examplesRow::-webkit-scrollbar {
+  height: 6px;
+}
+
+.examplesRow::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.examplesRow::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-text-secondary) 22%, transparent);
+  border-radius: 999px;
+}
+
+.exampleChip {
+  flex: 0 0 auto;
+  width: 142px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 9px 10px;
+  border: 1px solid var(--color-separator);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-panel-elevated) 92%, transparent);
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    transform 120ms ease;
+}
+
+.exampleChip:hover {
+  border-color: color-mix(in srgb, var(--color-selection-blue) 55%, var(--color-separator));
+  background: color-mix(in srgb, var(--color-panel-elevated) 76%, var(--color-selection-blue) 8%);
+}
+
+.exampleChip:active {
+  transform: scale(0.98);
+}
+
+.exampleChipTitle {
+  color: var(--color-text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.exampleChipBody {
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.exampleChipFoot {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+}
+
+/* ─────────── Prompt + 工具栏 ─────────── */
+.promptShell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 10px 10px;
+  border: 1px solid var(--color-separator);
+  border-radius: 10px;
+  background: var(--color-panel-elevated);
+}
+
+.promptTextarea {
+  width: 100%;
+  min-height: 56px;
+  resize: none;
+}
+
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toolbarRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.toolbarItem {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.toolbarLabel {
+  color: var(--color-text-secondary);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.toolbarFieldShell {
+  display: flex;
+  align-items: center;
+}
+
+.toolbarSelect {
+  width: 100%;
+}
+
+/* ─────────── Cards list ─────────── */
+.cardList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  text-align: center;
+  padding: 22px 14px;
+  border: 1px dashed var(--color-separator);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-panel-elevated) 55%, transparent);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.emptyStateIcon {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-selection-blue) 14%, transparent);
+  color: var(--color-selection-blue);
+  margin-bottom: 2px;
+}
+
+.emptyStateTitle {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.errorWrap {
+  margin-top: -4px;
+}
+
+/* ─────────── Footer (sticky apply) ─────────── */
+.footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 10px;
+  margin-top: 2px;
+  background: linear-gradient(to top, var(--color-panel-bg) 65%, transparent);
+}

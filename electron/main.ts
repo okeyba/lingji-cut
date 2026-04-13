@@ -25,7 +25,7 @@ import {
 } from '../src/lib/minimax-tts';
 import { parseSrt } from '../src/lib/srt-parser';
 import type { SrtEntry, TimelineData } from '../src/types';
-import type { AICard, AISettings } from '../src/types/ai';
+import type { AICard, AISegment, AISettings } from '../src/types/ai';
 import { createApplicationMenuTemplate } from './app-menu';
 import { toRendererConsoleLog } from './console-message';
 import { materializePersistedAIState, materializeTimelineWebCards } from './web-card-storage';
@@ -35,7 +35,12 @@ import { registerMcpIpc } from './mcp/ipc';
 import { registerScriptHistoryIpc } from './script-history/ipc';
 import { startMcpServer, stopMcpServer } from './mcp/server';
 import { loadProjectFile, saveProjectSection } from './project-file';
-import { loadGlobalSettings, saveGlobalSettings, type GlobalSettingsFile } from './global-settings';
+import {
+  loadGlobalSettings,
+  loadGlobalSettingsSync,
+  saveGlobalSettings,
+  type GlobalSettingsFile,
+} from './global-settings';
 import { resolveWindowCloseAction } from './window-close';
 import {
   loadRecentProjects,
@@ -84,6 +89,7 @@ function refreshApplicationMenu() {
 
 function createWindow() {
   const isMac = process.platform === 'darwin';
+  const isDevelopment = !app.isPackaged;
 
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -103,6 +109,7 @@ function createWindow() {
           },
         }),
     webPreferences: {
+      devTools: isDevelopment,
       preload: path.join(__dirname, 'preload.js'),
       webSecurity: false, // 允许 file:// 加载本地媒体
     },
@@ -293,9 +300,12 @@ ipcMain.handle(
     args: {
       entries: SrtEntry[];
       card: AICard;
+      segment: AISegment;
       settings: AISettings;
       globalPrompt?: string;
       cardPrompt?: string;
+      programSummary?: string;
+      keywords?: string[];
     },
   ) => {
     writeAppLog(
@@ -306,9 +316,11 @@ ipcMain.handle(
     );
 
     try {
-      return await regenerateAICard(args.entries, args.card, args.settings, {
+      return await regenerateAICard(args.entries, args.card, args.segment, args.settings, {
         globalPrompt: args.globalPrompt,
         cardPrompt: args.cardPrompt,
+        programSummary: args.programSummary,
+        keywords: args.keywords,
       });
     } catch (error) {
       writeAppLog(
@@ -382,6 +394,12 @@ ipcMain.handle('load-global-settings', async () => {
   const userDataPath = app.getPath('userData');
   const settings = await loadGlobalSettings(userDataPath);
   return settings ? JSON.stringify(settings) : null;
+});
+
+ipcMain.on('load-global-settings-sync', (event) => {
+  const userDataPath = app.getPath('userData');
+  const settings = loadGlobalSettingsSync(userDataPath);
+  event.returnValue = settings ? JSON.stringify(settings) : null;
 });
 
 ipcMain.handle('save-global-settings', async (_event, data: string) => {
@@ -1014,6 +1032,11 @@ ipcMain.handle('get-app-log-file-path', () => getAppLogFilePath());
 
 ipcMain.handle('toggle-devtools', () => {
   if (!mainWindow) {
+    return;
+  }
+
+  if (app.isPackaged) {
+    writeAppLog('warn', 'security', '已拦截生产环境 DevTools 打开请求');
     return;
   }
 

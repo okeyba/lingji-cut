@@ -3,6 +3,7 @@ import type { AssetItem, AssetType } from '../types';
 import { useTimelineStore } from '../store/timeline';
 import type { PillGroupItem } from '../ui';
 import {
+  ContextMenu,
   Dialog,
   DialogBody,
   DialogContent,
@@ -58,6 +59,8 @@ function PodcastResourceSection({
   srtPath,
   onReplaceAudio,
   onReplaceSrt,
+  onRegenerateFromScript,
+  regenerateFromScriptDisabled,
 }: {
   compact: boolean;
   expanded: boolean;
@@ -66,6 +69,8 @@ function PodcastResourceSection({
   srtPath: string;
   onReplaceAudio?: () => Promise<void>;
   onReplaceSrt?: () => Promise<void>;
+  onRegenerateFromScript?: () => void;
+  regenerateFromScriptDisabled?: boolean;
 }) {
   const audioName = getPathFileName(audioPath);
   const srtName = getPathFileName(srtPath);
@@ -136,6 +141,18 @@ function PodcastResourceSection({
               {srtName ? '替换字幕' : '+ 添加'}
             </button>
           </div>
+          {onRegenerateFromScript ? (
+            <button
+              type="button"
+              className={styles.podcastRegenerateButton}
+              onClick={onRegenerateFromScript}
+              disabled={regenerateFromScriptDisabled}
+              title="读取当前文稿（script.md），重新生成口播音频与字幕"
+            >
+              <AppIcon name="sparkles" size={12} />
+              <span>从文稿重新生成</span>
+            </button>
+          ) : null}
         </div>
       ) : null}
     </section>
@@ -154,6 +171,8 @@ export function AssetPanel({
   onReplaceSrt,
   showAIClip,
   onStartAIClip,
+  onRegeneratePodcastFromScript,
+  regeneratePodcastFromScriptDisabled,
 }: {
   compact: boolean;
   railHeight?: number;
@@ -166,8 +185,10 @@ export function AssetPanel({
   onReplaceSrt?: () => Promise<void>;
   showAIClip?: boolean;
   onStartAIClip?: () => void;
+  onRegeneratePodcastFromScript?: () => void;
+  regeneratePodcastFromScriptDisabled?: boolean;
 }) {
-  const { addAsset, assets, removeAsset, timeline } = useTimelineStore();
+  const { addAsset, assets, removeAsset, setGlobalBackground, timeline } = useTimelineStore();
   const [keyword, setKeyword] = useState('');
   const [activeFilter, setActiveFilter] = useState<AssetFilterKey>('all');
   const [pendingRemovalPath, setPendingRemovalPath] = useState<string | null>(null);
@@ -228,6 +249,8 @@ export function AssetPanel({
         srtPath={timeline.podcast?.srtPath ?? ''}
         onReplaceAudio={onReplaceAudio}
         onReplaceSrt={onReplaceSrt}
+        onRegenerateFromScript={onRegeneratePodcastFromScript}
+        regenerateFromScriptDisabled={regeneratePodcastFromScriptDisabled}
       />
 
       {/* 搜索栏 — compact 时通过 CSS 隐藏 */}
@@ -294,9 +317,10 @@ export function AssetPanel({
                   : asset.type === 'srt'
                     ? () => void onUseAsPodcastSrt?.(asset.path)
                     : undefined;
-
-              return (
-                <div key={asset.path} className={styles.assetSlot}>
+              const cardNode = (
+                <div
+                  data-asset-context-menu={asset.type === 'image' ? 'image-background' : undefined}
+                >
                   <AssetCard
                     asset={asset}
                     compact={compact}
@@ -316,6 +340,23 @@ export function AssetPanel({
                       event.dataTransfer.setData('application/json', JSON.stringify(asset));
                     }}
                   />
+                </div>
+              );
+
+              return (
+                <div key={asset.path} className={styles.assetSlot}>
+                  {asset.type === 'image' ? (
+                    <ContextMenu>
+                      <ContextMenu.Trigger asChild>{cardNode}</ContextMenu.Trigger>
+                      <ContextMenu.Content>
+                        <ContextMenu.Item onSelect={() => setGlobalBackground(asset.path)}>
+                          设为整期背景
+                        </ContextMenu.Item>
+                      </ContextMenu.Content>
+                    </ContextMenu>
+                  ) : (
+                    cardNode
+                  )}
                   {actionLabel && handleAssetAction ? (
                     <button
                       type="button"

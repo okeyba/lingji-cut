@@ -1,16 +1,20 @@
 import { Button, EmptyState } from '../ui';
+import { MotionCardInspector } from './MotionCardInspector';
 import { AICardInspector } from './AICardInspector';
 import { AppIcon } from './AppIcon';
 import { OverlayInspector } from './OverlayInspector';
 import { ProjectOverviewPanel, type ProjectOverviewMeta } from './ProjectOverviewPanel';
 import { SubtitleInspector } from './SubtitleInspector';
 import { useAICardInspector } from '../hooks/useAICardInspector';
+import { useAIStore } from '../store/ai';
 import { useTimelineStore } from '../store/timeline';
 import styles from './EditorInspector.module.css';
+import { useMemo } from 'react';
 
 export type InspectorSelection =
   | { type: 'empty' }
   | { type: 'ai-card'; cardId: string }
+  | { type: 'motion-card'; cardId: string }
   | { type: 'overlay'; overlayId: string }
   | { type: 'subtitle-style' };
 
@@ -48,6 +52,9 @@ export function EditorInspector({
     regenerateCard,
     saveCard,
   } = useAICardInspector(selection.type === 'ai-card' ? selection.cardId : null);
+  const motionCards = useAIStore((state) => state.motionCards);
+  const setMotionCards = useAIStore((state) => state.setMotionCards);
+  const timeline = useTimelineStore((state) => state.timeline);
 
   /* ── eyebrow pill 内容 ── */
   const eyebrowLabel =
@@ -55,14 +62,30 @@ export function EditorInspector({
       ? 'SUBTITLE'
       : selection.type === 'ai-card'
       ? 'AI CARD'
+      : selection.type === 'motion-card'
+      ? 'MOTION CARD'
       : selection.type === 'overlay'
       ? 'OVERLAY'
       : 'INSPECTOR';
 
   /* ── 右侧索引/状态标签 ── */
-  const indexLabel = selection.type === 'ai-card' ? cardSequenceLabel : null;
   const isSubtitleStyle = selection.type === 'subtitle-style';
-
+  const indexLabel = selection.type === 'ai-card' ? cardSequenceLabel : null;
+  const motionCard =
+    selection.type === 'motion-card'
+      ? motionCards.find((item) => item.id === selection.cardId) ?? null
+      : null;
+  const isMotionOnTimeline = useMemo(() => {
+    if (!selection || selection.type !== 'motion-card') {
+      return false;
+    }
+    return timeline.overlays.some(
+      (overlay) =>
+        overlay.overlayType === 'ai-card' &&
+        overlay.aiCardData?.sourceCardId === selection.cardId,
+    );
+  }, [selection, timeline.overlays]);
+  const motionStatusHint = isMotionOnTimeline ? '已上轨，可在时间轴预览' : '尚未上轨';
   const renderBody = () => {
     if (selection.type === 'subtitle-style') {
       return <SubtitleInspector />;
@@ -96,6 +119,27 @@ export function EditorInspector({
         />
       );
     }
+
+    if (selection.type === 'motion-card') {
+      return (
+        <MotionCardInspector
+          cardId={selection.cardId}
+          title={motionCard?.title}
+          prompt={motionCard?.cardPrompt ?? motionCard?.motionCard?.prompt}
+          startMs={motionCard?.startMs}
+          durationMs={motionCard?.displayDurationMs}
+          displayMode={motionCard?.displayMode}
+          statusLabel={motionCard ? (isMotionOnTimeline ? '已上轨' : '准备就绪') : undefined}
+          statusHint={motionStatusHint}
+          motionCard={motionCard?.motionCard ?? null}
+          onDelete={() => {
+            setMotionCards(motionCards.filter((item) => item.id !== selection.cardId));
+            useTimelineStore.getState().removeAICardOverlaysBySourceIds([selection.cardId]);
+            onClose();
+          }}
+        />
+        );
+      }
 
     if (selection.type === 'overlay') {
       return (
