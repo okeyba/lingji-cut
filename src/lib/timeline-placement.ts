@@ -40,12 +40,58 @@ export interface ClampDurationArgs {
 // ── Helpers ──
 
 /**
- * 判断 overlay 是否参与碰撞检测（排除默认背景和 AI 卡片）
+ * 判断 overlay 是否参与碰撞检测（通用版：仅排除默认背景）
  */
 export function isOverlayTrackManaged(overlay: OverlayItem): boolean {
-  if (overlay.overlayRole === 'default-background') return false;
-  if (overlay.overlayType === 'ai-card') return false;
-  return overlay.type === 'video' || overlay.type === 'image' || overlay.type === 'text';
+  return overlay.overlayRole !== 'default-background';
+}
+
+// ── 通用碰撞放置检查 API ──
+
+export interface CanPlaceAtArgs {
+  trackId: string;
+  startMs: number;
+  durationMs: number;
+  excludeOverlayId?: string;
+  overlays: OverlayItem[];
+}
+
+export interface CanPlaceAtResult {
+  ok: boolean;
+  reason?: 'overlap';
+}
+
+/**
+ * 判断指定轨道的区间 [startMs, startMs+durationMs) 是否可放置，
+ * 不做任何自动 snap/偏移；遇到任何受管 overlay 重叠即返回 ok=false。
+ */
+export function canPlaceAt(args: CanPlaceAtArgs): CanPlaceAtResult {
+  const { trackId, startMs, durationMs, excludeOverlayId, overlays } = args;
+  const candidate = { startMs, durationMs };
+  for (const other of overlays) {
+    if (other.trackId !== trackId) continue;
+    if (other.id === excludeOverlayId) continue;
+    if (!isOverlayTrackManaged(other)) continue;
+    if (overlaysOverlap(candidate, other)) {
+      return { ok: false, reason: 'overlap' };
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * 返回与候选区间碰撞的所有受管 overlay（按现有顺序，不排序）。
+ */
+export function findCollidingItems(args: CanPlaceAtArgs): OverlayItem[] {
+  const { trackId, startMs, durationMs, excludeOverlayId, overlays } = args;
+  const candidate = { startMs, durationMs };
+  return overlays.filter(
+    (o) =>
+      o.trackId === trackId
+      && o.id !== excludeOverlayId
+      && isOverlayTrackManaged(o)
+      && overlaysOverlap(candidate, o),
+  );
 }
 
 /**

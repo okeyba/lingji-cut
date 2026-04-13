@@ -47,10 +47,10 @@ describe('isOverlayTrackManaged', () => {
     ).toBe(false);
   });
 
-  it('returns false for an overlay with overlayType ai-card', () => {
+  it('returns true for an overlay with overlayType ai-card (universal semantics)', () => {
     expect(
       isOverlayTrackManaged(makeOverlay({ id: 'ai', overlayType: 'ai-card' })),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('returns false for default-background even if type is video', () => {
