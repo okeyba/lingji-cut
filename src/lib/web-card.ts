@@ -192,21 +192,6 @@ export function createImportedHtmlWebCardPayload(
   };
 }
 
-export function extractHtmlTitle(html: string): string | null {
-  const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  if (!match) {
-    return null;
-  }
-
-  const normalized = match[1]
-    .replace(/&(nbsp|#160|#xa0);/gi, ' ')
-    .replace(/\u00a0/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return normalized || null;
-}
-
 /**
  * Legacy external scaling — kept as fallback for edge cases where the
  * injected script cannot run (e.g. CSP blocks inline scripts).
