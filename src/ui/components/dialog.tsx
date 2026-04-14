@@ -2,11 +2,11 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import FocusLock from "react-focus-lock";
 import { X } from "lucide-react";
 import { cn } from "../lib/utils";
-import { getDuration } from "../lib/animation-config";
+import { modalBackdrop, sheetFromTop } from "../lib/motion";
 import { useOverlay } from "../contexts/overlay-context";
 import { useEscapeKey } from "../hooks/use-escape-key";
 
@@ -104,14 +104,11 @@ function DialogContent({ children, className, size = "md", glass: _glass = false
 	};
 
 	const dialogPanel = (
-		<motion.div
-			initial={{ opacity: 0, scale: 0.95, y: 10 }}
-			animate={{ opacity: 1, scale: 1, y: 0 }}
-			exit={{ opacity: 0, scale: 0.95, y: 10 }}
-			transition={{
-				duration: getDuration("slow"),
-				ease: [0.16, 1, 0.3, 1],
-			}}
+		<m.div
+			variants={sheetFromTop}
+			initial="hidden"
+			animate="visible"
+			exit="exit"
 			role="dialog"
 			aria-modal="true"
 			className={cn(
@@ -121,18 +118,18 @@ function DialogContent({ children, className, size = "md", glass: _glass = false
 			)}
 		>
 			{children}
-		</motion.div>
+		</m.div>
 	);
 
 	const content = (
 		<AnimatePresence>
 			{open && (
 				<FocusLock returnFocus>
-					<motion.div
-						initial={{ opacity: 0 }}
-						animate={{ opacity: 1 }}
-						exit={{ opacity: 0 }}
-						transition={{ duration: getDuration("fast") }}
+					<m.div
+						variants={modalBackdrop}
+						initial="hidden"
+						animate="visible"
+						exit="exit"
 						className="fixed inset-0 flex items-center justify-center bg-black/60 p-4 overflow-y-auto"
 						style={{ zIndex: 9999 }}
 						onClick={(e) => {
@@ -142,7 +139,7 @@ function DialogContent({ children, className, size = "md", glass: _glass = false
 						}}
 					>
 						{dialogPanel}
-					</motion.div>
+					</m.div>
 				</FocusLock>
 			)}
 		</AnimatePresence>

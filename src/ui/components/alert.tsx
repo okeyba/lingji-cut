@@ -3,7 +3,8 @@
 import { AlertTriangle, CheckCircle, Info, XCircle, X } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import FocusLock from "react-focus-lock";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
+import { springs } from "../lib/motion";
 import { useOverlay } from "../contexts/overlay-context";
 import { useEscapeKey } from "../hooks/use-escape-key";
 import { Button } from "./button";
@@ -97,16 +98,11 @@ export function Alert({
 	return (
 		<AnimatePresence>
 			{isVisible && (
-				<motion.div
+				<m.div
 					initial={{ opacity: 0, y: -8, scale: 0.98 }}
 					animate={{ opacity: 1, y: 0, scale: 1 }}
 					exit={{ opacity: 0, y: -8, scale: 0.98 }}
-					transition={{
-						type: "spring",
-						stiffness: 500,
-						damping: 30,
-						mass: 0.8
-					}}
+					transition={springs.smooth}
 					className={cn(
 						"relative flex items-start gap-2.5 rounded-[10px] border py-3 px-3.5",
 						cn(styles.bg, styles.border),
@@ -140,7 +136,7 @@ export function Alert({
 
 					{/* Dismiss button */}
 					{dismissible && (
-						<motion.button
+						<m.button
 							type="button"
 							onClick={handleDismiss}
 							className={cn(
@@ -154,9 +150,9 @@ export function Alert({
 							aria-label="Dismiss alert"
 						>
 							<X className="w-4 h-4" />
-						</motion.button>
+						</m.button>
 					)}
-				</motion.div>
+				</m.div>
 			)}
 		</AnimatePresence>
 	);

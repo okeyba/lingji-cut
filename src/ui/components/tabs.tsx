@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { cn } from "../lib/utils";
+import { durations, easings, springs } from "../lib/motion";
 
 interface TabsContextValue {
 	value: string;
@@ -84,14 +85,10 @@ function TabsTrigger({ value, children, className, disabled, icon }: TabsTrigger
 			)}
 		>
 			{isSelected && (
-				<motion.span
+				<m.span
 					layoutId="active-tab"
 					className="absolute inset-0 rounded-md border border-border bg-background shadow-sm"
-					transition={{
-						type: "spring",
-						bounce: 0.15,
-						duration: 0.5,
-					}}
+					transition={springs.swift}
 				/>
 			)}
 			<span
@@ -120,18 +117,18 @@ function TabsContent({ value, children, className }: TabsContentProps) {
 	if (!isSelected) return null;
 
 	return (
-		<motion.div
+		<m.div
 			id={`tabpanel-${value}`}
 			role="tabpanel"
 			aria-labelledby={`tab-${value}`}
-			initial={{ opacity: 0, y: 10 }}
+			initial={{ opacity: 0, y: 8 }}
 			animate={{ opacity: 1, y: 0 }}
-			exit={{ opacity: 0, y: -10 }}
-			transition={{ duration: 0.2, ease: "easeOut" }}
+			exit={{ opacity: 0, y: -4 }}
+			transition={{ duration: durations.base, ease: easings.apple }}
 			className={cn("mt-2 focus-visible:outline-none", className)}
 		>
 			{children}
-		</motion.div>
+		</m.div>
 	);
 }
 

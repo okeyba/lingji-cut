@@ -2,8 +2,8 @@
 
 import { useId } from "react";
 import type React from "react";
-import { motion } from "framer-motion";
-import { getSpring, getDuration } from "../lib/animation-config";
+import { m } from "framer-motion";
+import { springs, durations } from "../lib/motion";
 
 interface CheckboxProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'size'> {
 	boxClassName?: string;
@@ -73,14 +73,14 @@ export function Checkbox({
 					} ${boxClassName}`}
 				>
 					{indeterminate ? (
-						<motion.div
+						<m.div
 							initial={{ scale: 0 }}
 							animate={{ scale: 1 }}
-							transition={getSpring("snappy")}
+							transition={springs.smooth}
 							className={`${s.dash} bg-white rounded`}
 						/>
 					) : (
-						<motion.svg
+						<m.svg
 							viewBox="0 0 16 16"
 							aria-hidden="true"
 							className={s.check}
@@ -89,9 +89,9 @@ export function Checkbox({
 								opacity: checked ? 1 : 0,
 								scale: checked ? 1 : 0.5,
 							}}
-							transition={getSpring("snappy")}
+							transition={springs.smooth}
 						>
-							<motion.polyline
+							<m.polyline
 								points="3.5 8.5 6.5 11.5 12.5 4.5"
 								fill="none"
 								stroke="currentColor"
@@ -100,9 +100,9 @@ export function Checkbox({
 								strokeLinejoin="round"
 								initial={{ pathLength: 0 }}
 								animate={{ pathLength: checked ? 1 : 0 }}
-								transition={{ duration: getDuration("slow") }}
+								transition={{ duration: durations.base }}
 							/>
-						</motion.svg>
+						</m.svg>
 					)}
 				</span>
 			</span>

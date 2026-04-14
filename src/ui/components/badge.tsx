@@ -3,7 +3,7 @@
 import type React from "react";
 import { cn } from "../lib/utils";
 import { getDuration } from "../lib/animation-config";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 
 export type BadgeVariant =
 	| "default"
@@ -71,7 +71,7 @@ export function Badge({
 		: style;
 
 	return (
-		<motion.span
+		<m.span
 			initial={{ opacity: 0 }}
 			animate={{ opacity: 1 }}
 			transition={{ duration: getDuration("normal") }}
@@ -85,6 +85,6 @@ export function Badge({
 			)}
 		>
 			{children}
-		</motion.span>
+		</m.span>
 	);
 }

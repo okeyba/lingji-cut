@@ -3,8 +3,8 @@
 import type React from "react";
 import { useEffect, useState } from "react";
 import FocusLock from "react-focus-lock";
-import { motion, AnimatePresence } from "framer-motion";
-import { getDuration } from "../lib/animation-config";
+import { m, AnimatePresence } from "framer-motion";
+import { modalBackdrop, sheetFromTop } from "../lib/motion";
 import { useOverlay } from "../contexts/overlay-context";
 import { useEscapeKey } from "../hooks/use-escape-key";
 import { CloseButton } from "./close-button";
@@ -60,11 +60,11 @@ export function Modal({
 		<AnimatePresence>
 			{isOpen && (
 				<FocusLock returnFocus>
-					<motion.div
-						initial={{ opacity: 0 }}
-						animate={{ opacity: 1 }}
-						exit={{ opacity: 0 }}
-						transition={{ duration: getDuration("fast") }}
+					<m.div
+						variants={modalBackdrop}
+						initial="hidden"
+						animate="visible"
+						exit="exit"
 						className="fixed inset-0 bg-black/60 p-4 overflow-y-auto"
 						style={{ zIndex: "var(--z-modal)" }}
 						onClick={(e) => {
@@ -74,14 +74,11 @@ export function Modal({
 						}}
 					>
 						<div className="min-h-full flex items-center justify-center py-0 pointer-events-none">
-							<motion.div
-								initial={{ opacity: 0, scale: 0.95, y: 10 }}
-								animate={{ opacity: 1, scale: 1, y: 0 }}
-								exit={{ opacity: 0, scale: 0.95, y: 10 }}
-								transition={{
-									duration: getDuration("slow"),
-									ease: [0.16, 1, 0.3, 1],
-								}}
+							<m.div
+								variants={sheetFromTop}
+								initial="hidden"
+								animate="visible"
+								exit="exit"
 								className={`bg-mac-elevated shadow-[0_20px_60px_rgba(0,0,0,0.66)] border border-mac-border rounded-[14px] w-full ${sizeClasses[size]} flex flex-col max-h-[calc(100vh-2rem)] ${className} pointer-events-auto`}
 								role="dialog"
 								aria-modal="true"
@@ -97,9 +94,9 @@ export function Modal({
 									</div>
 								</div>
 								<div className="p-4 overflow-y-auto">{children}</div>
-							</motion.div>
+							</m.div>
 						</div>
-					</motion.div>
+					</m.div>
 				</FocusLock>
 			)}
 		</AnimatePresence>

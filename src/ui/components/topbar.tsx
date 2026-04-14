@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Menu, X } from "lucide-react";
 import { cn } from "../lib/utils";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { getDuration, getSpring } from "../lib/animation-config";
 
 // ============================================================================
@@ -92,7 +92,7 @@ function MobileMenu({ items, activeItem, isOpen, onClose }: MobileMenuProps) {
 			{/* Overlay */}
 			<AnimatePresence>
 				{isOpen && (
-					<motion.div
+					<m.div
 						initial={{ opacity: 0 }}
 						animate={{ opacity: 1 }}
 						exit={{ opacity: 0 }}
@@ -109,7 +109,7 @@ function MobileMenu({ items, activeItem, isOpen, onClose }: MobileMenuProps) {
 			{/* Slide-out menu */}
 			<AnimatePresence>
 				{isOpen && (
-					<motion.div
+					<m.div
 						initial={{ x: "100%" }}
 						animate={{ x: 0 }}
 						exit={{ x: "100%" }}
@@ -145,7 +145,7 @@ function MobileMenu({ items, activeItem, isOpen, onClose }: MobileMenuProps) {
 								/>
 							))}
 						</div>
-					</motion.div>
+					</m.div>
 				)}
 			</AnimatePresence>
 		</>

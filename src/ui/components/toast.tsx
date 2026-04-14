@@ -2,6 +2,8 @@
 
 import { AlertTriangle, CheckCircle, Info, X, XCircle } from "lucide-react";
 import React, { useCallback, useState } from "react";
+import { m, AnimatePresence } from "framer-motion";
+import { springs, durations, easings } from "../lib/motion";
 
 export type ToastType = "info" | "success" | "warning" | "error";
 
@@ -99,32 +101,48 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 				className="fixed top-4 right-4 flex flex-col gap-2 pointer-events-none"
 				style={{ zIndex: "var(--z-toast)" }}
 			>
-				{toasts.map((toast) => (
-					<div
-						key={toast.id}
-						className="bg-mac-elevated shadow-[0_8px_24px_rgba(0,0,0,0.66)] border border-mac-border rounded-[10px] min-w-80 max-w-md pointer-events-auto animate-in slide-in-from-right duration-300"
-					>
-						<div className="p-4 flex items-start gap-3">
-							{getIcon(toast.type)}
-							<div className="flex-1 min-w-0">
-								{toast.title && (
-									<div className="text-foreground text-sm font-semibold mb-0.5">
-										{toast.title}
-									</div>
-								)}
-								<div className="text-mac-text-sec text-sm">{toast.message}</div>
+				<AnimatePresence initial={false}>
+					{toasts.map((toast) => (
+						<m.div
+							key={toast.id}
+							layout
+							initial={{ opacity: 0, x: 40, scale: 0.96 }}
+							animate={{
+								opacity: 1,
+								x: 0,
+								scale: 1,
+								transition: springs.smooth,
+							}}
+							exit={{
+								opacity: 0,
+								x: 40,
+								scale: 0.96,
+								transition: { duration: durations.base, ease: easings.easeOutExpo },
+							}}
+							className="bg-mac-elevated shadow-[0_8px_24px_rgba(0,0,0,0.66)] border border-mac-border rounded-[10px] min-w-80 max-w-md pointer-events-auto"
+						>
+							<div className="p-4 flex items-start gap-3">
+								{getIcon(toast.type)}
+								<div className="flex-1 min-w-0">
+									{toast.title && (
+										<div className="text-foreground text-sm font-semibold mb-0.5">
+											{toast.title}
+										</div>
+									)}
+									<div className="text-mac-text-sec text-sm">{toast.message}</div>
+								</div>
+								<button
+									type="button"
+									onClick={() => removeToast(toast.id)}
+									className="text-mac-text-muted hover:text-foreground transition-colors shrink-0"
+									aria-label="Close"
+								>
+									<X className="w-4 h-4" />
+								</button>
 							</div>
-							<button
-								type="button"
-								onClick={() => removeToast(toast.id)}
-								className="text-mac-text-muted hover:text-foreground transition-colors shrink-0"
-								aria-label="Close"
-							>
-								<X className="w-4 h-4" />
-							</button>
-						</div>
-					</div>
-				))}
+						</m.div>
+					))}
+				</AnimatePresence>
 			</div>
 		</ToastContext.Provider>
 	);

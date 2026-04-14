@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { Check } from "lucide-react";
 import { cn } from "../lib/utils";
-import { getDuration } from "../lib/animation-config";
+import { durations, easings, springs } from "../lib/motion";
 
 // ============================================================================
 // Types
@@ -186,12 +186,21 @@ function ContextMenuContent({ children, className, glass = false }: ContextMenuC
 	const content = (
 		<AnimatePresence>
 			{open && (
-				<motion.div
+				<m.div
 					data-context-menu-content
-					initial={{ opacity: 0, scale: 0.95 }}
-					animate={{ opacity: 1, scale: 1 }}
-					exit={{ opacity: 0, scale: 0.95 }}
-					transition={{ duration: getDuration("normal"), ease: "easeOut" }}
+					initial={{ opacity: 0, scale: 0.94, y: -6 }}
+					animate={{
+						opacity: 1,
+						scale: 1,
+						y: 0,
+						transition: springs.swift,
+					}}
+					exit={{
+						opacity: 0,
+						scale: 0.94,
+						y: -4,
+						transition: { duration: durations.fast, ease: easings.apple },
+					}}
 					role="menu"
 					aria-orientation="vertical"
 					className={cn(
@@ -209,7 +218,7 @@ function ContextMenuContent({ children, className, glass = false }: ContextMenuC
 					}}
 				>
 					{children}
-				</motion.div>
+				</m.div>
 			)}
 		</AnimatePresence>
 	);

@@ -1,10 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { cn } from "../lib/utils";
 import { Check, X, Search } from "lucide-react";
-import { getDuration } from "../lib/animation-config";
+import { durations } from "../lib/motion";
 
 // ============================================================================
 // Types
@@ -144,11 +144,11 @@ const InputBase = React.forwardRef<HTMLInputElement, InputProps>(
 						{leftIcon}
 					</span>
 				)}
-				<motion.input
+				<m.input
 					type={inputType}
 					animate={shouldShake ? { x: [-6, 6, -6, 6, 0] } : {}}
 					transition={{
-						duration: getDuration("normal") * 2,
+						duration: durations.smooth,
 						ease: "easeInOut",
 					}}
 					className={cn(
@@ -261,11 +261,11 @@ const TextAreaBase = React.forwardRef<HTMLTextAreaElement, TextAreaProps>(
 
 		return (
 			<div className={cn("relative w-full", wrapperClassName)}>
-				<motion.textarea
+				<m.textarea
 					ref={setRefs}
 					animate={shouldShake ? { x: [-6, 6, -6, 6, 0] } : {}}
 					transition={{
-						duration: getDuration("normal") * 2,
+						duration: durations.smooth,
 						ease: "easeInOut",
 					}}
 					onChange={handleChange}

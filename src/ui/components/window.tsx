@@ -1,6 +1,6 @@
 import type React from "react";
 import { CloseButton } from "./close-button";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 
 interface WindowProps {
 	children: React.ReactNode;
@@ -11,7 +11,7 @@ interface WindowProps {
 
 export function Window({ children, title, glass = false }: WindowProps) {
 	return (
-		<motion.div
+		<m.div
 			initial={{ opacity: 0, scale: 0.98 }}
 			animate={{ opacity: 1, scale: 1 }}
 			transition={{ duration: 0.4, ease: "easeOut" }}
@@ -31,15 +31,15 @@ export function Window({ children, title, glass = false }: WindowProps) {
 				</div>
 			</div>
 			<div className="flex-1 overflow-hidden flex flex-col relative">
-				<motion.div
+				<m.div
 					initial={{ opacity: 0, y: 20 }}
 					animate={{ opacity: 1, y: 0 }}
 					transition={{ delay: 0.1, duration: 0.4 }}
 					className="h-full flex flex-col"
 				>
 					{children}
-				</motion.div>
+				</m.div>
 			</div>
-		</motion.div>
+		</m.div>
 	);
 }

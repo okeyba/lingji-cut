@@ -3,7 +3,7 @@
 import { ChevronsLeft, LogOut, Menu, X } from "lucide-react";
 import React from "react";
 import { cn } from "../lib/utils";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { getDuration, getSpring } from "../lib/animation-config";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./floating";
 
@@ -47,7 +47,7 @@ function SidebarItem({
 			) : null}
 			<AnimatePresence mode="wait">
 				{!isCollapsed && (
-					<motion.span
+					<m.span
 						initial={{ opacity: 0, width: 0 }}
 						animate={{ opacity: 1, width: "auto" }}
 						exit={{ opacity: 0, width: 0 }}
@@ -55,7 +55,7 @@ function SidebarItem({
 						className="whitespace-nowrap overflow-hidden"
 					>
 						{label}
-					</motion.span>
+					</m.span>
 				)}
 			</AnimatePresence>
 		</button>
@@ -151,7 +151,7 @@ export function Sidebar({
 			{/* Mobile Overlay */}
 			<AnimatePresence>
 				{mobileMenuOpen && (
-					<motion.div
+					<m.div
 						initial={{ opacity: 0 }}
 						animate={{ opacity: 1 }}
 						exit={{ opacity: 0 }}
@@ -165,7 +165,7 @@ export function Sidebar({
 			</AnimatePresence>
 
 			{/* Mobile Sidebar */}
-			<motion.div
+			<m.div
 				initial={{ x: "-100%" }}
 				animate={{ x: mobileMenuOpen ? 0 : "-100%" }}
 				transition={getSpring("smooth")}
@@ -201,10 +201,10 @@ export function Sidebar({
 						/>
 					</div>
 				</div>
-			</motion.div>
+			</m.div>
 
 			{/* Desktop Sidebar */}
-			<motion.div
+			<m.div
 				animate={{ width: isCollapsed ? 56 : 200 }}
 				transition={getSpring("smooth")}
 				className={cn(
@@ -246,15 +246,15 @@ export function Sidebar({
 										isCollapsed ? "justify-center aspect-square p-0" : "gap-3 px-3 py-2",
 									)}
 								>
-									<motion.div
+									<m.div
 										animate={{ rotate: isCollapsed ? 180 : 0 }}
 										transition={{ duration: getDuration("slow"), ease: "easeInOut" }}
 									>
 										<ChevronsLeft className={cn(isCollapsed ? "h-5 w-5" : "h-4 w-4")} />
-									</motion.div>
+									</m.div>
 									<AnimatePresence mode="wait">
 										{!isCollapsed && (
-											<motion.span
+											<m.span
 												initial={{ opacity: 0, width: 0 }}
 												animate={{ opacity: 1, width: "auto" }}
 												exit={{ opacity: 0, width: 0 }}
@@ -262,7 +262,7 @@ export function Sidebar({
 												className="whitespace-nowrap overflow-hidden"
 											>
 												Collapse
-											</motion.span>
+											</m.span>
 										)}
 									</AnimatePresence>
 								</button>
@@ -292,7 +292,7 @@ export function Sidebar({
 						isCollapsed={isCollapsed}
 					/>
 				</div>
-			</motion.div>
+			</m.div>
 		</>
 	);
 }

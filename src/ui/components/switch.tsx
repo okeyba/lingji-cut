@@ -2,8 +2,8 @@
 
 import { useId } from "react";
 import type React from "react";
-import { motion } from "framer-motion";
-import { getSpring } from "../lib/animation-config";
+import { m } from "framer-motion";
+import { springs } from "../lib/motion";
 
 interface SwitchProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
 	label?: string;
@@ -48,11 +48,11 @@ export function Switch({
 							: "bg-mac-control"
 					}`}
 				>
-					<motion.span
+					<m.span
 						animate={{
 							x: checked ? 20 : 0,
 						}}
-						transition={getSpring("snappy")}
+						transition={springs.smooth}
 						className="h-5 w-5 rounded-full bg-white shadow-sm"
 					/>
 				</span>

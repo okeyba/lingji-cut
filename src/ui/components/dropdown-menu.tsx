@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { Check } from "lucide-react";
 import { cn } from "../lib/utils";
-import { getDuration } from "../lib/animation-config";
+import { durations, easings, springs } from "../lib/motion";
 
 interface DropdownMenuContextValue {
 	open: boolean;
@@ -165,11 +165,27 @@ function DropdownMenuContent({
 	const content = (
 		<AnimatePresence>
 			{open && (
-				<motion.div
-					initial={{ opacity: 0, scale: 0.95, y: side === "bottom" ? -5 : 5 }}
-					animate={{ opacity: 1, scale: 1, y: 0 }}
-					exit={{ opacity: 0, scale: 0.95, y: side === "bottom" ? -5 : 5 }}
-					transition={{ duration: getDuration("normal"), ease: "easeOut" }}
+				<m.div
+					initial={{
+						opacity: 0,
+						scaleY: 0.9,
+						scaleX: 0.96,
+						y: side === "bottom" ? -8 : 8,
+					}}
+					animate={{
+						opacity: 1,
+						scaleY: 1,
+						scaleX: 1,
+						y: 0,
+						transition: springs.swift,
+					}}
+					exit={{
+						opacity: 0,
+						scaleY: 0.9,
+						scaleX: 0.96,
+						y: side === "bottom" ? -4 : 4,
+						transition: { duration: durations.fast, ease: easings.apple },
+					}}
 					role="menu"
 					aria-orientation="vertical"
 					className={cn(
@@ -186,7 +202,7 @@ function DropdownMenuContent({
 					}}
 				>
 					{children}
-				</motion.div>
+				</m.div>
 			)}
 		</AnimatePresence>
 	);

@@ -3,8 +3,8 @@
 import React from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../lib/utils";
-import { getDuration } from "../lib/animation-config";
-import { motion, AnimatePresence } from "framer-motion";
+import { durations, easings, springs } from "../lib/motion";
+import { m, AnimatePresence } from "framer-motion";
 import { Check, ChevronDown, X } from "lucide-react";
 
 // ============================================================================
@@ -169,11 +169,20 @@ function SingleSelectInternal({
 			? createPortal(
 					<AnimatePresence>
 						{open && (
-							<motion.div
-								initial={{ opacity: 0, scale: 0.95, y: -10 }}
-								animate={{ opacity: 1, scale: 1, y: 0 }}
-								exit={{ opacity: 0, scale: 0.95, y: -10 }}
-								transition={{ duration: getDuration("normal"), ease: "easeOut" }}
+							<m.div
+								initial={{ opacity: 0, scaleY: 0.92, y: -8 }}
+								animate={{
+									opacity: 1,
+									scaleY: 1,
+									y: 0,
+									transition: springs.swift,
+								}}
+								exit={{
+									opacity: 0,
+									scaleY: 0.92,
+									y: -4,
+									transition: { duration: durations.fast, ease: easings.apple },
+								}}
 								style={{
 									position: "fixed",
 									top: `${position.top}px`,
@@ -212,7 +221,7 @@ function SingleSelectInternal({
 										</li>
 									))}
 								</ul>
-							</motion.div>
+							</m.div>
 						)}
 					</AnimatePresence>,
 					document.body,
@@ -244,13 +253,13 @@ function SingleSelectInternal({
 				>
 					{selected.label || placeholder || "Select..."}
 				</span>
-				<motion.span
+				<m.span
 					animate={{ rotate: open ? 180 : 0 }}
-					transition={{ duration: getDuration("slow"), ease: "easeOut" }}
+					transition={{ duration: durations.base, ease: easings.easeOutExpo }}
 					className="ml-2 h-4 w-4 opacity-50"
 				>
 					<ChevronDown className="h-4 w-4" />
-				</motion.span>
+				</m.span>
 			</button>
 			{dropdown}
 		</div>
@@ -305,11 +314,20 @@ function MultiSelectInternal({
 			? createPortal(
 					<AnimatePresence>
 						{open && (
-							<motion.div
-								initial={{ opacity: 0, scale: 0.95, y: -10 }}
-								animate={{ opacity: 1, scale: 1, y: 0 }}
-								exit={{ opacity: 0, scale: 0.95, y: -10 }}
-								transition={{ duration: getDuration("normal"), ease: "easeOut" }}
+							<m.div
+								initial={{ opacity: 0, scaleY: 0.92, y: -8 }}
+								animate={{
+									opacity: 1,
+									scaleY: 1,
+									y: 0,
+									transition: springs.swift,
+								}}
+								exit={{
+									opacity: 0,
+									scaleY: 0.92,
+									y: -4,
+									transition: { duration: durations.fast, ease: easings.apple },
+								}}
 								style={{
 									position: "fixed",
 									top: `${position.top}px`,
@@ -349,14 +367,14 @@ function MultiSelectInternal({
 												<span className="absolute left-2 flex h-4 w-4 items-center justify-center">
 													<AnimatePresence>
 														{isSelected && (
-															<motion.span
+															<m.span
 																initial={{ scale: 0, opacity: 0 }}
 																animate={{ scale: 1, opacity: 1 }}
 																exit={{ scale: 0, opacity: 0 }}
-																transition={{ duration: getDuration("fast") }}
+																transition={{ duration: durations.fast, ease: easings.apple }}
 															>
 																<Check className="h-3 w-3 text-mac-blue" />
-															</motion.span>
+															</m.span>
 														)}
 													</AnimatePresence>
 												</span>
@@ -365,7 +383,7 @@ function MultiSelectInternal({
 										);
 									})}
 								</ul>
-							</motion.div>
+							</m.div>
 						)}
 					</AnimatePresence>,
 					document.body,
@@ -397,25 +415,25 @@ function MultiSelectInternal({
 				>
 					{displayValue || placeholder}
 				</span>
-				<motion.span
+				<m.span
 					animate={{ rotate: open ? 180 : 0 }}
-					transition={{ duration: getDuration("slow"), ease: "easeOut" }}
+					transition={{ duration: durations.base, ease: easings.easeOutExpo }}
 					className="ml-2 h-4 w-4 opacity-50"
 				>
 					<ChevronDown className="h-4 w-4" />
-				</motion.span>
+				</m.span>
 			</button>
 			{dropdown}
 			{showTags && value.length > 0 && (
 				<div className="flex flex-wrap gap-1.5 mt-2">
 					<AnimatePresence>
 						{value.map((v) => (
-							<motion.span
+							<m.span
 								key={v}
 								initial={{ scale: 0.8, opacity: 0 }}
 								animate={{ scale: 1, opacity: 1 }}
 								exit={{ scale: 0.8, opacity: 0 }}
-								transition={{ duration: getDuration("normal") }}
+								transition={springs.swift}
 								className="inline-flex items-center gap-1.5 rounded border border-mac-separator bg-mac-control px-2 py-1 text-xs text-mac-text-sec"
 							>
 								{options.find((o) => o.value === v)?.label || v}
@@ -426,7 +444,7 @@ function MultiSelectInternal({
 								>
 									<X className="h-3 w-3" />
 								</button>
-							</motion.span>
+							</m.span>
 						))}
 					</AnimatePresence>
 				</div>

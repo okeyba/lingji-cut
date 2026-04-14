@@ -3,9 +3,9 @@
 import * as React from "react";
 import { twMerge } from "tailwind-merge";
 import { clsx, type ClassValue } from "clsx";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { Loader2 } from "lucide-react";
-import { getDuration } from "../lib/animation-config";
+import { springs } from "../lib/motion";
 
 function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
@@ -144,11 +144,11 @@ const ButtonBase = React.forwardRef<HTMLButtonElement, ButtonProps>(
 		);
 
 		return (
-			<motion.button
+			<m.button
 				ref={ref}
 				disabled={isDisabled}
-				whileTap={!isDisabled ? { scale: 0.98 } : {}}
-				transition={{ duration: getDuration("fast") }}
+				whileTap={!isDisabled ? { scale: 0.96 } : undefined}
+				transition={springs.snappy}
 				className={cn(
 					"inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg text-[12px] font-medium leading-none transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-0 disabled:pointer-events-none disabled:opacity-50",
 					variantClasses[variant],
@@ -160,7 +160,7 @@ const ButtonBase = React.forwardRef<HTMLButtonElement, ButtonProps>(
 				{...(props as any)}
 			>
 				{content}
-			</motion.button>
+			</m.button>
 		);
 	},
 );

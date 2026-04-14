@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, useInView } from "framer-motion";
+import { m, useInView } from "framer-motion";
 import { type ReactNode, useRef } from "react";
 import { twMerge } from "tailwind-merge";
 
@@ -103,7 +103,7 @@ const Reveal = ({
 				classNameParent,
 			)}
 		>
-			<motion.div
+			<m.div
 				initial={initialVariant}
 				animate={isInView ? animateVariant : initialVariant}
 				transition={{
@@ -114,7 +114,7 @@ const Reveal = ({
 				className={twMerge("relative", className)}
 			>
 				{children}
-			</motion.div>
+			</m.div>
 		</div>
 	);
 };

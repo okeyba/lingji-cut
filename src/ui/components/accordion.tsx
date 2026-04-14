@@ -1,10 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { ChevronDown } from "lucide-react";
 import { cn } from "../lib/utils";
-import { getDuration } from "../lib/animation-config";
+import { durations, easings, springs } from "../lib/motion";
 
 interface AccordionContextValue {
 	expandedItems: string[];
@@ -119,12 +119,12 @@ function AccordionTrigger({ children, className, itemValue }: AccordionTriggerPr
 			)}
 		>
 			{children}
-			<motion.div
+			<m.div
 				animate={{ rotate: isExpanded ? 180 : 0 }}
-				transition={{ duration: getDuration("slow"), ease: "easeInOut" }}
+				transition={{ duration: durations.base, ease: easings.easeOutExpo }}
 			>
 				<ChevronDown className="h-4 w-4 text-mac-text-sec" />
-			</motion.div>
+			</m.div>
 		</button>
 	);
 }
@@ -142,17 +142,24 @@ function AccordionContent({ children, className, itemValue }: AccordionContentPr
 	return (
 		<AnimatePresence initial={false}>
 			{isExpanded && (
-				<motion.div
+				<m.div
 					initial={{ height: 0, opacity: 0 }}
-					animate={{ height: "auto", opacity: 1 }}
-					exit={{ height: 0, opacity: 0 }}
-					transition={{ duration: getDuration("slow"), ease: "easeInOut" }}
+					animate={{
+						height: "auto",
+						opacity: 1,
+						transition: springs.smooth,
+					}}
+					exit={{
+						height: 0,
+						opacity: 0,
+						transition: { duration: durations.base, ease: easings.easeOutExpo },
+					}}
 					className="overflow-hidden"
 				>
 					<div className={cn("pb-4 text-sm text-mac-text-sec", className)}>
 						{children}
 					</div>
-				</motion.div>
+				</m.div>
 			)}
 		</AnimatePresence>
 	);

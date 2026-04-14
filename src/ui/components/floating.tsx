@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { cn } from "../lib/utils";
-import { getDuration } from "../lib/animation-config";
+import { durations, easings, springs } from "../lib/motion";
 
 // ============================================================================
 // Types
@@ -193,37 +193,37 @@ function getAnimationProps(
 		};
 	}
 
-	// Popovers use directional slide + scale
+	// Popovers use directional slide + scale(大幅度,明确方向感)
 	switch (side) {
 		case "top":
 			return {
-				initial: { opacity: 0, y: 5, scale: 0.98 },
+				initial: { opacity: 0, y: 8, scale: 0.94 },
 				animate: { opacity: 1, y: 0, scale: 1 },
-				exit: { opacity: 0, y: 5, scale: 0.98 },
+				exit: { opacity: 0, y: 4, scale: 0.94 },
 			};
 		case "bottom":
 			return {
-				initial: { opacity: 0, y: -5, scale: 0.98 },
+				initial: { opacity: 0, y: -8, scale: 0.94 },
 				animate: { opacity: 1, y: 0, scale: 1 },
-				exit: { opacity: 0, y: -5, scale: 0.98 },
+				exit: { opacity: 0, y: -4, scale: 0.94 },
 			};
 		case "left":
 			return {
-				initial: { opacity: 0, x: 5, scale: 0.98 },
+				initial: { opacity: 0, x: 8, scale: 0.94 },
 				animate: { opacity: 1, x: 0, scale: 1 },
-				exit: { opacity: 0, x: 5, scale: 0.98 },
+				exit: { opacity: 0, x: 4, scale: 0.94 },
 			};
 		case "right":
 			return {
-				initial: { opacity: 0, x: -5, scale: 0.98 },
+				initial: { opacity: 0, x: -8, scale: 0.94 },
 				animate: { opacity: 1, x: 0, scale: 1 },
-				exit: { opacity: 0, x: -5, scale: 0.98 },
+				exit: { opacity: 0, x: -4, scale: 0.94 },
 			};
 		default:
 			return {
-				initial: { opacity: 0, scale: 0.98 },
+				initial: { opacity: 0, scale: 0.94 },
 				animate: { opacity: 1, scale: 1 },
-				exit: { opacity: 0, scale: 0.98 },
+				exit: { opacity: 0, scale: 0.94 },
 			};
 	}
 }
@@ -458,12 +458,16 @@ function FloatingContent({
 	const content = (
 		<AnimatePresence>
 			{open && (
-				<motion.div
+				<m.div
 					ref={contentRef}
 					data-floating-content
 					role={trigger === "hover" ? "tooltip" : undefined}
 					{...animationProps}
-					transition={{ duration: getDuration("normal"), ease: "easeOut" }}
+					transition={
+						trigger === "hover"
+							? { duration: durations.fast, ease: easings.apple }
+							: springs.swift
+					}
 					className={cn(
 						"fixed overflow-hidden rounded-xl border text-foreground shadow-xl",
 						glass
@@ -480,7 +484,7 @@ function FloatingContent({
 					}}
 				>
 					{children}
-				</motion.div>
+				</m.div>
 			)}
 		</AnimatePresence>
 	);

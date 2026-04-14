@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { cn } from "../lib/utils";
-import { getDuration } from "../lib/animation-config";
+import { durations, springs } from "../lib/motion";
 
 interface SliderProps {
 	value?: number;
@@ -161,28 +161,30 @@ function Slider({
 					)}
 				>
 					{/* Filled track */}
-					<motion.div
+					<m.div
 						className="absolute left-0 top-0 h-full rounded-full bg-blue-500"
 						style={{ width: `${percentage}%` }}
-						transition={{ duration: isDragging ? 0 : 0.1 }}
+						transition={{ duration: isDragging ? 0 : durations.instant }}
 					/>
 				</div>
 
 				{/* Thumb */}
-				<motion.div
+				<m.div
 					className={cn(
-						"absolute rounded-full bg-white shadow-md ring-2 ring-blue-500/50 outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-shadow duration-150",
+						"absolute rounded-full bg-white shadow-md ring-2 ring-blue-500/50 outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
 						sizeClasses[size].thumb
 					)}
 					style={{
 						left: `calc(${percentage}% - ${parseInt(sizeClasses[size].thumb.split(" ")[0].replace("h-", "")) * 2}px)`,
 					}}
-					whileHover={{ scale: 1.1 }}
-					whileTap={{ scale: 0.95 }}
+					whileHover={{ scale: 1.08 }}
 					animate={{
-						scale: isDragging ? 1.1 : 1,
+						scale: isDragging ? 1.18 : 1,
+						boxShadow: isDragging
+							? "0 0 0 6px rgba(10,132,255,0.22), 0 4px 14px rgba(10,132,255,0.35)"
+							: "0 1px 3px rgba(0,0,0,0.25)",
 					}}
-					transition={{ duration: getDuration("normal") }}
+					transition={isDragging ? { duration: durations.instant } : springs.smooth}
 				/>
 			</div>
 

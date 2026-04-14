@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { cn } from "../lib/utils";
 
 interface ProgressProps {
@@ -54,7 +54,7 @@ function Progress({
 				)}
 			>
 				{indeterminate ? (
-					<motion.div
+					<m.div
 						className={cn("h-full w-1/3 rounded-full", variantClasses[variant])}
 						animate={{
 							x: ["-100%", "400%"],
@@ -66,7 +66,7 @@ function Progress({
 						}}
 					/>
 				) : (
-					<motion.div
+					<m.div
 						className={cn("h-full rounded-full", variantClasses[variant])}
 						initial={{ width: 0 }}
 						animate={{ width: `${percentage}%` }}
@@ -137,7 +137,7 @@ function CircularProgress({
 					className="text-muted"
 				/>
 				{indeterminate ? (
-					<motion.circle
+					<m.circle
 						cx={size / 2}
 						cy={size / 2}
 						r={radius}
@@ -158,7 +158,7 @@ function CircularProgress({
 						style={{ transformOrigin: "center" }}
 					/>
 				) : (
-					<motion.circle
+					<m.circle
 						cx={size / 2}
 						cy={size / 2}
 						r={radius}
