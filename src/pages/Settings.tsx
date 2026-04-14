@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { ArrowLeft, Bot, Cpu, FileText, MessageSquare, Server, Volume2 } from 'lucide-react';
+import { m, AnimatePresence } from 'framer-motion';
+import { durations, easings } from '../ui/lib/motion';
 import { AIConfigTab } from '../components/settings/AIConfigTab';
 import { TemplateManagerTab } from '../components/settings/TemplateManagerTab';
 import { ReviewCriteriaTab } from '../components/settings/ReviewCriteriaTab';
@@ -117,7 +119,18 @@ export function Settings({ onBack }: SettingsProps) {
       </div>
 
       <div className={styles.content}>
-        {renderTab()}
+        <AnimatePresence mode="wait" initial={false}>
+          <m.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: durations.base, ease: easings.apple }}
+            style={{ height: '100%', minHeight: 0 }}
+          >
+            {renderTab()}
+          </m.div>
+        </AnimatePresence>
       </div>
     </div>
   );

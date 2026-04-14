@@ -9,6 +9,16 @@
   align-items: center;
   overflow: hidden;
   cursor: grab;
+  /* 选中态切换 + hover 亮度柔和过渡,但拖拽中会被 inline style 的 transition:none 覆盖 */
+  transition:
+    border-color 180ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    box-shadow 260ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    filter 180ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  will-change: transform;
+}
+
+.root:hover:not(.locked) {
+  filter: brightness(1.12);
 }
 
 .locked {
@@ -21,6 +31,14 @@
     0 0 0 1px var(--overlay-color, var(--color-selection-blue)),
     0 0 8px color-mix(in srgb, var(--overlay-color, var(--color-selection-blue)) 30%, transparent);
   z-index: 1;
+}
+
+/* 拖拽中的电梯效果 — 通过 data 属性触发,不占用 selected */
+.root[data-dragging="true"] {
+  box-shadow:
+    0 0 0 1px var(--overlay-color, var(--color-selection-blue)),
+    0 16px 32px rgba(0, 0, 0, 0.42),
+    0 0 14px color-mix(in srgb, var(--overlay-color, var(--color-selection-blue)) 40%, transparent);
 }
 
 .accentLine {

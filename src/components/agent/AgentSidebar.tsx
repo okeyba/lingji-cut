@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { m } from 'framer-motion';
+import { springs, durations, easings } from '../../ui/lib/motion';
 import { useScriptStore } from '../../store/script';
 import { getCurrentProjectDir } from '../../store/timeline';
 import { useConversationList } from '../../hooks/use-conversation-list';
@@ -175,12 +177,22 @@ export function AgentSidebar() {
   const projectDir = scriptProjectDir || getCurrentProjectDir();
 
   return (
-    <aside className={styles.sidebar} style={{ width }}>
+    <m.aside
+      className={styles.sidebar}
+      style={{ width }}
+      initial={{ x: width, opacity: 0 }}
+      animate={{ x: 0, opacity: 1, transition: springs.smooth }}
+      exit={{
+        x: width,
+        opacity: 0,
+        transition: { duration: durations.base, ease: easings.easeOutExpo },
+      }}
+    >
       <div className={styles.resizeHandle} onMouseDown={handleResizeStart} />
       <div className={styles.content}>
         <AgentHeader />
         <AgentSidebarWorkspace projectDir={projectDir} />
       </div>
-    </aside>
+    </m.aside>
   );
 }

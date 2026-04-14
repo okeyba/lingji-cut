@@ -1,5 +1,7 @@
 import { FileText, Film, X } from 'lucide-react';
+import { m, LayoutGroup } from 'framer-motion';
 import { isVideoImportPreviewFile } from '../../lib/video-import-preview';
+import { springs } from '../../ui/lib/motion';
 import { VersionDropdown } from './VersionDropdown';
 
 interface FileTabsProps {
@@ -36,6 +38,7 @@ export function FileTabs({
         background: 'var(--color-window-bg)',
       }}
     >
+      <LayoutGroup id="file-tabs">
       {tabs.map((tab) => {
         const active = tab === openedFile;
         const dirty = fileDirtyMap[tab];
@@ -50,20 +53,46 @@ export function FileTabs({
               onTabContextMenu?.(tab);
             }}
             style={{
+              position: 'relative',
               display: 'inline-flex',
               alignItems: 'center',
-              borderBottom: active
-                ? '2px solid var(--color-selection-blue, #0a84ff)'
-                : '2px solid transparent',
-              background: active
-                ? 'color-mix(in srgb, var(--color-selection-blue, #0a84ff) 10%, transparent)'
-                : 'transparent',
+              borderBottom: '2px solid transparent',
             }}
           >
+            {active && (
+              <>
+                <m.span
+                  layoutId="file-tab-bg"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    background:
+                      'color-mix(in srgb, var(--color-selection-blue, #0a84ff) 10%, transparent)',
+                    pointerEvents: 'none',
+                  }}
+                  transition={springs.swift}
+                />
+                <m.span
+                  layoutId="file-tab-underline"
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    bottom: -2,
+                    height: 2,
+                    background: 'var(--color-selection-blue, #0a84ff)',
+                    pointerEvents: 'none',
+                  }}
+                  transition={springs.swift}
+                />
+              </>
+            )}
             <button
               type="button"
               onClick={() => onOpenFile(tab)}
               style={{
+                position: 'relative',
+                zIndex: 1,
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 6,
@@ -105,6 +134,8 @@ export function FileTabs({
                 }}
                 title="关闭标签"
                 style={{
+                  position: 'relative',
+                  zIndex: 1,
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -136,6 +167,7 @@ export function FileTabs({
           </div>
         );
       })}
+      </LayoutGroup>
 
       {/* 版本历史下拉：仅在查看 script.md 时挂载，避免无意义重渲染 */}
       {openedFile === 'script.md' ? (

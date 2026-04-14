@@ -38,11 +38,17 @@
 
 .tab.active {
   color: var(--color-text-primary);
-  background: rgba(255, 255, 255, 0.1);
 }
 
-.tab.active::after {
-  content: '';
+.tabBg {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.1);
+  z-index: 0;
+}
+
+.tabUnderline {
   position: absolute;
   bottom: -3px;
   left: 8px;
@@ -50,6 +56,15 @@
   height: 2px;
   border-radius: 1px;
   background: var(--color-brand-accent);
+  z-index: 0;
+}
+
+.tabContent {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .icon {

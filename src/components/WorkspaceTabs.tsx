@@ -1,5 +1,7 @@
 import { Film, PenLine } from 'lucide-react';
+import { m, LayoutGroup } from 'framer-motion';
 import type { AppPage } from '../lib/electron-api';
+import { springs } from '../ui/lib/motion';
 import styles from './WorkspaceTabs.module.css';
 
 type WorkspaceTab = 'script-workbench' | 'editor';
@@ -75,22 +77,43 @@ const tabs: { key: WorkspaceTab; label: string; icon: React.ReactNode; page: App
 export function WorkspaceTabs({ active, onSwitch, scriptProgress }: WorkspaceTabsProps) {
   return (
     <nav className={styles.root}>
-      {tabs.map((tab, i) => (
-        <span key={tab.key} style={{ display: 'contents' }}>
-          {i > 0 && <span className={styles.separator} />}
-          <button
-            type="button"
-            className={`${styles.tab} ${active === tab.key ? styles.active : ''}`}
-            onClick={() => onSwitch(tab.key)}
-          >
-            <span className={styles.icon}>{tab.icon}</span>
-            {tab.label}
-            {tab.key === 'script-workbench' && scriptProgress != null && (
-              <ScriptProgressRing progress={scriptProgress} />
-            )}
-          </button>
-        </span>
-      ))}
+      <LayoutGroup id="workspace-tabs">
+        {tabs.map((tab, i) => {
+          const isActive = active === tab.key;
+          return (
+            <span key={tab.key} style={{ display: 'contents' }}>
+              {i > 0 && <span className={styles.separator} />}
+              <button
+                type="button"
+                className={`${styles.tab} ${isActive ? styles.active : ''}`}
+                onClick={() => onSwitch(tab.key)}
+              >
+                {isActive && (
+                  <>
+                    <m.span
+                      layoutId="workspace-tab-bg"
+                      className={styles.tabBg}
+                      transition={springs.swift}
+                    />
+                    <m.span
+                      layoutId="workspace-tab-underline"
+                      className={styles.tabUnderline}
+                      transition={springs.swift}
+                    />
+                  </>
+                )}
+                <span className={styles.tabContent}>
+                  <span className={styles.icon}>{tab.icon}</span>
+                  {tab.label}
+                  {tab.key === 'script-workbench' && scriptProgress != null && (
+                    <ScriptProgressRing progress={scriptProgress} />
+                  )}
+                </span>
+              </button>
+            </span>
+          );
+        })}
+      </LayoutGroup>
     </nav>
   );
 }

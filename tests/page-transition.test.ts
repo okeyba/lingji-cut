@@ -18,7 +18,7 @@ describe('resolvePageTransition', () => {
     expect(result.transition.duration).toBeGreaterThan(0);
   });
 
-  it('falls back to an instant transition for unrelated page changes', () => {
+  it('uses a sheet-from-top transition when entering the settings page', () => {
     const result = resolvePageTransition({
       fromPage: 'welcome',
       toPage: 'settings',
@@ -26,12 +26,28 @@ describe('resolvePageTransition', () => {
       reducedMotion: false,
     });
 
-    expect(result.enabled).toBe(false);
-    expect(result.contentKey).toBe('static-content');
-    expect(result.initial).toMatchObject({ opacity: 1, y: 0 });
+    expect(result.enabled).toBe(true);
+    expect(result.contentKey).toBe('to-settings:welcome');
+    expect(result.initial).toMatchObject({ opacity: 0, y: -6 });
     expect(result.animate).toMatchObject({ opacity: 1, y: 0 });
-    expect(result.exit).toMatchObject({ opacity: 1, y: 0 });
-    expect(result.transition.duration).toBe(0);
+    expect(result.exit).toMatchObject({ opacity: 0, y: -4 });
+    expect(result.transition.duration).toBeGreaterThan(0);
+  });
+
+  it('uses a crossfade for general page changes', () => {
+    const result = resolvePageTransition({
+      fromPage: 'editor',
+      toPage: 'script-workbench',
+      reason: 'default',
+      reducedMotion: false,
+    });
+
+    expect(result.enabled).toBe(true);
+    expect(result.contentKey).toBe('crossfade:editor->script-workbench');
+    expect(result.initial).toMatchObject({ opacity: 0 });
+    expect(result.animate).toMatchObject({ opacity: 1 });
+    expect(result.exit).toMatchObject({ opacity: 0 });
+    expect(result.transition.duration).toBeGreaterThan(0);
   });
 
   it('disables the close-project transition when reduced motion is preferred', () => {

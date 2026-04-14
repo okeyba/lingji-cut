@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Send, Square } from 'lucide-react';
+import { m, AnimatePresence } from 'framer-motion';
+import { springs, durations, easings } from '../../ui/lib/motion';
 import { Button, EmptyState } from '../../ui';
 import { useConversationDetail } from '../../hooks/use-conversation-detail';
 import { useConnectionLifecycle } from '../../hooks/use-connection-lifecycle';
@@ -126,17 +128,43 @@ export function ConversationDetailPane({
             description="这个会话还没有消息。可以直接在下方输入，或点击左侧其他会话查看。"
           />
         ) : null}
+        <AnimatePresence initial={false}>
         {turns.map((turn) => {
           if (turn.role === 'user') {
             const text = turn.blocks
               .filter((block) => block.type === 'text')
               .map((block) => block.text)
               .join('\n');
-            return <UserMessage key={String(turn.id)} content={text} />;
+            return (
+              <m.div
+                key={String(turn.id)}
+                layout="position"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0, transition: springs.smooth }}
+                exit={{
+                  opacity: 0,
+                  y: -4,
+                  transition: { duration: durations.fast, ease: easings.apple },
+                }}
+              >
+                <UserMessage content={text} />
+              </m.div>
+            );
           }
 
           return (
-            <div key={String(turn.id)} className="flex flex-col gap-2 max-w-[95%]">
+            <m.div
+              key={String(turn.id)}
+              layout="position"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0, transition: springs.smooth }}
+              exit={{
+                opacity: 0,
+                y: -4,
+                transition: { duration: durations.fast, ease: easings.apple },
+              }}
+              className="flex flex-col gap-2 max-w-[95%]"
+            >
               {turn.blocks.map((block, index) => {
                 switch (block.type) {
                   case 'text':
@@ -164,9 +192,10 @@ export function ConversationDetailPane({
                     return null;
                 }
               })}
-            </div>
+            </m.div>
           );
         })}
+        </AnimatePresence>
       </div>
 
       <div className="px-4 py-3 border-t border-mac-separator shrink-0 flex flex-col gap-2">

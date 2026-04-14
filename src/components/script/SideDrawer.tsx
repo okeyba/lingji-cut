@@ -1,6 +1,8 @@
 import { X } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { m, AnimatePresence } from 'framer-motion';
 import { PanelHeader } from '../../ui';
+import { springs, durations, easings } from '../../ui/lib/motion';
 
 interface SideDrawerProps {
   open: boolean;
@@ -13,12 +15,17 @@ interface SideDrawerProps {
  * 通用侧边抽屉，替代旧 StepDrawer。
  */
 export function SideDrawer({ open, title, onClose, children }: SideDrawerProps) {
-  if (!open) {
-    return null;
-  }
-
   return (
-    <aside
+    <AnimatePresence>
+      {open && (
+    <m.aside
+      initial={{ x: '100%', opacity: 0 }}
+      animate={{ x: 0, opacity: 1, transition: springs.smooth }}
+      exit={{
+        x: '100%',
+        opacity: 0,
+        transition: { duration: durations.base, ease: easings.easeOutExpo },
+      }}
       style={{
         position: 'absolute',
         top: 0,
@@ -64,6 +71,8 @@ export function SideDrawer({ open, title, onClose, children }: SideDrawerProps) 
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>{children}</div>
-    </aside>
+    </m.aside>
+      )}
+    </AnimatePresence>
   );
 }

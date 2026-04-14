@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, LayoutGroup, m } from 'framer-motion';
 import { useCallback, useEffect, useState } from 'react';
 import { useToast } from './ui';
 import { AgentSidebar } from './components/agent/AgentSidebar';
@@ -946,8 +946,10 @@ export default function App() {
       )}
       <div style={{ minHeight: 0, display: 'flex', overflow: 'hidden' }}>
         <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
+          {/* LayoutGroup 让 setup → editor 的 layoutId 共享元素(Hero ② audio thumb)能跨 AnimatePresence morph */}
+          <LayoutGroup id="page-shared-elements">
           <AnimatePresence mode="wait" initial={false}>
-            <motion.div
+            <m.div
               key={pageTransition.contentKey}
               initial={pageTransition.initial}
               animate={pageTransition.animate}
@@ -994,10 +996,13 @@ export default function App() {
                   </div>
                 </>
               )}
-            </motion.div>
+            </m.div>
           </AnimatePresence>
+          </LayoutGroup>
         </div>
-        {agentSidebarOpen && <AgentSidebar />}
+        <AnimatePresence initial={false}>
+          {agentSidebarOpen && <AgentSidebar />}
+        </AnimatePresence>
       </div>
       <AppStatusBar />
     </div>
