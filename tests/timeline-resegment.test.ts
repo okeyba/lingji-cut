@@ -49,3 +49,67 @@ describe('setSrtEntries baseline behavior', () => {
     expect(state.srtEntries[0].text).toBe('第二次');
   });
 });
+
+describe('subtitle resegment actions', () => {
+  beforeEach(() => {
+    resetStore();
+  });
+
+  it('setSubtitleMaxChars updates setting and triggers resegment', () => {
+    const longEntry: SrtEntry = {
+      index: 1,
+      startMs: 0,
+      endMs: 4_000,
+      text: '一二三四五六七八九十一二三四五六七八九十一二三四五',
+    };
+    useTimelineStore.getState().setSrtEntries([longEntry]);
+    // 25 chars < default 35, so no split yet
+    expect(useTimelineStore.getState().srtEntries).toHaveLength(1);
+
+    useTimelineStore.getState().setSubtitleMaxChars(10);
+    const state = useTimelineStore.getState();
+    expect(state.timeline.subtitle.maxCharsPerEntry).toBe(10);
+    expect(state.srtEntries.length).toBeGreaterThan(1);
+    expect(state.srtEntries.every((e) => e.text.length <= 10)).toBe(true);
+  });
+
+  it('resegmentSubtitles re-runs algorithm from originalSrtEntries', () => {
+    const longEntry: SrtEntry = {
+      index: 1,
+      startMs: 0,
+      endMs: 4_000,
+      text: '一二三四五六七八九十一二三四五六七八九十一二三四五',
+    };
+    useTimelineStore.getState().setSrtEntries([longEntry]);
+    useTimelineStore.getState().updateSubtitleStyle({ maxCharsPerEntry: 8 });
+
+    const result = useTimelineStore.getState().resegmentSubtitles();
+
+    const state = useTimelineStore.getState();
+    expect(state.srtEntries.every((e) => e.text.length <= 8)).toBe(true);
+    expect(result.droppedHighlights).toBe(0);
+  });
+
+  it('restoreOriginalSubtitles restores srtEntries to baseline', () => {
+    const longEntry: SrtEntry = {
+      index: 1,
+      startMs: 0,
+      endMs: 4_000,
+      text: '一二三四五六七八九十一二三四五六七八九十一二三四五',
+    };
+    useTimelineStore.getState().setSrtEntries([longEntry]);
+    useTimelineStore.getState().setSubtitleMaxChars(8);
+    expect(useTimelineStore.getState().srtEntries.length).toBeGreaterThan(1);
+
+    useTimelineStore.getState().restoreOriginalSubtitles();
+    const state = useTimelineStore.getState();
+    expect(state.srtEntries).toEqual([longEntry]);
+  });
+
+  it('setAutoResegment toggles the flag', () => {
+    useTimelineStore.getState().setAutoResegment(false);
+    expect(useTimelineStore.getState().timeline.subtitle.autoResegment).toBe(false);
+    useTimelineStore.getState().setAutoResegment(true);
+    expect(useTimelineStore.getState().timeline.subtitle.autoResegment).toBe(true);
+  });
+});

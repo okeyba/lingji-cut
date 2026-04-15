@@ -54,6 +54,10 @@ export interface TimelineStore {
   setSubtitleHighlights: (highlights: SubtitleHighlight[]) => void;
   clearSubtitleHighlights: () => void;
   updateSubtitleStyle: (updates: Partial<SubtitleStyle>) => void;
+  setSubtitleMaxChars: (n: number) => void;
+  resegmentSubtitles: () => { droppedHighlights: number };
+  restoreOriginalSubtitles: () => void;
+  setAutoResegment: (enabled: boolean) => void;
   setPodcast: (audioPath: string, srtPath: string, durationMs: number) => void;
   setGlobalBackground: (path: string) => void;
   addAsset: (path: string, type: AssetType, durationMs?: number) => void;
@@ -359,7 +363,7 @@ export function subscribeToSaveStatus(listener: (status: SaveStatus) => void): (
   };
 }
 
-export const useTimelineStore = create<TimelineStore>((set) => ({
+export const useTimelineStore = create<TimelineStore>((set, get) => ({
   timeline: createDefaultTimeline(),
   srtEntries: [],
   originalSrtEntries: [],
@@ -437,6 +441,57 @@ export const useTimelineStore = create<TimelineStore>((set) => ({
 
       return buildCommittedTimelineState(state, nextTimeline);
     }),
+  setSubtitleMaxChars: (n) => {
+    get().updateSubtitleStyle({ maxCharsPerEntry: n });
+    if (get().timeline.subtitle.autoResegment) {
+      get().resegmentSubtitles();
+    }
+  },
+  resegmentSubtitles: () => {
+    const state = get();
+    const baseline = state.originalSrtEntries;
+    const maxChars = state.timeline.subtitle.maxCharsPerEntry;
+    const nextEntries = resegmentSrtEntries(baseline, maxChars);
+    const { remapped, dropped } = remapHighlightsAfterResegment(
+      state.timeline.subtitleHighlights ?? [],
+      nextEntries,
+    );
+    set((prev) => {
+      const nextTimeline = normalizeTimeline({
+        ...prev.timeline,
+        subtitleHighlights: remapped,
+      });
+      return {
+        srtEntries: nextEntries,
+        timeline: nextTimeline,
+      };
+    });
+    return { droppedHighlights: dropped.length };
+  },
+  restoreOriginalSubtitles: () => {
+    const state = get();
+    const baseline = state.originalSrtEntries;
+    if (baseline.length === 0) {
+      return;
+    }
+    const { remapped } = remapHighlightsAfterResegment(
+      state.timeline.subtitleHighlights ?? [],
+      baseline,
+    );
+    set((prev) => {
+      const nextTimeline = normalizeTimeline({
+        ...prev.timeline,
+        subtitleHighlights: remapped,
+      });
+      return {
+        srtEntries: baseline,
+        timeline: nextTimeline,
+      };
+    });
+  },
+  setAutoResegment: (enabled) => {
+    get().updateSubtitleStyle({ autoResegment: enabled });
+  },
   setPodcast: (audioPath, srtPath, durationMs) =>
     set((state) => {
       const nextTimeline = normalizeTimeline({
