@@ -60,7 +60,7 @@
 ### 3.1 类型扩展（`src/types.ts`）
 
 ```ts
-// SubtitleStyle 新增两个可选字段
+// SubtitleStyle 新增两个可选字段（持久化到 timeline.json）
 export interface SubtitleStyle {
   // ...existing fields
   /** 单条字幕最多字符数，超过则自动切分。默认 35，范围 20~60 */
@@ -68,17 +68,27 @@ export interface SubtitleStyle {
   /** 是否启用自动切分。默认 true */
   autoResegment?: boolean;
 }
+```
 
-// TimelineData.podcast 新增一个可选字段
-export interface TimelineData {
-  podcast: {
-    // ...existing fields
-    /** 原始字幕基线（通常是 MiniMax 返回的 sentence-level 条目），用于还原和重切分的输入 */
-    originalSrtEntries?: SrtEntry[];
-  };
+**关于 baseline（原始字幕）存储位置**：
+
+当前 `srtEntries` **不持久化在 `timeline.json` 中**，而是每次加载项目时通过 `electronAPI.parseSrtFile(srtPath)` 从磁盘 `.srt` 文件重新解析而得。由于磁盘 `.srt` 文件**始终保持 MiniMax 原始输出**（本期不写回），它本身就是天然的 baseline。
+
+因此 baseline（原始条目）**不需要**写入 `timeline.json`，只作为 store 的内存字段存在：
+
+```ts
+// TimelineStore 新增内存字段
+interface TimelineStore {
   // ...existing fields
+  /** baseline：来自磁盘 .srt 文件的原始字幕，切分和还原都以此为输入 */
+  originalSrtEntries: SrtEntry[];
 }
 ```
+
+好处：
+- 磁盘 `.srt` 是单一事实源，不会因为 timeline.json 旧/新导致 baseline 漂移
+- timeline.json 精简，只保存用户设置（`maxCharsPerEntry` / `autoResegment`）
+- 旧项目零迁移成本
 
 **默认值与常量**（建议在 `src/lib/srt-resegment.ts` 导出）：
 
@@ -176,23 +186,25 @@ setAutoResegment: (enabled: boolean) => void;
    - UI 层负责 300ms 防抖（见 §3.5）
 
 2. `resegmentSubtitles()`：
-   - 若 `originalSrtEntries` 不存在，用当前 `srtEntries` 先填入
+   - 以 `originalSrtEntries`（store 内存中的 baseline）为输入
    - `resegmentSrtEntries(originalSrtEntries, maxCharsPerEntry)` → 新 entries
    - `remapHighlightsAfterResegment(subtitleHighlights, newEntries)` → 更新高亮
-   - 写入 `srtEntries` 和 `subtitleHighlights`
+   - 写入 `srtEntries` 和 `subtitleHighlights`（注意：`originalSrtEntries` 不变）
    - 返回 `{ droppedHighlights }` 供 UI 显示 toast
    - 进入 undo/redo 历史（单步）
 
 3. `restoreOriginalSubtitles()`：
-   - 前置条件：`originalSrtEntries` 存在且与 `srtEntries` 不同
+   - 前置条件：`originalSrtEntries.length > 0` 且与 `srtEntries` 结构不同
    - `srtEntries = originalSrtEntries`
    - 调用 `remapHighlightsAfterResegment(currentHighlights, originalSrtEntries)`，把当前绑定在切分条目上的高亮反向映射回原始条目；无法匹配的丢弃并提示
    - 进入 undo/redo 历史
 
-4. **baseline 初始化**：当 `setSrtEntries(entries)` 被调用时（新导入 / TTS 生成 / 重新转录）：
-   - **始终**把传入的 `entries` 作为新的 `originalSrtEntries`（覆盖旧 baseline，因为它与旧的 baseline 无关）
-   - 若 `autoResegment` 为 true 且存在任一条 `text.length > maxCharsPerEntry`，立即调用 `resegmentSubtitles()` 生成切分版本作为 `srtEntries`
+4. **baseline 设定**：当 `setSrtEntries(entries)` 被调用时（项目加载解析 .srt / 新导入 / TTS 生成 / 重新转录）：
+   - **始终**把传入的 `entries` 作为新的 `originalSrtEntries`（覆盖旧 baseline）
+   - 若 `autoResegment` 为 true 且存在任一条 `text.length > maxCharsPerEntry`，立即调用 `resegmentSrtEntries()` 生成切分版本作为 `srtEntries`
    - 否则直接 `srtEntries = entries`
+   - 同时对 `subtitleHighlights` 做一次 `remapHighlightsAfterResegment`（若切分了）或保留不变
+   - **注意**：`setSrtEntries` 此时承担三件事（baseline 覆写 + 条件切分 + 高亮重映射），应注意封装避免在组件层重复调用
    - 该行为保证任何时候都有可还原的 baseline，且旧的切分状态被新输入覆盖而不是合并
 
 ### 3.5 UI（`src/components/SubtitleInspector.tsx`）
@@ -213,17 +225,26 @@ setAutoResegment: (enabled: boolean) => void;
 
 **防抖实现**：SubtitleInspector 组件内部用 `useRef<number>` 保存 setTimeout 句柄，滑块 onChange 时先 `clearTimeout` 再 `setTimeout(() => store.setSubtitleMaxChars(value), 300)`。卸载时清理。
 
-### 3.6 持久化（`src/lib/project-persistence.ts`）
+### 3.6 持久化与加载（`src/lib/timeline-tracks.ts` · `src/App.tsx`）
 
-**序列化**：TimelineData 新字段 (`subtitle.maxCharsPerEntry`、`subtitle.autoResegment`、`podcast.originalSrtEntries`) 随 `timeline.json` 自然落盘，无需额外处理。
+**序列化**：TimelineData 新字段 `subtitle.maxCharsPerEntry` 和 `subtitle.autoResegment` 随 `timeline.json` 自然落盘，由 `normalizeTimelineData` 的 `subtitle` 字段展开负责兼容。
 
-**反序列化迁移**：读取旧项目 `timeline.json` 时：
+**反序列化迁移**（`normalizeTimelineData` 中的 `subtitle` 合并）：
 
-1. 若 `subtitle.maxCharsPerEntry` 缺失 → 填入 `DEFAULT_MAX_CHARS_PER_ENTRY`
-2. 若 `subtitle.autoResegment` 缺失 → 填入 `true`
-3. 若 `podcast.originalSrtEntries` 缺失且 `srtEntries` 非空 → 把当前 `srtEntries` 复制为 `originalSrtEntries`（不立即重切分，保持用户原样）
-4. 不要在加载时自动触发 `resegmentSubtitles`，避免用户打开旧项目看到字幕突然变化
-5. 注意：§3.4 中 `setSrtEntries` 的 baseline 覆盖行为只在**运行时**生效；`loadProject` 走专门的反序列化路径，不经过 `setSrtEntries`，避免把加载的 `srtEntries` 误当成"新输入"覆盖已保存的 baseline
+- `createDefaultSubtitleStyle()` 返回的默认值包含 `maxCharsPerEntry: 35` 和 `autoResegment: true`
+- `normalizeTimelineData` 用 `{ ...defaultSubtitleStyle, ...timeline.subtitle }` 的方式合并，旧项目自然补齐
+
+**加载流程**（`src/App.tsx` 的 `loadProject` 逻辑，大约 line 389-405）：
+
+```
+1. electronAPI.loadProject(dir) → projectData
+2. setTimeline(projectData.timeline) → 内存中 subtitle.maxCharsPerEntry 已就位
+3. electronAPI.parseSrtFile(srtPath) → entries（原始磁盘 SRT）
+4. setSrtEntries(entries) → 触发 baseline 覆写 + 条件切分
+5. Player / Timeline 显示最终切分后的 srtEntries
+```
+
+**无需迁移磁盘文件**：`.srt` 文件本身不变，旧项目打开后若 `autoResegment` 为 true 会自动应用切分显示，关闭开关即可恢复原样。
 
 ---
 
@@ -339,17 +360,15 @@ setAutoResegment: (enabled: boolean) => void;
 
 | 文件 | 改动类型 | 说明 |
 |------|--------|------|
-| `src/types.ts` | 修改 | 扩展 `SubtitleStyle` 和 `TimelineData.podcast` |
+| `src/types.ts` | 修改 | 扩展 `SubtitleStyle`、更新 `createDefaultSubtitleStyle` 默认值 |
 | `src/lib/srt-resegment.ts` | **新增** | 切分算法纯函数 |
 | `src/lib/subtitle-highlights.ts` | 修改 | 新增 `remapHighlightsAfterResegment` |
-| `src/store/timeline.ts` | 修改 | 新增 4 个 actions + `setSrtEntries` 行为调整 |
+| `src/store/timeline.ts` | 修改 | 新增 `originalSrtEntries` 字段 + 4 个 actions + `setSrtEntries` 行为调整 |
 | `src/components/SubtitleInspector.tsx` | 修改 | 新增"字幕排版"分组 UI |
-| `src/lib/project-persistence.ts` | 修改 | 旧项目兼容字段迁移 |
 | `tests/srt-resegment.test.ts` | **新增** | 切分算法测试 |
 | `tests/subtitle-highlights.test.ts` | 修改 | 补充 remap 测试 |
 | `tests/timeline-resegment.test.ts` | **新增** | Store 层集成测试 |
-| `tests/subtitle-inspector.test.tsx` | 修改/新增 | UI 层测试 |
-| `tests/project-persistence.test.ts` | 修改 | 迁移行为测试 |
+| `tests/subtitle-inspector.test.tsx` | 修改 | UI 层测试补充 |
 
 **不改动**：
 
