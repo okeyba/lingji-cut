@@ -61,10 +61,16 @@ export function AssetImportCard({ onClick }: { onClick: () => void }) {
   );
 }
 
-export function AssetCard({ asset, compact, usageCount: _usageCount, onDragStart, onRemove: _onRemove, onClick }: AssetCardProps) {
+export function AssetCard({ asset, compact, usageCount: _usageCount, onDragStart, onRemove, onClick }: AssetCardProps) {
   const meta = TYPE_META[asset.type];
-  const isDraggable = !asset.locked && (asset.type === 'image' || asset.type === 'video' || asset.type === 'text');
+  const isDraggable =
+    !asset.locked &&
+    (asset.type === 'image' ||
+      asset.type === 'video' ||
+      asset.type === 'text' ||
+      asset.type === 'audio');
   const thumbnail = useThumbnail(asset.path, asset.type);
+  const canRemove = !asset.locked;
 
   return (
     <div
@@ -79,6 +85,23 @@ export function AssetCard({ asset, compact, usageCount: _usageCount, onDragStart
         thumbnail ? styles.hasThumbnail : meta.className,
       ].filter(Boolean).join(' ')}
     >
+      {canRemove ? (
+        <button
+          type="button"
+          className={styles.removeButton}
+          aria-label={`移除素材 ${asset.name}`}
+          title="移除素材"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            event.preventDefault();
+            onRemove(asset.path);
+          }}
+        >
+          <AppIcon name="x" size={10} />
+        </button>
+      ) : null}
+
       {/* 顶部预览区 */}
       <div className={styles.iconArea}>
         {thumbnail ? (

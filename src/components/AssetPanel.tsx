@@ -5,16 +5,8 @@ import { useTimelineStore } from '../store/timeline';
 import { springs } from '../ui/lib/motion';
 import type { PillGroupItem } from '../ui';
 import {
+  ConfirmDialog,
   ContextMenu,
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Eyebrow,
-  ModalFooter,
   PillGroup,
   SearchInput,
 } from '../ui';
@@ -339,7 +331,12 @@ export function AssetPanel({
                         event.preventDefault();
                         return;
                       }
-                      if (asset.type !== 'image' && asset.type !== 'video' && asset.type !== 'text') {
+                      if (
+                        asset.type !== 'image' &&
+                        asset.type !== 'video' &&
+                        asset.type !== 'text' &&
+                        asset.type !== 'audio'
+                      ) {
                         event.preventDefault();
                         return;
                       }
@@ -350,15 +347,30 @@ export function AssetPanel({
                 </div>
               );
 
+              const hasContextMenu = asset.type === 'image' || !asset.locked;
+
               return (
                 <div key={asset.path} className={styles.assetSlot}>
-                  {asset.type === 'image' ? (
+                  {hasContextMenu ? (
                     <ContextMenu>
                       <ContextMenu.Trigger asChild>{cardNode}</ContextMenu.Trigger>
                       <ContextMenu.Content>
-                        <ContextMenu.Item onSelect={() => setGlobalBackground(asset.path)}>
-                          设为整期背景
-                        </ContextMenu.Item>
+                        {asset.type === 'image' ? (
+                          <ContextMenu.Item onSelect={() => setGlobalBackground(asset.path)}>
+                            设为整期背景
+                          </ContextMenu.Item>
+                        ) : null}
+                        {!asset.locked ? (
+                          <>
+                            {asset.type === 'image' ? <ContextMenu.Separator /> : null}
+                            <ContextMenu.Item
+                              destructive
+                              onSelect={() => handleRemoveAsset(asset.path)}
+                            >
+                              移除素材
+                            </ContextMenu.Item>
+                          </>
+                        ) : null}
                       </ContextMenu.Content>
                     </ContextMenu>
                   ) : (
@@ -383,40 +395,31 @@ export function AssetPanel({
         )}
       </div>
 
-      {/* 删除确认弹窗 */}
-      <Dialog
+      <ConfirmDialog
         open={Boolean(pendingRemovalPath)}
-        onOpenChange={(open) => !open && setPendingRemovalPath(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <Eyebrow>REMOVE ASSET</Eyebrow>
-            <DialogTitle>删除素材</DialogTitle>
-            <DialogDescription>
-              {pendingRemovalPath
-                ? `该素材已在底部轨道中使用 ${pendingRemovalUsageCount} 次，删除后会同步移除所有相关轨道块。`
-                : undefined}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody>
-            <div>确认继续吗？</div>
-          </DialogBody>
-          <DialogFooter>
-            <ModalFooter
-              cancelLabel="取消"
-              confirmLabel="确认删除"
-              confirmVariant="danger"
-              onCancel={() => setPendingRemovalPath(null)}
-              onConfirm={() => {
-                if (pendingRemovalPath) {
-                  removeAsset(pendingRemovalPath);
-                }
-                setPendingRemovalPath(null);
-              }}
-            />
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingRemovalPath(null);
+          }
+        }}
+        title="删除素材"
+        description={
+          pendingRemovalPath
+            ? pendingRemovalUsageCount > 0
+              ? `该素材已在底部轨道中使用 ${pendingRemovalUsageCount} 次，删除后会同步移除所有相关轨道块。确认继续吗？`
+              : '确认移除该素材吗？'
+            : undefined
+        }
+        confirmText="确认删除"
+        cancelText="取消"
+        confirmVariant="destructive"
+        onConfirm={() => {
+          if (pendingRemovalPath) {
+            removeAsset(pendingRemovalPath);
+          }
+          setPendingRemovalPath(null);
+        }}
+      />
     </aside>
   );
 }
