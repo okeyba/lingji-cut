@@ -48,8 +48,35 @@ export function findBestBreakPoint(text: string, targetLen: number): number {
 }
 
 /**
+ * 对已切分好的段列表应用最小时长约束（MIN_SEGMENT_DURATION_MS）。
+ * 逐段检查：若某段时长不足，将其 endMs 向后推，同时把下一段的 startMs 相应推移。
+ * 最后一段的 endMs 始终等于原始 entry.endMs，不做调整。
+ * 若总时长本身不足以满足所有段的最小时长，接受违规（不崩溃，不重排）。
+ */
+function enforceMinDuration(segments: SrtEntry[], originalEndMs: number): SrtEntry[] {
+  if (segments.length <= 1) {
+    return segments;
+  }
+  const result = segments.map((s) => ({ ...s }));
+  for (let i = 0; i < result.length - 1; i++) {
+    const dur = result[i].endMs - result[i].startMs;
+    if (dur < MIN_SEGMENT_DURATION_MS) {
+      const needed = MIN_SEGMENT_DURATION_MS - dur;
+      // 最多能推到下一段结束（即 originalEndMs 对于最后两段），但不超过 originalEndMs
+      const cap = Math.min(result[i + 1].endMs, originalEndMs);
+      const newEnd = Math.min(result[i].endMs + needed, cap);
+      result[i].endMs = newEnd;
+      result[i + 1].startMs = newEnd;
+    }
+  }
+  // 确保末段 endMs 不变
+  result[result.length - 1].endMs = originalEndMs;
+  return result;
+}
+
+/**
  * 把一个超长 entry 切成若干不超过 maxChars 的子 entry，递归切分。
- * 时间按字符数等比分配。
+ * 时间按字符数等比分配，最终应用 MIN_SEGMENT_DURATION_MS 下限。
  */
 export function splitLongEntry(entry: SrtEntry, maxChars: number): SrtEntry[] {
   if (entry.text.length <= maxChars) {
@@ -87,7 +114,8 @@ export function splitLongEntry(entry: SrtEntry, maxChars: number): SrtEntry[] {
   const frontSegments = frontText.length > maxChars ? splitLongEntry(frontEntry, maxChars) : [frontEntry];
   const backSegments = backText.length > maxChars ? splitLongEntry(backEntry, maxChars) : [backEntry];
 
-  return [...frontSegments, ...backSegments];
+  const segments = [...frontSegments, ...backSegments];
+  return enforceMinDuration(segments, entry.endMs);
 }
 
 /**
