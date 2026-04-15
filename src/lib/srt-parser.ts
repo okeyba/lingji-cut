@@ -48,3 +48,31 @@ export function parseSrt(content: string): SrtEntry[] {
 
   return entries;
 }
+
+function msToTimestamp(ms: number): string {
+  const safeMs = Math.max(0, Math.round(ms));
+  const hours = Math.floor(safeMs / 3_600_000);
+  const minutes = Math.floor((safeMs % 3_600_000) / 60_000);
+  const seconds = Math.floor((safeMs % 60_000) / 1_000);
+  const milliseconds = safeMs % 1_000;
+  return (
+    `${String(hours).padStart(2, '0')}:` +
+    `${String(minutes).padStart(2, '0')}:` +
+    `${String(seconds).padStart(2, '0')},` +
+    `${String(milliseconds).padStart(3, '0')}`
+  );
+}
+
+export function serializeSrtEntries(entries: SrtEntry[]): string {
+  if (entries.length === 0) {
+    return '';
+  }
+  return (
+    entries
+      .map((entry, idx) => {
+        const index = Number.isInteger(entry.index) && entry.index > 0 ? entry.index : idx + 1;
+        return `${index}\n${msToTimestamp(entry.startMs)} --> ${msToTimestamp(entry.endMs)}\n${entry.text}`;
+      })
+      .join('\n\n') + '\n'
+  );
+}
