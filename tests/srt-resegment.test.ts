@@ -116,6 +116,37 @@ describe('splitLongEntry', () => {
     const result = splitLongEntry(entry, 10);
     expect(result.every((e) => e.index === 7)).toBe(true);
   });
+
+  it('enforces minimum segment duration when total duration permits', () => {
+    // 24 chars, no punctuation → hard-cut into 3 segments
+    // Total 3000ms, min 300ms each → 3 * 300 = 900ms ≤ 3000ms → all should meet floor
+    const entry = createEntry({
+      text: '哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈',
+      startMs: 0,
+      endMs: 3_000,
+    });
+    const result = splitLongEntry(entry, 8);
+    expect(result.every((e) => e.endMs - e.startMs >= MIN_SEGMENT_DURATION_MS)).toBe(true);
+    // Boundary preserved
+    expect(result[0].startMs).toBe(0);
+    expect(result[result.length - 1].endMs).toBe(3_000);
+  });
+
+  it('gracefully accepts min-duration violations when total duration is too short', () => {
+    // 16 chars, split into 2 of 8 chars each. Total 500ms → each ~250ms < 300ms floor
+    // Accept the violation; don't crash, don't rearrange
+    const entry = createEntry({
+      text: '哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈',
+      startMs: 0,
+      endMs: 500,
+    });
+    const result = splitLongEntry(entry, 8);
+    expect(result).toHaveLength(2);
+    // Last segment boundary preserved
+    expect(result[result.length - 1].endMs).toBe(500);
+    // Total duration preserved
+    expect(result[result.length - 1].endMs - result[0].startMs).toBe(500);
+  });
 });
 
 describe('resegmentSrtEntries', () => {
