@@ -55,6 +55,7 @@ export interface SessionManagerLike {
   setMode(modeId: string): Promise<void>;
   setConfigOption(configId: string, valueId: string): Promise<void>;
   respondPermission(requestId: string, optionId: string): Promise<void>;
+  setPermissionPolicy(policy: PermissionPolicy): void;
   disconnect(): void;
   getStatus(): ConnectionStatus;
   getSessionId(): string | null;
@@ -87,7 +88,7 @@ interface ConnectionRegistryOptions {
 export class ConnectionRegistry extends EventEmitter {
   private readonly runtimes = new Map<number, RuntimeEntry>();
   private readonly createSessionManager: (policy: PermissionPolicy) => SessionManagerLike;
-  private readonly defaultPermissionPolicy: PermissionPolicy;
+  private defaultPermissionPolicy: PermissionPolicy;
 
   constructor(options: ConnectionRegistryOptions = {}) {
     super();
@@ -190,6 +191,16 @@ export class ConnectionRegistry extends EventEmitter {
   disconnectAll(): void {
     for (const conversationId of this.runtimes.keys()) {
       this.disconnect(conversationId);
+    }
+  }
+
+  /**
+   * 将权限策略同步到所有活跃运行时，同时更新默认策略供后续新连接使用。
+   */
+  setPermissionPolicy(policy: PermissionPolicy): void {
+    this.defaultPermissionPolicy = policy;
+    for (const entry of this.runtimes.values()) {
+      entry.manager.setPermissionPolicy(policy);
     }
   }
 

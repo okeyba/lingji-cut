@@ -36,8 +36,12 @@ export interface AppendConversationTurnParams {
 }
 
 function buildDefaultConversationTitle(now = new Date()): string {
-  const stamp = now.toISOString().slice(0, 16).replace('T', ' ');
-  return `新会话 ${stamp}`;
+  const y = now.getFullYear();
+  const M = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  const h = String(now.getHours()).padStart(2, '0');
+  const m = String(now.getMinutes()).padStart(2, '0');
+  return `新会话 ${y}-${M}-${d} ${h}:${m}`;
 }
 
 export class ConversationService {

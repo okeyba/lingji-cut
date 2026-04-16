@@ -135,6 +135,8 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
     const data = await config.load();
     data.permissionPolicy = policy;
     await config.save(data);
+    // 同步到所有已连接的运行时，使策略即时生效
+    connectionRegistry.setPermissionPolicy(policy);
   });
 
   // 预检与安装

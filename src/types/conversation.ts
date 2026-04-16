@@ -1,5 +1,6 @@
 import type {
   AcpConfigOption,
+  AgentMode,
   AvailableCommand,
   ConnectionStatus,
   PermissionOption,
@@ -134,6 +135,11 @@ export interface PendingPermission {
   options: PermissionOption[];
 }
 
+export interface ModelInfo {
+  availableModels: { modelId: string; name: string; description?: string }[];
+  currentModelId: string;
+}
+
 export interface ConversationConnectionState {
   conversationId: number;
   agentType: string;
@@ -144,7 +150,9 @@ export interface ConversationConnectionState {
   usage: { used: number; size: number } | null;
   availableCommands: AvailableCommand[] | null;
   configOptions: AcpConfigOption[] | null;
+  availableModes: AgentMode[] | null;
   currentModeId: string | null;
+  models: ModelInfo | null;
   error: string | null;
 }
 

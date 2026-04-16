@@ -51,11 +51,20 @@ function SidebarWorkspaceShell({ projectDir }: { projectDir: string }) {
   const connections = useAcpConnections();
   const {
     loading,
+    activeConversationId,
     refresh,
     createConversation,
     deleteConversation,
     setActiveConversation,
   } = useConversationList();
+
+  // 侧边栏打开后，workspace bootstrap 会加载上次活跃/首条会话；
+  // 自动同步到 explicitConversationId 以触发连接。
+  useEffect(() => {
+    if (explicitConversationId === null && activeConversationId !== null) {
+      setExplicitConversationId(activeConversationId);
+    }
+  }, [explicitConversationId, activeConversationId]);
 
   async function handleCreateConversation() {
     const created = await createConversation({
@@ -127,7 +136,6 @@ function SidebarWorkspaceShell({ projectDir }: { projectDir: string }) {
           collapsed={sessionListCollapsed}
           explicitConversationId={explicitConversationId}
           onSelectConversation={(conversationId) => {
-            setSessionListCollapsed(false);
             void handleSelectConversation(conversationId);
           }}
           onDeleteConversation={(conversationId) => {

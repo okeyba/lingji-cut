@@ -26,7 +26,9 @@ function createEmptyConnectionState(conversationId: number, agentType = DEFAULT_
     usage: null,
     availableCommands: null,
     configOptions: null,
+    availableModes: null,
     currentModeId: null,
+    models: null,
     error: null,
   };
 }
@@ -251,7 +253,7 @@ export function AcpConnectionsProvider({ children }: AcpConnectionsProviderProps
 
   async function persistConversationSummary(
     conversationId: number,
-    patch: { externalId?: string | null; sessionStatsJson?: string | null; messageCount?: number },
+    patch: { title?: string; externalId?: string | null; sessionStatsJson?: string | null; messageCount?: number },
   ) {
     const projectId = workspaceRef.current.projectId;
     if (!projectId) return;
@@ -349,6 +351,12 @@ export function AcpConnectionsProvider({ children }: AcpConnectionsProviderProps
             pendingPermission,
           };
         }
+        case 'mode_update':
+          return {
+            ...current,
+            currentModeId:
+              typeof payload.currentModeId === 'string' ? payload.currentModeId : current.currentModeId,
+          };
         case 'available_commands':
           return {
             ...current,
@@ -421,6 +429,10 @@ export function AcpConnectionsProvider({ children }: AcpConnectionsProviderProps
           typeof payload.currentModeId === 'string' ? payload.currentModeId : current.currentModeId,
         configOptions:
           (payload.configOptions as ConversationConnectionState['configOptions']) ?? current.configOptions,
+        availableModes:
+          (payload.modes as ConversationConnectionState['availableModes']) ?? current.availableModes,
+        models:
+          (payload.models as ConversationConnectionState['models']) ?? current.models,
       }));
     });
 
@@ -509,6 +521,21 @@ export function AcpConnectionsProvider({ children }: AcpConnectionsProviderProps
       status: 'prompting',
       error: null,
     }));
+
+    // 首条消息自动命名：提取文本内容作为会话标题（截取前 80 字符）
+    const conv = workspaceRef.current.conversations.find((c) => c.id === conversationId);
+    if (conv && conv.messageCount === 0) {
+      const text = contents
+        .filter((b): b is PromptInputBlock & { type: 'text' } => b.type === 'text')
+        .map((b) => b.text)
+        .join(' ')
+        .trim();
+      if (text) {
+        const title = text.length > 80 ? `${text.slice(0, 80)}…` : text;
+        void persistConversationSummary(conversationId, { title });
+      }
+    }
+
     await persistConversationTurn(conversationId, {
       role: 'user',
       blocks: toConversationBlocks(contents),

@@ -19,6 +19,7 @@ export class SessionManager extends EventEmitter {
   private client: AcpClient;
   private pendingPermissions = new Map<number, PendingPermission>();
   private permissionSeq = 0;
+  private permissionPolicy: PermissionPolicy;
 
   private status: ConnectionStatus = 'disconnected';
   private sessionId: string | null = null;
@@ -27,10 +28,11 @@ export class SessionManager extends EventEmitter {
 
   constructor(
     client: AcpClient,
-    _permissionPolicy: PermissionPolicy,
+    permissionPolicy: PermissionPolicy,
   ) {
     super();
     this.client = client;
+    this.permissionPolicy = permissionPolicy;
 
     // 监听 client 通知 — ACP 协议中所有事件均通过 session/update 通知传递
     this.client.on('notification', (method: string, params: unknown) => {
@@ -61,8 +63,29 @@ export class SessionManager extends EventEmitter {
     return this.initializeResult;
   }
 
-  setPermissionPolicy(_policy: PermissionPolicy): void {
-    // 权限策略现在由 MCP Server 侧管理，此处保留接口兼容性
+  setPermissionPolicy(policy: PermissionPolicy): void {
+    this.permissionPolicy = policy;
+  }
+
+  getPermissionPolicy(): PermissionPolicy {
+    return this.permissionPolicy;
+  }
+
+  /**
+   * 根据策略为权限请求选择自动响应方案。
+   * - auto_approve：优先返回 allow_always，降级到 allow_once；都没有则返回 null 走交互流程。
+   * - 其它策略：始终返回 null，由 UI 让用户二次确认。
+   */
+  private autoResolvePermission(
+    options: { optionId: string; name: string; kind: string }[],
+  ): { outcome: { outcome: 'selected'; optionId: string } } | null {
+    if (this.permissionPolicy !== 'auto_approve') return null;
+    const preferred =
+      options.find((o) => o.kind === 'allow_always') ??
+      options.find((o) => o.kind === 'allow_once') ??
+      options.find((o) => typeof o.kind === 'string' && o.kind.startsWith('allow'));
+    if (!preferred) return null;
+    return { outcome: { outcome: 'selected', optionId: preferred.optionId } };
   }
 
   async connect(
@@ -142,13 +165,15 @@ export class SessionManager extends EventEmitter {
   async sendPrompt(contents: PromptInputBlock[] | unknown[]): Promise<void> {
     if (!this.sessionId) throw new Error('No active session');
     this.setStatus('prompting');
+    // 将 resource 等非标准 block 转换为 ACP 协议支持的 text block
+    const prompt = await this.normalizePromptBlocks(contents as unknown[]);
     let stopReason = 'end_turn';
     let usage: { used: number; size: number } | undefined;
     try {
       // session/prompt 阻塞到 turn 结束，可能需要数分钟，不设超时
       const result = await this.client.sendRequest('session/prompt', {
         sessionId: this.sessionId,
-        prompt: contents,
+        prompt,
       }, 0);
       const res = result as { stopReason?: string; usage?: { used: number; size: number } } | undefined;
       stopReason = res?.stopReason ?? 'end_turn';
@@ -211,6 +236,42 @@ export class SessionManager extends EventEmitter {
     this.setStatus('disconnected');
   }
 
+  /**
+   * 将前端传来的 prompt blocks 转换为 ACP 协议支持的格式。
+   * ACP session/prompt 只接受 text / image 类型，resource 需转为 text。
+   */
+  private async normalizePromptBlocks(blocks: unknown[]): Promise<unknown[]> {
+    const result: unknown[] = [];
+    for (const block of blocks) {
+      const b = block as Record<string, unknown>;
+      if (b.type === 'resource') {
+        let textContent = b.text as string | undefined;
+        if (!textContent && typeof b.uri === 'string' && b.uri.startsWith('file://')) {
+          const filePath = decodeURIComponent(b.uri.slice(7));
+          try {
+            textContent = await fs.readFile(filePath, 'utf-8');
+          } catch {
+            textContent = `[无法读取文件: ${filePath}]`;
+          }
+        }
+        if (!textContent && typeof b.blob === 'string') {
+          textContent = '[二进制文件附件]';
+        }
+        const uri = typeof b.uri === 'string' ? b.uri : '';
+        const fileName = uri.split('/').pop() || uri;
+        result.push({
+          type: 'text',
+          text: textContent
+            ? `<file path="${fileName}">\n${textContent}\n</file>`
+            : `[资源: ${uri}]`,
+        });
+      } else {
+        result.push(block);
+      }
+    }
+    return result;
+  }
+
   private registerRuntimeHandlers(): void {
     // ─── 文件系统 handlers ─────────────────────────────────────
     // Claude Code 内置工具的文件操作通过 ACP 协议路由到这些 handler
@@ -247,6 +308,12 @@ export class SessionManager extends EventEmitter {
         options: { optionId: string; name: string; kind: string }[];
         sessionId: string;
       };
+
+      // auto_approve 策略：直接放行，不弹 UI
+      const autoResponse = this.autoResolvePermission(options);
+      if (autoResponse) {
+        return autoResponse;
+      }
 
       const seq = this.permissionSeq++;
 

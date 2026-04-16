@@ -1,15 +1,95 @@
-import { useMemo, useState } from 'react';
-import { Send, Square } from 'lucide-react';
+import { useMemo, useCallback } from 'react';
+import { ShieldCheck } from 'lucide-react';
 import { m, AnimatePresence } from 'framer-motion';
 import { springs, durations, easings } from '../../ui/lib/motion';
 import { Button, EmptyState } from '../../ui';
 import { useConversationDetail } from '../../hooks/use-conversation-detail';
 import { useConnectionLifecycle } from '../../hooks/use-connection-lifecycle';
+import type { PendingPermission } from '../../types/conversation';
+import type { PromptInputBlock } from '../../../electron/acp/types';
 import { UserMessage } from './UserMessage';
 import { TextBlock } from './TextBlock';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ErrorBlock } from './ErrorBlock';
 import { ToolCallBlock } from './ToolCallBlock';
+import { MessageInput } from './MessageInput';
+
+/** 从 ACP 传来的 toolCall 负载里尽力提取可读描述 */
+function describeToolCall(toolCall: unknown): { title: string; detail?: string } {
+  if (!toolCall || typeof toolCall !== 'object') {
+    return { title: '未知工具调用' };
+  }
+  const tc = toolCall as Record<string, unknown>;
+  const title =
+    (typeof tc.title === 'string' && tc.title) ||
+    (typeof tc.name === 'string' && tc.name) ||
+    (typeof tc.toolName === 'string' && tc.toolName) ||
+    '待授权工具';
+  const rawInput = tc.rawInput ?? tc.input;
+  let detail: string | undefined;
+  if (typeof rawInput === 'string') {
+    detail = rawInput;
+  } else if (rawInput && typeof rawInput === 'object') {
+    try {
+      detail = JSON.stringify(rawInput);
+    } catch {
+      detail = undefined;
+    }
+  }
+  if (detail && detail.length > 160) {
+    detail = `${detail.slice(0, 160)}…`;
+  }
+  return { title, detail };
+}
+
+/** 将 ACP 权限选项 kind 映射到按钮 variant */
+function variantForKind(kind: string): 'primary' | 'outline' | 'destructive' | 'ghost' {
+  if (kind === 'allow_once' || kind === 'allow_always') return 'primary';
+  if (kind === 'reject_always') return 'destructive';
+  if (kind === 'reject_once') return 'outline';
+  return 'ghost';
+}
+
+interface PermissionPromptProps {
+  pending: PendingPermission;
+  onRespond: (optionId: string) => void;
+}
+
+function PermissionPrompt({ pending, onRespond }: PermissionPromptProps) {
+  const { title, detail } = describeToolCall(pending.toolCall);
+  return (
+    <div className="mx-4 mt-2 rounded-[10px] border border-mac-blue/40 bg-mac-blue/10 px-3 py-2.5">
+      <div className="flex items-center gap-2 text-[12px] font-semibold text-white">
+        <ShieldCheck size={14} className="text-mac-blue" />
+        <span>需要你授权工具调用</span>
+      </div>
+      <div className="mt-1 text-[11px] text-mac-text-muted/80 break-all">
+        {title}
+      </div>
+      {detail ? (
+        <div className="mt-1 text-[11px] text-mac-text-muted/50 font-mono break-all">
+          {detail}
+        </div>
+      ) : null}
+      <div className="mt-2 flex flex-wrap gap-2">
+        {pending.options.length === 0 ? (
+          <div className="text-[11px] text-mac-text-muted/60">没有可用的授权选项</div>
+        ) : (
+          pending.options.map((option) => (
+            <Button
+              key={option.optionId}
+              size="sm"
+              variant={variantForKind(option.kind)}
+              onClick={() => onRespond(option.optionId)}
+            >
+              {option.name}
+            </Button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
 
 interface ConversationDetailPaneProps {
   projectDir: string | null;
@@ -37,7 +117,6 @@ export function ConversationDetailPane({
   projectDir,
   explicitActivated,
 }: ConversationDetailPaneProps) {
-  const [draft, setDraft] = useState('');
   const { conversationId, detail, runtime, loading, error } = useConversationDetail();
   const connection = useConnectionLifecycle({
     conversationId: conversationId ?? -1,
@@ -48,7 +127,6 @@ export function ConversationDetailPane({
     autoConnectOnActive: explicitActivated && conversationId !== null,
   });
 
-  const canSend = Boolean(draft.trim()) && conversationId !== null && projectDir;
   const isPrompting = connection.status === 'prompting';
   const turns = runtime?.turns ?? [];
   const usageLabel = useMemo(() => {
@@ -57,7 +135,7 @@ export function ConversationDetailPane({
     return `上下文 ${(Math.max(0, Math.min(100, percent))).toFixed(1)}%`;
   }, [runtime?.usage]);
 
-  async function ensureConnected() {
+  const ensureConnected = useCallback(async () => {
     if (!conversationId || !projectDir) return;
     if (connection.status === 'connected' || connection.status === 'prompting') return;
     await connection.connect({
@@ -65,16 +143,13 @@ export function ConversationDetailPane({
       sessionId: detail?.externalId ?? null,
       agentType: detail?.agentType,
     });
-  }
+  }, [conversationId, projectDir, connection, detail]);
 
-  async function handleSend() {
-    if (!canSend || !conversationId) return;
-    const text = draft.trim();
-    if (!text) return;
+  const handleSend = useCallback(async (blocks: PromptInputBlock[]) => {
+    if (!conversationId || !projectDir) return;
     await ensureConnected();
-    await connection.send([{ type: 'text', text }]);
-    setDraft('');
-  }
+    await connection.send(blocks);
+  }, [conversationId, projectDir, ensureConnected, connection]);
 
   if (conversationId === null) {
     return (
@@ -198,41 +273,50 @@ export function ConversationDetailPane({
         </AnimatePresence>
       </div>
 
-      <div className="px-4 py-3 border-t border-mac-separator shrink-0 flex flex-col gap-2">
+      {connection.pendingPermission ? (
+        <PermissionPrompt
+          pending={connection.pendingPermission}
+          onRespond={(optionId) =>
+            void connection.respondPermission(
+              connection.pendingPermission!.requestId,
+              optionId,
+            )
+          }
+        />
+      ) : null}
+
+      <div className="px-3 py-3 border-t border-mac-separator shrink-0 flex flex-col gap-1.5">
         {connection.autoConnectError ? (
-          <div className="text-[11px] text-mac-red/70">
+          <div className="text-[11px] text-mac-red/70 px-1">
             连接失败：{connection.autoConnectError}
           </div>
         ) : null}
-        <textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          rows={3}
-          placeholder="输入消息，显式进入当前会话并开始对话..."
-          className="w-full resize-none bg-mac-elevated text-foreground border border-mac-border rounded-[10px] px-3 py-2.5 text-[13px] leading-normal outline-none focus:border-mac-blue/50 transition-colors"
+        <MessageInput
+          onSend={(blocks) => void handleSend(blocks)}
+          onCancel={isPrompting ? () => void connection.cancel() : undefined}
+          disabled={conversationId === null || !projectDir}
+          isPrompting={isPrompting}
+          autoFocus={explicitActivated && conversationId !== null}
+          placeholder={
+            isPrompting
+              ? 'Agent 正在思考中，按 Enter 追加消息…'
+              : '输入消息开始对话… 可粘贴或拖拽文件'
+          }
+          projectDir={projectDir}
+          availableCommands={connection.availableCommands}
+          configOptions={connection.configOptions}
+          onConfigOptionChange={(configId, valueId) =>
+            void connection.setConfigOption(configId, valueId)
+          }
+          availableModes={connection.availableModes}
+          currentModeId={connection.currentModeId}
+          onModeChange={(modeId) => void connection.setMode(modeId)}
         />
-        <div className="flex items-center justify-between gap-2">
-          <div className="text-[11px] text-mac-text-muted/50">
-            只有在你显式进入会话后，才会恢复旧 ACP 会话。
+        {!explicitActivated ? (
+          <div className="text-[10px] text-mac-text-muted/40 px-1">
+            发送消息后自动建立 ACP 连接
           </div>
-          <div className="flex items-center gap-2">
-            {isPrompting ? (
-              <Button variant="outline" size="sm" onClick={() => void connection.cancel()}>
-                <Square size={14} />
-                停止
-              </Button>
-            ) : null}
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={!canSend}
-              onClick={() => void handleSend()}
-            >
-              <Send size={14} />
-              发送
-            </Button>
-          </div>
-        </div>
+        ) : null}
       </div>
     </div>
   );
