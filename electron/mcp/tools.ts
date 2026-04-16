@@ -5,7 +5,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve, isAbsolute } from 'node:path';
 import { ipcMain, type BrowserWindow } from 'electron';
-import { z } from 'zod/v4';
+import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { getVideoImportService } from '../video-import/import-service';
 

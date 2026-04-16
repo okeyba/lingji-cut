@@ -13,7 +13,7 @@ export default defineConfig({
         fileName: () => 'main.js',
       },
       rollupOptions: {
-        external: ['@remotion/renderer', '@remotion/bundler'],
+        external: ['@remotion/renderer', '@remotion/bundler', 'zod'],
       },
     },
   },
