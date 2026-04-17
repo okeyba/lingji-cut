@@ -8,6 +8,12 @@ export function migrateImageProviders(settings: AISettings): AISettings {
   );
 
   if (!hasJimengConfig) {
+    const alreadyHasDefaults =
+      Array.isArray(settings.imageProviders) &&
+      settings.imageProviders.length === 0 &&
+      settings.defaultImageProviderId === null &&
+      settings.defaultImageModel === null;
+    if (alreadyHasDefaults) return settings;
     return {
       ...settings,
       imageProviders: [],

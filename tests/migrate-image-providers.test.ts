@@ -42,6 +42,11 @@ describe('migrateImageProviders', () => {
     expect(next.defaultImageModel).toBeNull();
   });
 
+  it('已是空 imageProviders + 默认值且无 jimeng 配置：返回同引用（幂等）', () => {
+    const s = baseSettings();
+    expect(migrateImageProviders(s)).toBe(s);
+  });
+
   it('有即梦配置：迁移成 imageProviders[0] 并清空旧字段', () => {
     const s: AISettings = {
       ...baseSettings(),
