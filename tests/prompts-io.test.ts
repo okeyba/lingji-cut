@@ -1,0 +1,135 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {
+  deletePromptYaml,
+  listPromptOverview,
+  loadEffectivePromptTemplate,
+  readRawPromptYaml,
+  writePromptYaml,
+} from '../electron/prompts-io';
+
+let tmpRoot: string;
+let userDataPath: string;
+let projectDir: string;
+
+beforeEach(async () => {
+  tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'prompts-test-'));
+  userDataPath = path.join(tmpRoot, 'userData');
+  projectDir = path.join(tmpRoot, 'project');
+  await fs.mkdir(userDataPath, { recursive: true });
+  await fs.mkdir(projectDir, { recursive: true });
+});
+
+afterEach(async () => {
+  await fs.rm(tmpRoot, { recursive: true, force: true });
+});
+
+describe('loadEffectivePromptTemplate fallback chain', () => {
+  it('falls back to builtin when no overrides exist', async () => {
+    const tpl = await loadEffectivePromptTemplate('planning.segment', { userDataPath, projectDir });
+    expect(tpl.sourceScope).toBe('builtin');
+    expect(tpl.user).toContain('播客内容分析助手');
+  });
+
+  it('uses global override when only global is present', async () => {
+    const yaml = 'name: planning.segment\nuser: |-\n  GLOBAL VERSION {{globalPromptLine}}\n';
+    await writePromptYaml('global', 'planning.segment', yaml, { userDataPath });
+    const tpl = await loadEffectivePromptTemplate('planning.segment', { userDataPath, projectDir });
+    expect(tpl.sourceScope).toBe('global');
+    expect(tpl.user).toContain('GLOBAL VERSION');
+  });
+
+  it('prefers project override over global', async () => {
+    await writePromptYaml(
+      'global',
+      'cards.segment',
+      'name: cards.segment\nuser: |-\n  GLOBAL {{fullTranscript}}\n',
+      { userDataPath },
+    );
+    await writePromptYaml(
+      'project',
+      'cards.segment',
+      'name: cards.segment\nuser: |-\n  PROJECT {{fullTranscript}}\n',
+      { userDataPath, projectDir },
+    );
+    const tpl = await loadEffectivePromptTemplate('cards.segment', { userDataPath, projectDir });
+    expect(tpl.sourceScope).toBe('project');
+    expect(tpl.user).toContain('PROJECT');
+  });
+
+  it('falls back to global when project is missing', async () => {
+    await writePromptYaml(
+      'global',
+      'cover.regeneration',
+      'name: cover.regeneration\nuser: |-\n  GLOBAL COVER {{globalPrompt}}\n',
+      { userDataPath },
+    );
+    const tpl = await loadEffectivePromptTemplate('cover.regeneration', { userDataPath, projectDir });
+    expect(tpl.sourceScope).toBe('global');
+    expect(tpl.user).toContain('GLOBAL COVER');
+  });
+
+  it('skips a malformed override and falls back', async () => {
+    // 写一个肉眼合法但会让 parsePromptYaml 报错的内容（user 缺失）
+    const file = path.join(userDataPath, 'prompts', 'planning', 'segment.yaml');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, 'name: broken\n', 'utf-8');
+    const tpl = await loadEffectivePromptTemplate('planning.segment', { userDataPath });
+    expect(tpl.sourceScope).toBe('builtin');
+  });
+});
+
+describe('write / read / delete', () => {
+  it('writes then reads raw global YAML', async () => {
+    const yaml = 'name: cover.regeneration\nuser: |-\n  X {{globalPrompt}}\n';
+    await writePromptYaml('global', 'cover.regeneration', yaml, { userDataPath });
+    const raw = await readRawPromptYaml('global', 'cover.regeneration', { userDataPath });
+    expect(raw).toBe(yaml);
+  });
+
+  it('rejects writing invalid YAML', async () => {
+    await expect(
+      writePromptYaml('global', 'planning.segment', 'name: x\nuser: ""\n', { userDataPath }),
+    ).rejects.toThrow();
+  });
+
+  it('deletes an existing override', async () => {
+    const yaml = 'name: motion.system\nuser: |-\n  hi {{sandboxReference}}\n';
+    await writePromptYaml('global', 'motion.system', yaml, { userDataPath });
+    const removed = await deletePromptYaml('global', 'motion.system', { userDataPath });
+    expect(removed).toBe(true);
+    const raw = await readRawPromptYaml('global', 'motion.system', { userDataPath });
+    expect(raw).toBeNull();
+  });
+
+  it('returns false when deleting a non-existing override', async () => {
+    const removed = await deletePromptYaml('project', 'motion.modify', { userDataPath, projectDir });
+    expect(removed).toBe(false);
+  });
+});
+
+describe('listPromptOverview', () => {
+  it('reports effective scope per kind', async () => {
+    await writePromptYaml(
+      'global',
+      'motion.generate',
+      'name: motion.generate\nuser: |-\n  G {{userPrompt}}\n',
+      { userDataPath },
+    );
+    await writePromptYaml(
+      'project',
+      'cards.segment',
+      'name: cards.segment\nuser: |-\n  P {{fullTranscript}}\n',
+      { userDataPath, projectDir },
+    );
+    const items = await listPromptOverview({ userDataPath, projectDir });
+    const map = Object.fromEntries(items.map((i) => [i.kind, i]));
+    expect(map['motion.generate'].effectiveScope).toBe('global');
+    expect(map['motion.generate'].hasGlobal).toBe(true);
+    expect(map['cards.segment'].effectiveScope).toBe('project');
+    expect(map['cards.segment'].hasProject).toBe(true);
+    expect(map['planning.segment'].effectiveScope).toBe('builtin');
+  });
+});
