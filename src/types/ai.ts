@@ -1,4 +1,5 @@
 import type { MotionCardPayload } from './motion';
+import type { PromptKind } from '../lib/prompts/types';
 export type { MotionCardPayload } from './motion';
 
 export type AICardType = 'summary' | 'data' | 'insight' | 'chapter' | 'quote' | 'motion';
@@ -276,7 +277,7 @@ export interface PromptBinding {
 }
 
 /** 提示词 → 绑定映射；缺失 key 视为继承 */
-export type PromptBindingMap = Partial<Record<import('../lib/prompts/types').PromptKind, PromptBinding>>;
+export type PromptBindingMap = Partial<Record<PromptKind, PromptBinding>>;
 
 export function buildAICardTimelineDraft(card: AICard): AICardTimelineDraft {
   const sourceStartMs = Number.isFinite(card.startMs) ? Math.max(0, Math.round(card.startMs)) : 0;
