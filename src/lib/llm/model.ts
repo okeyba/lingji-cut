@@ -1,3 +1,5 @@
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { ChatOpenAI } from '@langchain/openai';
 import type { AISettings, LLMProvider } from '../../types/ai';
 
@@ -30,11 +32,30 @@ export function createChatModel(settings: AISettings): ChatOpenAI {
   });
 }
 
+function createGeminiChatModel(
+  provider: LLMProvider,
+  model: string,
+  options?: { enableThinking?: boolean },
+): ChatGoogleGenerativeAI {
+  const trimmedBaseUrl = provider.baseUrl?.trim();
+  return new ChatGoogleGenerativeAI({
+    apiKey: provider.apiKey,
+    model,
+    temperature: 0.3,
+    ...(trimmedBaseUrl ? { baseUrl: normalizeBaseUrl(trimmedBaseUrl) } : {}),
+    ...(options?.enableThinking === false ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+  });
+}
+
 export function createChatModelFromProvider(
   provider: LLMProvider,
   model: string,
   options?: { enableThinking?: boolean },
-): ChatOpenAI {
+): BaseChatModel {
+  if (provider.type === 'gemini') {
+    return createGeminiChatModel(provider, model, options);
+  }
+
   const modelKwargs =
     options?.enableThinking === false
       ? { enable_thinking: false }

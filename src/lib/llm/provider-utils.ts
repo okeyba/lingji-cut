@@ -5,6 +5,7 @@ function inferProviderName(baseUrl: string): string {
   if (lower.includes('deepseek')) return 'DeepSeek';
   if (lower.includes('openai')) return 'OpenAI';
   if (lower.includes('anthropic')) return 'Anthropic';
+  if (lower.includes('generativelanguage') || lower.includes('gemini')) return 'Gemini';
   if (lower.includes('moonshot') || lower.includes('kimi')) return 'Moonshot';
   if (lower.includes('dashscope') || lower.includes('qwen')) return 'Qwen';
   if (lower.includes('zhipu') || lower.includes('bigmodel')) return 'ZhipuAI';

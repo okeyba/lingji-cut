@@ -27,7 +27,10 @@ function genId(): string {
 const PROVIDER_TYPE_OPTIONS: SelectOption[] = [
   { value: 'openai_compatible', label: 'OpenAI Compatible' },
   { value: 'anthropic', label: 'Anthropic' },
+  { value: 'gemini', label: 'Google Gemini' },
 ];
+
+const GEMINI_DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com';
 
 /** 空白 Provider 表单 */
 function emptyProvider(): LLMProvider {
@@ -136,15 +139,30 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
             <Select
               value={form.type}
               options={PROVIDER_TYPE_OPTIONS}
-              onChange={(e) => set('type', e.target.value as LLMProvider['type'])}
+              onChange={(e) => {
+                const nextType = e.target.value as LLMProvider['type'];
+                setForm((f) => ({ ...f, type: nextType }));
+                clearFieldError('baseUrl');
+              }}
             />
           </Field>
 
-          <Field label="Base URL" required error={errors.baseUrl}>
+          <Field
+            label="Base URL"
+            required={form.type !== 'gemini'}
+            error={errors.baseUrl}
+            hint={
+              form.type === 'gemini'
+                ? `留空使用 Google 官方端点（${GEMINI_DEFAULT_BASE_URL}）`
+                : undefined
+            }
+          >
             <Input
               value={form.baseUrl}
               onChange={(e) => set('baseUrl', e.target.value, 'baseUrl')}
-              placeholder="https://api.openai.com/v1"
+              placeholder={
+                form.type === 'gemini' ? GEMINI_DEFAULT_BASE_URL : 'https://api.openai.com/v1'
+              }
               size="sm"
               aria-invalid={Boolean(errors.baseUrl)}
             />

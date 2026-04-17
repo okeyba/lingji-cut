@@ -41,7 +41,7 @@ export function validateProviderDraft(provider: LLMProvider): ProviderDraftError
     errors.name = '请输入 Provider 名称';
   }
 
-  if (!normalized.baseUrl) {
+  if (!normalized.baseUrl && normalized.type !== 'gemini') {
     errors.baseUrl = '请输入 Base URL';
   }
 

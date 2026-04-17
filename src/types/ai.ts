@@ -136,7 +136,7 @@ export interface AIAnalysisResult {
 export interface LLMProvider {
   id: string;
   name: string;
-  type: 'openai_compatible' | 'anthropic';
+  type: 'openai_compatible' | 'anthropic' | 'gemini';
   baseUrl: string;
   apiKey: string;
   models: string[];
