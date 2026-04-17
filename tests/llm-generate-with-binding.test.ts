@@ -1,0 +1,65 @@
+import { describe, expect, it, vi } from 'vitest';
+import type { AISettings, LLMProvider } from '../src/types/ai';
+import type { ResolvedBinding } from '../src/lib/llm/binding-resolver';
+
+vi.mock('../src/lib/llm/model', () => {
+  return {
+    createChatModel: vi.fn(() => ({
+      bind: () => ({ invoke: async () => ({ content: '{"k":1}' }) }),
+      invoke: async () => ({ content: 'hello' }),
+    })),
+    createChatModelFromProvider: vi.fn(() => ({
+      bind: () => ({ invoke: async () => ({ content: '{"k":2}' }) }),
+      invoke: async () => ({ content: 'hello-binding' }),
+    })),
+  };
+});
+
+import { generateStructuredData, generateText } from '../src/lib/llm';
+import { createChatModel, createChatModelFromProvider } from '../src/lib/llm/model';
+
+const provider: LLMProvider = {
+  id: 'A',
+  name: 'A',
+  type: 'openai_compatible',
+  baseUrl: 'b',
+  apiKey: 'k',
+  models: ['m'],
+};
+const settings: AISettings = {
+  llmProviders: [provider],
+  defaultProviderId: 'A',
+  defaultModel: 'm',
+  llmBaseUrl: '',
+  llmApiKey: '',
+  llmModel: '',
+  jimengApiUrl: '',
+  jimengSessionId: '',
+  minimaxApiKey: '',
+  minimaxVoiceId: '',
+  minimaxSpeed: 1,
+  imageProviders: [],
+  defaultImageProviderId: null,
+  defaultImageModel: null,
+  promptBindings: {},
+};
+const binding: ResolvedBinding = { provider, model: 'm' };
+
+describe('generate with optional binding', () => {
+  it('不传 binding：走 createChatModel(settings)（兼容老调用）', async () => {
+    const r = await generateStructuredData(settings, 'sys', 'usr');
+    expect(r).toEqual({ k: 1 });
+    expect(createChatModel).toHaveBeenCalled();
+  });
+
+  it('传 binding：走 createChatModelFromProvider', async () => {
+    const r = await generateStructuredData(settings, 'sys', 'usr', binding);
+    expect(r).toEqual({ k: 2 });
+    expect(createChatModelFromProvider).toHaveBeenCalledWith(provider, 'm', expect.any(Object));
+  });
+
+  it('generateText 同样支持 binding 参数', async () => {
+    const r = await generateText(settings, 'sys', 'usr', binding);
+    expect(r).toBe('hello-binding');
+  });
+});

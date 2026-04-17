@@ -1,5 +1,6 @@
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import type { AISettings, LLMProvider } from '../../types/ai';
+import type { ResolvedBinding } from './binding-resolver';
 import {
   extractReasoningContent,
   extractTextContent,
@@ -26,12 +27,22 @@ function assertNonEmptyContent(content: string, message: string): string {
   return content;
 }
 
+function pickModel(settings: AISettings, binding?: ResolvedBinding) {
+  if (binding) {
+    return createChatModelFromProvider(binding.provider, binding.model, {
+      enableThinking: settings.enableThinking,
+    });
+  }
+  return createChatModel(settings);
+}
+
 export async function generateStructuredData(
   settings: AISettings,
   systemPrompt: string,
   userMessage: string,
+  binding?: ResolvedBinding,
 ): Promise<Record<string, unknown>> {
-  const chatModel = createChatModel(settings) as ReturnType<typeof createChatModel> & {
+  const chatModel = pickModel(settings, binding) as ReturnType<typeof createChatModel> & {
     bind?: (kwargs: Record<string, unknown>) => {
       invoke: (messages: unknown[]) => Promise<{ content: unknown }>;
     };
@@ -51,8 +62,11 @@ export async function generateText(
   settings: AISettings,
   systemPrompt: string,
   userMessage: string,
+  binding?: ResolvedBinding,
 ): Promise<string> {
-  const response = await createChatModel(settings).invoke(buildPromptMessages(systemPrompt, userMessage));
+  const response = await pickModel(settings, binding).invoke(
+    buildPromptMessages(systemPrompt, userMessage),
+  );
 
   return assertNonEmptyContent(extractTextContent(response.content), 'LLM 返回空内容');
 }
@@ -63,8 +77,11 @@ export async function streamText(
   userMessage: string,
   onChunk: (chunk: string) => void,
   callbacks?: StreamCallbacks,
+  binding?: ResolvedBinding,
 ): Promise<string> {
-  const stream = await createChatModel(settings).stream(buildPromptMessages(systemPrompt, userMessage));
+  const stream = await pickModel(settings, binding).stream(
+    buildPromptMessages(systemPrompt, userMessage),
+  );
   let fullText = '';
 
   for await (const chunk of stream) {
