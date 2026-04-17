@@ -112,8 +112,11 @@ describe('ai-config-utils', () => {
 
     expect(aiConfigSource).toContain('useSettingsTabGuard');
     expect(aiConfigSource).toContain('onRegisterLeaveGuard');
+    // 旧 jimeng* 字段的 UI 已下线，但仍需从 settings 读取旧值，以保持向后兼容的持久化
     expect(aiConfigSource).toContain("settings?.jimengApiUrl ?? ''");
-    expect(aiConfigSource).toContain('https://jimeng.example.com');
+    // 新的封面图像生成 Section 应使用 ImageProviderListSection
+    expect(aiConfigSource).toContain('ImageProviderListSection');
+    expect(aiConfigSource).toContain('封面图像生成');
     expect(aiConfigSource).not.toMatch(/\b(?:\d{1,3}\.){3}\d{1,3}:8330\b/);
     expect(settingsSource).toContain('tabLeaveGuardRef');
     expect(settingsSource).toContain('onRegisterLeaveGuard');

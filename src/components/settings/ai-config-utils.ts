@@ -22,6 +22,9 @@ interface AIConfigSnapshotInput {
   jimengApiUrl: string;
   jimengSessionId: string;
   jimengModel: string;
+  imageProviders?: ImageProvider[];
+  defaultImageProviderId?: string | null;
+  defaultImageModel?: string | null;
 }
 
 export function normalizeProviderDraft(provider: LLMProvider): LLMProvider {
@@ -96,6 +99,9 @@ export function createAIConfigSnapshot({
   jimengApiUrl,
   jimengSessionId,
   jimengModel,
+  imageProviders,
+  defaultImageProviderId,
+  defaultImageModel,
 }: AIConfigSnapshotInput): string {
   const normalizedProviders = normalizeProviderDrafts(providers);
   const selection = normalizeProviderSelection(
@@ -103,6 +109,9 @@ export function createAIConfigSnapshot({
     defaultProviderId,
     defaultModel,
   );
+  const normalizedImageProviders = imageProviders
+    ? normalizeImageProviderDrafts(imageProviders)
+    : [];
 
   return JSON.stringify({
     providers: normalizedProviders,
@@ -112,6 +121,9 @@ export function createAIConfigSnapshot({
     jimengApiUrl: jimengApiUrl.trim(),
     jimengSessionId: jimengSessionId.trim(),
     jimengModel: jimengModel.trim(),
+    imageProviders: normalizedImageProviders,
+    defaultImageProviderId: defaultImageProviderId ?? null,
+    defaultImageModel: defaultImageModel ?? null,
   });
 }
 
