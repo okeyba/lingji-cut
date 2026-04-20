@@ -7,9 +7,15 @@ export {
   type PromptScope,
   type PromptTemplate,
   type EffectivePromptTemplate,
+  type LockedContract,
 } from './types';
 export { DEFAULT_PROMPT_YAML } from './defaults';
-export { renderTemplate, parsePromptYaml, serializePromptYaml } from './render';
+export {
+  renderTemplate,
+  renderUserPromptWithLock,
+  parsePromptYaml,
+  serializePromptYaml,
+} from './render';
 
 import { DEFAULT_PROMPT_YAML } from './defaults';
 import { parsePromptYaml } from './render';

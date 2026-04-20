@@ -1,5 +1,5 @@
 import YAML from 'yaml';
-import type { PromptKind, PromptTemplate } from './types';
+import { PROMPT_KIND_META, type PromptKind, type PromptTemplate } from './types';
 
 const TEMPLATE_VAR_RE = /\{\{\s*([\w.]+)\s*\}\}/g;
 
@@ -9,6 +9,24 @@ export function renderTemplate(template: string, vars: Record<string, string | n
     if (value === undefined || value === null) return '';
     return String(value);
   });
+}
+
+/**
+ * 渲染用户可编辑的 user 段，并在末尾自动拼接该 kind 的 lockedContract（如果声明了）。
+ * lockedContract.content 是内置契约文本，不参与变量替换，不可被用户编辑。
+ */
+export function renderUserPromptWithLock(
+  kind: PromptKind,
+  template: PromptTemplate,
+  vars: Record<string, string | number | undefined>,
+): string {
+  const rendered = renderTemplate(template.user, vars);
+  const locked = PROMPT_KIND_META[kind].lockedContract;
+  if (!locked) return rendered;
+  if (locked.position === 'user-tail') {
+    return `${rendered}\n\n${locked.content}`;
+  }
+  return rendered;
 }
 
 export interface PromptYamlParseResult {

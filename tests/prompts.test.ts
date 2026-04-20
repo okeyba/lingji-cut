@@ -6,6 +6,7 @@ import {
   getBuiltinPromptTemplate,
   parsePromptYaml,
   renderTemplate,
+  renderUserPromptWithLock,
   serializePromptYaml,
 } from '../src/lib/prompts';
 
@@ -73,5 +74,64 @@ describe('PROMPT_KINDS and metadata', () => {
       const tpl = getBuiltinPromptTemplate(kind);
       expect(tpl.user).toBeTruthy();
     }
+  });
+});
+
+describe('renderUserPromptWithLock', () => {
+  it('appends lockedContract.content to user-tail when declared', () => {
+    const tpl = getBuiltinPromptTemplate('script.review');
+    const rendered = renderUserPromptWithLock('script.review', tpl, {
+      scriptText: '这是一段测试稿件。',
+    });
+    expect(rendered).toContain('这是一段测试稿件。');
+    expect(rendered).toContain('【系统契约 · 不可修改】');
+    expect(rendered).toContain('annotations');
+    expect(rendered).toContain('severity');
+  });
+
+  it('does not append when kind has no lockedContract', () => {
+    const tpl = getBuiltinPromptTemplate('motion.generate');
+    const rendered = renderUserPromptWithLock('motion.generate', tpl, {
+      userPrompt: '生成粒子动画',
+      canvasWidth: 1920,
+      canvasHeight: 1080,
+      durationMs: 3000,
+      displayMode: 'fullscreen',
+      assets: '无',
+    });
+    expect(rendered).not.toContain('【系统契约 · 不可修改】');
+    expect(rendered).toContain('生成粒子动画');
+  });
+
+  it('locked content is kind-specific', () => {
+    const planning = renderUserPromptWithLock(
+      'planning.segment',
+      getBuiltinPromptTemplate('planning.segment'),
+      { globalPromptLine: '' },
+    );
+    expect(planning).toContain('segments');
+    expect(planning).toContain('semanticType');
+    expect(planning).not.toContain('webCard');
+
+    const cards = renderUserPromptWithLock(
+      'cards.segment',
+      getBuiltinPromptTemplate('cards.segment'),
+      {
+        globalPrompt: '无',
+        programSummary: '无',
+        keywords: '无',
+        segmentId: 's1',
+        segmentTitle: '标题',
+        segmentSummary: '摘要',
+        segmentStartMs: 0,
+        segmentEndMs: 1000,
+        segmentTranscriptExcerpt: '原文',
+        cardPrompt: '无',
+        currentCardSection: '当前卡片线索：无',
+        fullTranscript: '字幕',
+      },
+    );
+    expect(cards).toContain('webCard');
+    expect(cards).toContain('renderMode');
   });
 });

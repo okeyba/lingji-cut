@@ -2,6 +2,7 @@ export const PROMPT_KINDS = [
   'planning.segment',
   'cover.regeneration',
   'cards.segment',
+  'script.review',
   'motion.system',
   'motion.generate',
   'motion.modify',
@@ -28,13 +29,84 @@ export interface EffectivePromptTemplate extends PromptTemplate {
   sourceScope: PromptScope;
 }
 
+export interface LockedContract {
+  /** 拼接位置；当前统一用 user-tail，保留扩展性 */
+  position: 'user-tail';
+  /** 实际拼进 prompt 的文本 */
+  content: string;
+  /** 给用户的说明，解释为何不可编辑 */
+  reason: string;
+}
+
 export interface PromptKindMeta {
   kind: PromptKind;
   label: string;
   description: string;
-  group: 'ai-analysis' | 'motion';
+  group: 'ai-analysis' | 'script' | 'motion';
   variables: { name: string; description: string }[];
+  /** 业务契约段：每次请求自动拼接，UI 只读展示 */
+  lockedContract?: LockedContract;
 }
+
+const LOCKED_PLANNING_SEGMENT = `【系统契约 · 不可修改】
+输出必须是严格 JSON，且只返回 JSON，不要附加解释。
+
+顶层结构必须包含：
+- segments: 2-8 个段落
+- coverPrompts: 数组，且只能包含 1 条字符串
+- summary: 一句话总结
+- keywords: 关键词数组
+- globalPrompt: 沿用输入的整期创作提示词，没有则返回空字符串
+
+segments 中每一项必须包含：
+- id
+- title
+- summary
+- startMs (number, 毫秒)
+- endMs (number, 毫秒)
+- transcriptExcerpt
+- semanticType: data | explanation | chapter-transition | quote | narration
+- complexityLevel: low | medium | high
+- visualizationScore: 0-100
+- pacingNeed: steady | accent | transition
+- keywords: 该段关键词数组
+- entities: 该段关键实体数组`;
+
+const LOCKED_COVER_REGENERATION = `【系统契约 · 不可修改】
+输出必须是严格 JSON，且只返回 JSON，不要附加解释。
+
+顶层结构必须包含：
+- coverPrompts: 数组，且只能包含 1 条字符串`;
+
+const LOCKED_CARDS_SEGMENT = `【系统契约 · 不可修改】
+输出必须是严格 JSON 对象，且只返回 JSON，不要附加解释。
+
+字段必须包含：
+id, segmentId, type, title, content, startMs, endMs, displayDurationMs,
+displayMode, template, enabled, style, renderMode, cardPrompt, webCard
+
+约束：
+- renderMode 默认输出 "web-card"
+- webCard.srcDoc 必须是完整 HTML 文档（允许 HTML/CSS/JS 和外部资源）
+- startMs / endMs / displayDurationMs 必须输出毫秒数字`;
+
+const LOCKED_SCRIPT_REVIEW = `【系统契约 · 不可修改】
+请以严格 JSON 格式返回审查结果，且只返回 JSON：
+{
+  "annotations": [
+    {
+      "originalText": "需要标注的原文片段（必须是稿件中的精确子串）",
+      "issue": "问题描述",
+      "suggestion": "修改建议（替换后的完整文本）",
+      "severity": "error | warning | info"
+    }
+  ]
+}
+
+字段约束：
+- originalText 必须是稿件中能精确匹配的子串
+- severity 必须是 error | warning | info 之一
+- suggestion 必须是可以直接替换 originalText 的完整文本`;
 
 export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
   'planning.segment': {
@@ -45,6 +117,11 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     variables: [
       { name: 'globalPromptLine', description: '额外创作要求行；有值时形如"额外创作要求：xxx"，无值为空字符串' },
     ],
+    lockedContract: {
+      position: 'user-tail',
+      content: LOCKED_PLANNING_SEGMENT,
+      reason: '业务侧按此 schema 解析分段数据、封面提示词、关键词；修改会导致分析结果无法落库。',
+    },
   },
   'cover.regeneration': {
     kind: 'cover.regeneration',
@@ -55,6 +132,11 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
       { name: 'globalPrompt', description: '整期创作提示词（为空填"无"）' },
       { name: 'currentPrompt', description: '当前封面提示词（为空填"无"）' },
     ],
+    lockedContract: {
+      position: 'user-tail',
+      content: LOCKED_COVER_REGENERATION,
+      reason: '业务侧从 JSON.coverPrompts[0] 读取提示词；修改会导致封面重生成无法解析。',
+    },
   },
   'cards.segment': {
     kind: 'cards.segment',
@@ -75,6 +157,25 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
       { name: 'currentCardSection', description: '当前卡片线索多行块（由调用方构造）' },
       { name: 'fullTranscript', description: '完整字幕全文（带时间戳）' },
     ],
+    lockedContract: {
+      position: 'user-tail',
+      content: LOCKED_CARDS_SEGMENT,
+      reason: '业务侧按此结构创建 AICard（含 webCard.srcDoc、时间轴字段）；修改会破坏卡片渲染与时间轴。',
+    },
+  },
+  'script.review': {
+    kind: 'script.review',
+    label: '文稿 AI 审查',
+    description: '口播稿审稿提示词。模型返回 annotations JSON（originalText/issue/suggestion/severity）',
+    group: 'script',
+    variables: [
+      { name: 'scriptText', description: '待审查的完整口播稿正文' },
+    ],
+    lockedContract: {
+      position: 'user-tail',
+      content: LOCKED_SCRIPT_REVIEW,
+      reason: '业务侧按 annotations[] 定位批注；修改会让审查结果无法在编辑器中展示。',
+    },
   },
   'motion.system': {
     kind: 'motion.system',

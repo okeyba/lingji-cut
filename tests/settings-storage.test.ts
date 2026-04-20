@@ -37,7 +37,6 @@ describe('settings-storage global settings bridge', () => {
                 updatedAt: '2026-04-12T00:00:00.000Z',
               },
             ],
-            reviewCriteria: '优先检查事实准确性',
             selectedRole: 'deep-insight-podcast',
           }),
       },
@@ -46,7 +45,6 @@ describe('settings-storage global settings bridge', () => {
     const settingsStorage = await import('../src/lib/settings-storage');
 
     expect(settingsStorage.loadCustomTemplates()).toHaveLength(1);
-    expect(settingsStorage.loadReviewCriteria()).toBe('优先检查事实准确性');
     expect(settingsStorage.loadSelectedRole()).toBe('deep-insight-podcast');
   });
 
@@ -65,7 +63,6 @@ describe('settings-storage global settings bridge', () => {
         },
       ]),
     );
-    localStorage.setItem('podcast-editor-review-criteria', '旧审查规则');
     localStorage.setItem('podcast-editor-selected-role', 'news-broadcast');
 
     const loadGlobalSettings = vi.fn().mockResolvedValue(null);
@@ -88,11 +85,9 @@ describe('settings-storage global settings bridge', () => {
 
     const savedPayload = JSON.parse(saveGlobalSettings.mock.calls[0][0] as string);
     expect(savedPayload.customTemplates).toHaveLength(1);
-    expect(savedPayload.reviewCriteria).toBe('旧审查规则');
     expect(savedPayload.selectedRole).toBe('news-broadcast');
 
     expect(localStorage.getItem('podcast-editor-custom-templates')).toBeNull();
-    expect(localStorage.getItem('podcast-editor-review-criteria')).toBeNull();
     expect(localStorage.getItem('podcast-editor-selected-role')).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { RotateCcw, Save, Trash2 } from 'lucide-react';
+import { ChevronRight, Lock, RotateCcw, Save, Trash2, Variable } from 'lucide-react';
 import {
   Alert,
   Badge,
@@ -54,6 +54,7 @@ interface OverviewItem {
 
 const GROUP_LABEL: Record<PromptKindMeta['group'], string> = {
   'ai-analysis': '内容分析与卡片',
+  script: '文稿流程',
   motion: 'Motion 动效',
 };
 
@@ -214,6 +215,7 @@ export function PromptsConfigTab() {
   const groupedKinds = useMemo(() => {
     const groups: Record<PromptKindMeta['group'], OverviewItem[]> = {
       'ai-analysis': [],
+      script: [],
       motion: [],
     };
     for (const item of overview) groups[item.meta.group].push(item);
@@ -395,7 +397,7 @@ export function PromptsConfigTab() {
             <CardDescription>按优先级：项目 &gt; 全局 &gt; 内置默认</CardDescription>
           </CardHeader>
           <CardContent className={styles.sidebarList}>
-            {(['ai-analysis', 'motion'] as const).map((group) => (
+            {(['ai-analysis', 'script', 'motion'] as const).map((group) => (
               <div className={styles.group} key={group}>
                 <div className={styles.groupTitle}>{GROUP_LABEL[group]}</div>
                 {groupedKinds[group].map((item) => {
@@ -483,22 +485,6 @@ export function PromptsConfigTab() {
               />
             )}
 
-            {activeMeta.variables.length > 0 && (
-              <div className={styles.varHint}>
-                <div className={styles.varHintTitle}>
-                  可用变量（在 user 字段中以 {'{{name}}'} 形式插入）
-                </div>
-                <div className={styles.varHintGrid}>
-                  {activeMeta.variables.map((v) => (
-                    <div key={v.name} className={styles.varHintItem}>
-                      <code>{`{{${v.name}}}`}</code>
-                      <span>— {v.description}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {error && <Alert variant="error" description={error} />}
 
             <div className={styles.editorWrap}>
@@ -511,6 +497,48 @@ export function PromptsConfigTab() {
                 variables={activeMeta.variables}
               />
             </div>
+
+            {activeMeta.variables.length > 0 && (
+              <details className={styles.collapsible}>
+                <summary className={styles.collapsibleSummary}>
+                  <ChevronRight size={12} className={styles.collapsibleChevron} />
+                  <Variable size={12} />
+                  <span className={styles.collapsibleTitle}>可用变量</span>
+                  <span className={styles.collapsibleMeta}>
+                    {activeMeta.variables.length} 个 · 以 {'{{name}}'} 形式插入
+                  </span>
+                </summary>
+                <div className={styles.collapsibleBody}>
+                  <div className={styles.varHintGrid}>
+                    {activeMeta.variables.map((v) => (
+                      <div key={v.name} className={styles.varHintItem}>
+                        <code>{`{{${v.name}}}`}</code>
+                        <span>— {v.description}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </details>
+            )}
+
+            {activeMeta.lockedContract && (
+              <details className={`${styles.collapsible} ${styles.collapsibleLocked}`}>
+                <summary className={styles.collapsibleSummary}>
+                  <ChevronRight size={12} className={styles.collapsibleChevron} />
+                  <Lock size={12} />
+                  <span className={styles.collapsibleTitle}>业务契约</span>
+                  <span className={styles.collapsibleMeta}>
+                    不可编辑 · 自动拼接到每次请求末尾
+                  </span>
+                </summary>
+                <div className={styles.collapsibleBody}>
+                  <div className={styles.lockedReason}>
+                    {activeMeta.lockedContract.reason}
+                  </div>
+                  <pre className={styles.lockedContent}>{activeMeta.lockedContract.content}</pre>
+                </div>
+              </details>
+            )}
 
             <div className={styles.statusBar}>
               <Badge variant={isOverride ? SCOPE_BADGE_VARIANT[scope] : 'outline'} size="xs">

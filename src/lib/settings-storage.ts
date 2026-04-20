@@ -1,5 +1,4 @@
 import {
-  DEFAULT_REVIEW_CRITERIA,
   DEFAULT_SELECTED_ROLE,
   normalizeGlobalSettingsFile,
   type CustomRole,
@@ -12,7 +11,6 @@ import {
 } from './global-settings-client';
 
 const CUSTOM_TEMPLATES_KEY = 'podcast-editor-custom-templates';
-const REVIEW_CRITERIA_KEY = 'podcast-editor-review-criteria';
 const SELECTED_ROLE_KEY = 'podcast-editor-selected-role';
 const CUSTOM_ROLES_KEY = 'podcast-editor-custom-roles';
 
@@ -20,7 +18,6 @@ export type { CustomRole, CustomScriptTemplate } from '../types/global-settings'
 
 interface SettingsCache {
   customTemplates: CustomScriptTemplate[];
-  reviewCriteria: string;
   customRoles: CustomRole[];
   selectedRole: string;
 }
@@ -69,7 +66,6 @@ function clearLegacyKeys(): void {
   }
 
   storage.removeItem(CUSTOM_TEMPLATES_KEY);
-  storage.removeItem(REVIEW_CRITERIA_KEY);
   storage.removeItem(SELECTED_ROLE_KEY);
   storage.removeItem(CUSTOM_ROLES_KEY);
 }
@@ -78,7 +74,6 @@ function buildCacheFromSettings(): SettingsCache {
   const normalized = normalizeGlobalSettingsFile(getInitialGlobalSettings());
 
   const legacyTemplates = readLegacyJson<CustomScriptTemplate[]>(CUSTOM_TEMPLATES_KEY, []);
-  const legacyReviewCriteria = readLegacyText(REVIEW_CRITERIA_KEY, DEFAULT_REVIEW_CRITERIA);
   const legacyCustomRoles = readLegacyJson<CustomRole[]>(CUSTOM_ROLES_KEY, []);
   const legacySelectedRole = readLegacyText(SELECTED_ROLE_KEY, DEFAULT_SELECTED_ROLE);
 
@@ -87,11 +82,6 @@ function buildCacheFromSettings(): SettingsCache {
       normalized.customTemplates && normalized.customTemplates.length > 0
         ? normalized.customTemplates
         : legacyTemplates,
-    reviewCriteria:
-      normalized.reviewCriteria !== DEFAULT_REVIEW_CRITERIA ||
-      !legacyReviewCriteria
-        ? normalized.reviewCriteria ?? DEFAULT_REVIEW_CRITERIA
-        : legacyReviewCriteria,
     customRoles:
       normalized.customRoles && normalized.customRoles.length > 0
         ? normalized.customRoles
@@ -121,7 +111,6 @@ function hasLegacySettings(): boolean {
 
   return [
     CUSTOM_TEMPLATES_KEY,
-    REVIEW_CRITERIA_KEY,
     SELECTED_ROLE_KEY,
     CUSTOM_ROLES_KEY,
   ].some((key) => storage.getItem(key) !== null);
@@ -130,7 +119,6 @@ function hasLegacySettings(): boolean {
 async function persistPatch(
   patch: Partial<{
     customTemplates: CustomScriptTemplate[];
-    reviewCriteria: string;
     customRoles: CustomRole[];
     selectedRole: string;
   }>,
@@ -141,7 +129,6 @@ async function persistPatch(
   }));
   cache = {
     customTemplates: next.customTemplates ?? [],
-    reviewCriteria: next.reviewCriteria ?? DEFAULT_REVIEW_CRITERIA,
     customRoles: next.customRoles ?? [],
     selectedRole: next.selectedRole ?? DEFAULT_SELECTED_ROLE,
   };
@@ -162,11 +149,6 @@ export async function hydrateSettingsStorage(): Promise<void> {
         globalSettings.customTemplates && globalSettings.customTemplates.length > 0
           ? globalSettings.customTemplates
           : currentCache.customTemplates,
-      reviewCriteria:
-        globalSettings.reviewCriteria &&
-        globalSettings.reviewCriteria !== DEFAULT_REVIEW_CRITERIA
-          ? globalSettings.reviewCriteria
-          : currentCache.reviewCriteria,
       customRoles:
         globalSettings.customRoles && globalSettings.customRoles.length > 0
           ? globalSettings.customRoles
@@ -183,7 +165,6 @@ export async function hydrateSettingsStorage(): Promise<void> {
 
     const patch: Partial<{
       customTemplates: CustomScriptTemplate[];
-      reviewCriteria: string;
       customRoles: CustomRole[];
       selectedRole: string;
     }> = {};
@@ -193,13 +174,6 @@ export async function hydrateSettingsStorage(): Promise<void> {
       cache.customTemplates.length > 0
     ) {
       patch.customTemplates = cache.customTemplates;
-    }
-    if (
-      (!globalSettings.reviewCriteria ||
-        globalSettings.reviewCriteria === DEFAULT_REVIEW_CRITERIA) &&
-      cache.reviewCriteria.trim()
-    ) {
-      patch.reviewCriteria = cache.reviewCriteria;
     }
     if (
       (!globalSettings.customRoles || globalSettings.customRoles.length === 0) &&
@@ -273,15 +247,6 @@ export async function updateCustomTemplate(
 
 export async function deleteCustomTemplate(id: string): Promise<void> {
   await saveCustomTemplates(loadCustomTemplates().filter((template) => template.id !== id));
-}
-
-export function loadReviewCriteria(): string {
-  return ensureCache().reviewCriteria;
-}
-
-export async function saveReviewCriteria(criteria: string): Promise<void> {
-  cache = { ...ensureCache(), reviewCriteria: criteria };
-  await persistPatch({ reviewCriteria: criteria });
 }
 
 export interface ScriptRole {

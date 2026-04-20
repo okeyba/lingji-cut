@@ -107,18 +107,6 @@
   padding: var(--space-8) !important;
 }
 
-.varHint {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.varHintTitle {
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
 .varHintGrid {
   display: flex;
   flex-direction: column;
@@ -126,8 +114,8 @@
   padding: var(--space-4) var(--space-6);
   background: var(--color-panel-bg);
   border: 1px solid var(--color-separator);
-  border-radius: var(--radius-md);
-  max-height: 140px;
+  border-radius: var(--radius-sm);
+  max-height: 160px;
   overflow-y: auto;
 }
 
@@ -188,4 +176,100 @@
   align-items: center;
   gap: var(--space-2);
   flex-shrink: 0;
+}
+
+/* ─── 可折叠辅助区（变量提示 / 业务契约） ──── */
+
+.collapsible {
+  border: 1px solid var(--color-separator);
+  border-radius: var(--radius-md);
+  background: var(--color-panel-bg);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.collapsible[open] {
+  background: var(--color-panel-elevated);
+}
+
+.collapsibleLocked {
+  border-color: color-mix(in srgb, var(--color-warning) 35%, var(--color-separator));
+}
+
+.collapsibleLocked[open] {
+  background: color-mix(in srgb, var(--color-warning) 6%, var(--color-panel-elevated));
+}
+
+.collapsibleSummary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  min-height: 30px;
+  transition: background 120ms ease;
+}
+
+.collapsibleSummary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsibleSummary:hover {
+  background: color-mix(in srgb, var(--color-system-blue) 6%, transparent);
+}
+
+.collapsibleChevron {
+  color: var(--color-text-secondary);
+  transition: transform 140ms ease;
+  flex-shrink: 0;
+}
+
+.collapsible[open] .collapsibleChevron {
+  transform: rotate(90deg);
+}
+
+.collapsibleTitle {
+  font-weight: 600;
+}
+
+.collapsibleMeta {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  font-weight: 400;
+  margin-left: auto;
+}
+
+.collapsibleBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 var(--space-5) var(--space-5);
+  border-top: 1px solid var(--color-separator);
+  padding-top: var(--space-4);
+}
+
+.lockedReason {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.lockedContent {
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: var(--font-size-xs);
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  background: var(--color-window-bg);
+  border: 1px solid var(--color-separator);
+  border-radius: var(--radius-sm);
+  padding: var(--space-4) var(--space-5);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
 }

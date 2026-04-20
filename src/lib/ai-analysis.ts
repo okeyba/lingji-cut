@@ -23,7 +23,7 @@ import { resolvePromptBinding } from './llm/binding-resolver';
 import type { PromptKind } from './prompts/types';
 import {
   getBuiltinPromptTemplate,
-  renderTemplate,
+  renderUserPromptWithLock,
   type PromptTemplate,
 } from './prompts';
 
@@ -356,7 +356,7 @@ export function buildSegmentPlanningPrompt(
   const tpl = template ?? getBuiltinPromptTemplate('planning.segment');
   const trimmed = globalPrompt?.trim();
   const globalPromptLine = trimmed ? `额外创作要求：${trimmed}` : '';
-  return renderTemplate(tpl.user, { globalPromptLine });
+  return renderUserPromptWithLock('planning.segment', tpl, { globalPromptLine });
 }
 
 export function buildCoverPromptRegenerationPrompt(
@@ -369,7 +369,7 @@ export function buildCoverPromptRegenerationPrompt(
   const tpl = template ?? getBuiltinPromptTemplate('cover.regeneration');
   const globalPrompt = options.globalPrompt?.trim();
   const currentPrompt = options.currentPrompt?.trim();
-  return renderTemplate(tpl.user, {
+  return renderUserPromptWithLock('cover.regeneration', tpl, {
     globalPrompt: globalPrompt || '无',
     currentPrompt: currentPrompt || '无',
   });
@@ -417,7 +417,7 @@ export function buildSegmentCardPrompt(
       ].join('\n')
     : '当前卡片线索：无';
 
-  return renderTemplate(tpl.user, {
+  return renderUserPromptWithLock('cards.segment', tpl, {
     globalPrompt: globalPrompt?.trim() || '无',
     programSummary: programSummary?.trim() || '无',
     keywords: keywords.length > 0 ? keywords.join('、') : '无',

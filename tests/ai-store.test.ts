@@ -93,7 +93,6 @@ describe('AI settings store helpers', () => {
   it('merges aiSettings into existing global settings instead of overwriting other sections', async () => {
     const loadGlobalSettings = vi.fn().mockResolvedValue(
       JSON.stringify({
-        reviewCriteria: '保留这段审查规则',
         selectedRole: 'deep-insight-podcast',
       }),
     );
@@ -124,7 +123,6 @@ describe('AI settings store helpers', () => {
     expect(saveGlobalSettings).toHaveBeenCalledTimes(1);
 
     const savedPayload = JSON.parse(saveGlobalSettings.mock.calls[0][0] as string);
-    expect(savedPayload.reviewCriteria).toBe('保留这段审查规则');
     expect(savedPayload.selectedRole).toBe('deep-insight-podcast');
     expect(savedPayload.aiSettings.llmApiKey).toBe('sk-test');
   });

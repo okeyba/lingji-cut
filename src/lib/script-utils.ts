@@ -3,14 +3,16 @@
  * 从旧 Step 组件中提取，供 ScriptWorkbench 及后续 Agent 流程复用。
  */
 
-import { generateText, streamText, streamTextWithProvider, parseLLMJsonResponse } from './llm';
-import type { LLMProvider } from '../types/ai';
+import { generateText, streamText, streamTextWithProvider } from './llm';
+import type { LLMProvider, PromptBindingMap } from '../types/ai';
 import { getAnyTemplateById } from './script-templates';
-import { reviewScript, REVIEW_SYSTEM_PROMPT, parseAnnotations } from './script-review';
-import { loadAISettings } from '../store/ai';
-import { loadReviewCriteria } from './settings-storage';
+import { reviewScript, reviewScriptStream } from './script-review';
+import { loadAISettings, useAIStore } from '../store/ai';
+import { getProjectDir } from '../store/timeline';
+import type { PromptTemplate } from './prompts';
 import { getRoleById } from './script-templates';
 import type { Annotation } from '../store/script';
+import type { AISettings } from '../types/ai';
 
 // --- 原稿统计 ---
 
@@ -143,7 +145,7 @@ export async function generateScriptDraftStream(
       systemPrompt,
       originalText,
       onChunk,
-      { enableThinking: settings.enableThinking, onReasoningChunk: options?.onReasoningChunk },
+      { onReasoningChunk: options?.onReasoningChunk },
     );
   }
 
@@ -153,13 +155,37 @@ export async function generateScriptDraftStream(
 
 // --- AI 审查 ---
 
-export async function runScriptReview(scriptText: string): Promise<Annotation[]> {
-  const settings = await loadAISettings();
-  if (!settings?.llmApiKey) {
-    throw new Error('请先在 AI 设置中配置 LLM API Key');
-  }
+interface ScriptReviewContext {
+  settings: AISettings;
+  projectBindings: PromptBindingMap | null;
+  template: PromptTemplate;
+}
 
-  return reviewScript(settings, scriptText);
+async function loadScriptReviewContext(): Promise<ScriptReviewContext> {
+  const settings = await loadAISettings();
+  if (!settings) throw new Error('请先在 AI 设置中配置 LLM');
+
+  const projectDir = getProjectDir();
+  const projectBindings = useAIStore.getState().projectBindings;
+
+  const effective = await window.electronAPI.readEffectivePrompt({
+    kind: 'script.review',
+    projectDir: projectDir || undefined,
+  });
+  const template: PromptTemplate = {
+    name: effective.name,
+    description: effective.description,
+    version: effective.version,
+    system: effective.system,
+    user: effective.user,
+  };
+
+  return { settings, projectBindings, template };
+}
+
+export async function runScriptReview(scriptText: string): Promise<Annotation[]> {
+  const ctx = await loadScriptReviewContext();
+  return reviewScript(ctx.settings, ctx.projectBindings, ctx.template, scriptText);
 }
 
 /**
@@ -168,37 +194,11 @@ export async function runScriptReview(scriptText: string): Promise<Annotation[]>
 export async function runScriptReviewStream(
   scriptText: string,
   onChunk: (chunk: string) => void,
-  options?: {
-    onReasoningChunk?: (chunk: string) => void;
-    provider?: LLMProvider;
-    model?: string;
-  },
+  options?: { onReasoningChunk?: (chunk: string) => void },
 ): Promise<Annotation[]> {
-  const settings = await loadAISettings();
-  if (!settings) throw new Error('请先在 AI 设置中配置 LLM');
-
-  const userCriteria = loadReviewCriteria();
-  const systemPrompt = userCriteria.trim()
-    ? `${REVIEW_SYSTEM_PROMPT}\n\n用户补充的审查要求：\n${userCriteria}`
-    : REVIEW_SYSTEM_PROMPT;
-
-  // 流式调用 LLM，缓冲完整 JSON 响应
-  let fullText: string;
-  if (options?.provider && options.model) {
-    fullText = await streamTextWithProvider(
-      options.provider,
-      options.model,
-      systemPrompt,
-      scriptText,
-      onChunk,
-      { enableThinking: settings.enableThinking, onReasoningChunk: options?.onReasoningChunk },
-    );
-  } else {
-    if (!settings.llmApiKey) throw new Error('请先在 AI 设置中配置 LLM API Key');
-    fullText = await streamText(settings, systemPrompt, scriptText, onChunk, options);
-  }
-
-  // 从流式文本中提取 JSON 并解析批注
-  const payload = parseLLMJsonResponse(fullText);
-  return parseAnnotations(payload, scriptText);
+  const ctx = await loadScriptReviewContext();
+  return reviewScriptStream(ctx.settings, ctx.projectBindings, ctx.template, scriptText, {
+    onChunk,
+    onReasoningChunk: options?.onReasoningChunk,
+  });
 }

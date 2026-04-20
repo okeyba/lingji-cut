@@ -2,30 +2,10 @@ import type { PromptKind } from './types';
 
 const PLANNING_SEGMENT = `name: planning.segment
 description: 字幕分段规划提示词
-version: 1
+version: 2
 user: |-
-  你是一个播客内容分析助手。请先完整理解整篇字幕，再把节目拆成有明确语义边界的段落，并输出严格 JSON。
+  你是一个播客内容分析助手。请先完整理解整篇字幕，再把节目拆成有明确语义边界的段落。
   {{globalPromptLine}}
-  输出结构必须包含：
-  - segments: 2-8 个段落
-  - coverPrompts: 1 组封面提示词，数组中只能有 1 条
-  - summary: 一句话总结
-  - keywords: 关键词数组
-  - globalPrompt: 沿用输入的整期创作提示词，没有则返回空字符串
-
-  segments 中每一项必须包含：
-  - id
-  - title
-  - summary
-  - startMs
-  - endMs
-  - transcriptExcerpt
-  - semanticType: data / explanation / chapter-transition / quote / narration
-  - complexityLevel: low / medium / high
-  - visualizationScore: 0-100
-  - pacingNeed: steady / accent / transition
-  - keywords: 该段关键词数组
-  - entities: 该段关键实体数组
 
   段落拆分要求：
   - 必须按真实话题边界拆分，而不是按 token 长度硬切
@@ -45,25 +25,20 @@ user: |-
   - 画面中禁止出现多余文字（副标题、署名、水印、logo、日期）与拼写错误；仅保留 1 条标题
   - 面向 16:9 播客封面：主体居中突出、信息聚焦，紧扣节目核心主题 / 关键人物 / 冲突感
   - 避免"美丽、震撼、惊艳"等空泛形容词与营销式堆砌
-
-  请只返回 JSON，不要附加解释。
 `;
 
 const COVER_REGENERATION = `name: cover.regeneration
 description: 封面提示词重生成
-version: 3
+version: 4
 user: |-
   你是一个专业的文生图提示词工程师，熟悉播客选题与视觉传达。
-  请结合本期字幕内容，为这一期播客输出严格 JSON，仅返回 1 条可直接用于 AI 生图的 16:9 封面提示词。
+  请结合本期字幕内容，为这一期播客生成 1 条可直接用于 AI 生图的 16:9 封面提示词。
 
   已有整期创作提示词：
   {{globalPrompt}}
 
   当前封面提示词（仅用于参考，可改写）：
   {{currentPrompt}}
-
-  输出结构必须包含：
-  - coverPrompts: 数组，且只能包含 1 条字符串
 
   【提示词结构规范】
   单条提示词必须按以下 7 个维度、严格按序组织，用中文逗号"，"或分号"；"串联，整体长度 120-200 字：
@@ -112,15 +87,13 @@ user: |-
 
   【参考示例】（仅示范格式与颗粒度，不要照抄内容）
   一位戴黑框眼镜的年轻女主持人身着米色针织衫，专注地对着复古银色麦克风讲述并微微前倾，身处深夜录音室中，暖黄台灯在木质桌面投下柔和光斑，桌上散落着打开的笔记本与一杯冒热气的咖啡，写实摄影风格，莫兰迪暖色调，侧逆光，中景，三分构图，8K 高清，电影质感，细腻纹理，画面顶部居中呈现标题""深夜电台·声音档案""，思源黑体，Bold，字号约占画面高度 10%，主色 #FDEDC8 暖米金，2px 深棕色描边，柔和外发光，顶部居中排版不遮挡主持人面部
-
-  请只返回 JSON，不要附加解释。
 `;
 
 const CARDS_SEGMENT = `name: cards.segment
 description: 围绕单个 segment 生成网页信息卡
-version: 1
+version: 2
 user: |-
-  你是一个播客内容分析助手，同时也是一个网页信息卡设计师。现在要围绕单个内容段落生成一张网页信息卡，请输出严格 JSON，且只返回单张卡片对象。
+  你是一个播客内容分析助手，同时也是一个网页信息卡设计师。现在要围绕单个内容段落生成一张网页信息卡。
 
   整期创作提示词：
   {{globalPrompt}}
@@ -143,27 +116,6 @@ user: |-
   {{cardPrompt}}
 
   {{currentCardSection}}
-  输出字段必须包含：
-  - id
-  - segmentId
-  - type
-  - title
-  - content
-  - startMs
-  - endMs
-  - displayDurationMs
-  - displayMode
-  - template
-  - enabled
-  - style
-  - renderMode
-  - cardPrompt
-  - webCard
-
-  其中：
-  - renderMode 默认输出 "web-card"
-  - webCard.srcDoc 必须是完整 HTML 文档
-  - 允许 HTML/CSS/JS 和外部资源
 
   时间轴约束（非常重要）：
   - startMs 必须对应"观众真正听到该主题"的那句字幕开始时间
@@ -171,7 +123,6 @@ user: |-
   - endMs 必须对应该主题核心表达完成的那句字幕结束时间
   - displayDurationMs 必须覆盖这张卡片对应的核心表达，不能在主题刚讲到时就结束
   - 如果一个主题在后半段才真正展开，宁可把 startMs 设晚，也不要让卡片提前出现
-  - startMs、endMs、displayDurationMs 必须输出毫秒数字
 
   统一视觉基线（首次生成与二次重生成都必须遵守）：
   - 必须按 1920x1080 的 16:9 画布设计，并默认铺满整个画面
@@ -201,8 +152,26 @@ user: |-
 
   完整字幕全文如下：
   {{fullTranscript}}
+`;
 
-  请只返回 JSON 对象，不要附加解释。
+const SCRIPT_REVIEW = `name: script.review
+description: 口播稿 AI 审查提示词
+version: 2
+system: |-
+  你是一位专业的口播稿审查编辑。请审查用户提供的口播稿，从以下维度给出批注：
+
+  1. **事实准确性**（severity: error）：数据是否有来源、表述是否可能有误
+  2. **表达流畅性**（severity: warning）：是否有书面化表达、长句、不适合口播的措辞
+  3. **逻辑连贯性**（severity: warning）：段落过渡是否自然、论述是否有跳跃
+  4. **口语化程度**（severity: info）：可以更口语化的表达建议
+
+  业务规则：
+  - 批注数量控制在 3~8 条，聚焦最重要的问题
+  - 不要对标题格式（# ## 等）做批注
+user: |-
+  请审查下面这篇口播稿：
+
+  {{scriptText}}
 `;
 
 const MOTION_SYSTEM = `name: motion.system
@@ -291,6 +260,7 @@ export const DEFAULT_PROMPT_YAML: Record<PromptKind, string> = {
   'planning.segment': PLANNING_SEGMENT,
   'cover.regeneration': COVER_REGENERATION,
   'cards.segment': CARDS_SEGMENT,
+  'script.review': SCRIPT_REVIEW,
   'motion.system': MOTION_SYSTEM,
   'motion.generate': MOTION_GENERATE,
   'motion.modify': MOTION_MODIFY,

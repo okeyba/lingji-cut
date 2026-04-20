@@ -76,15 +76,10 @@ describe('useSettingsTabGuard', () => {
       new URL('../src/components/settings/TTSConfigTab.tsx', import.meta.url),
       'utf8',
     );
-    const reviewSource = readFileSync(
-      new URL('../src/components/settings/ReviewCriteriaTab.tsx', import.meta.url),
-      'utf8',
-    );
 
     expect(settingsSource).toContain('tabLeaveGuardRef');
     expect(settingsSource).toContain('onRegisterLeaveGuard');
     expect(aiSource).toContain('useSettingsTabGuard');
     expect(ttsSource).toContain('useSettingsTabGuard');
-    expect(reviewSource).toContain('useSettingsTabGuard');
   });
 });

@@ -45,7 +45,7 @@ describe('collectBackup', () => {
 
   it('包含 globalSettings 与 agent config', async () => {
     await saveGlobalSettings(userDataPath, {
-      reviewCriteria: '自定义审查规范',
+      selectedRole: 'deep-insight-podcast',
     });
     const config = new AgentConfig(agentConfigPath);
     await config.save({
@@ -66,7 +66,7 @@ describe('collectBackup', () => {
     });
 
     const backup = await collectBackup(userDataPath, agentConfigPath, '1.0.0');
-    expect(backup.globalSettings.reviewCriteria).toBe('自定义审查规范');
+    expect(backup.globalSettings.selectedRole).toBe('deep-insight-podcast');
     expect(backup.agent.config.agents['claude-acp']).toBeDefined();
   });
 });
@@ -110,13 +110,13 @@ describe('validateBackup', () => {
 
 describe('backupCurrent', () => {
   it('生成带时间戳的备份文件', async () => {
-    await saveGlobalSettings(userDataPath, { reviewCriteria: 'a' });
+    await saveGlobalSettings(userDataPath, { selectedRole: 'a' });
     const result = await backupCurrent(userDataPath, agentConfigPath);
     expect(result.settingsBackupPath).toMatch(/settings-\d{8}-\d{6}\.json$/);
     const content = JSON.parse(
       await fs.readFile(result.settingsBackupPath, 'utf-8'),
     );
-    expect(content.reviewCriteria).toBe('a');
+    expect(content.selectedRole).toBe('a');
     // agent-config.json 不存在 → agentBackupPath 为 undefined
     expect(result.agentBackupPath).toBeUndefined();
   });
@@ -135,7 +135,7 @@ describe('backupCurrent', () => {
 
 describe('applyBackup', () => {
   it('完整覆盖 globalSettings 与 agent.config', async () => {
-    await saveGlobalSettings(userDataPath, { reviewCriteria: '旧' });
+    await saveGlobalSettings(userDataPath, { selectedRole: '旧' });
 
     await applyBackup(
       {
@@ -143,7 +143,7 @@ describe('applyBackup', () => {
         exportedAt: new Date().toISOString(),
         appVersion: '1.0.0',
         platform: 'darwin',
-        globalSettings: { reviewCriteria: '新' },
+        globalSettings: { selectedRole: '新' },
         agent: {
           config: {
             agents: {
@@ -171,7 +171,7 @@ describe('applyBackup', () => {
     const settings = JSON.parse(
       await fs.readFile(path.join(userDataPath, 'settings.json'), 'utf-8'),
     );
-    expect(settings.reviewCriteria).toBe('新');
+    expect(settings.selectedRole).toBe('新');
 
     const agent = JSON.parse(await fs.readFile(agentConfigPath, 'utf-8'));
     expect(agent.permissionPolicy).toBe('auto_approve');
