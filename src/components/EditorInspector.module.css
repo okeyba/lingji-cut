@@ -19,36 +19,15 @@
   flex-shrink: 0;
 }
 
-.eyebrowPill {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 7px;
-  background: color-mix(in srgb, var(--color-system-blue) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-system-blue) 25%, transparent);
-  border-radius: var(--radius-sm);
-  color: var(--color-system-blue);
-  font-size: var(--font-size-xs);
-  font-weight: 700;
+.headerTitle {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+  font-weight: 600;
   line-height: 1;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.eyebrowPill[data-variant='subtitle'] {
-  color: var(--color-success);
-  background: color-mix(in srgb, var(--color-success) 10%, transparent);
-  border-color: color-mix(in srgb, var(--color-success) 25%, transparent);
-}
-
-.headerSpacer {
-  flex: 1;
-  min-width: 0;
-}
-
-.headerMeta {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-  line-height: 1;
+  letter-spacing: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .headerRight {

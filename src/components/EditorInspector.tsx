@@ -137,28 +137,27 @@ export function EditorInspector({
     [selection, updateMotionCard],
   );
 
-  /* ── eyebrow pill 内容 ── */
+  /* ── 标题内容 ── */
   const selectedOverlay =
     selection.type === 'overlay'
       ? timeline.overlays.find((item) => item.id === selection.overlayId) ?? null
       : null;
-  const eyebrowLabel =
+  const headerTitle =
     selection.type === 'subtitle-style'
-      ? 'SUBTITLE'
+      ? '字幕样式'
       : selection.type === 'ai-card'
-      ? 'AI CARD'
+      ? 'AI 卡片'
       : selection.type === 'motion-card'
-      ? 'MOTION CARD'
+      ? '动态卡片'
       : selection.type === 'overlay'
       ? selectedOverlay?.type === 'audio'
-        ? 'AUDIO'
+        ? '音频'
         : selectedOverlay?.type === 'text'
-        ? 'TEXT'
-        : 'OVERLAY'
-      : 'INSPECTOR';
+        ? '文字'
+        : '素材图层'
+      : '项目概览';
 
   /* ── 右侧索引/状态标签 ── */
-  const isSubtitleStyle = selection.type === 'subtitle-style';
   const indexLabel = selection.type === 'ai-card' ? cardSequenceLabel : null;
   const motionCard =
     selection.type === 'motion-card'
@@ -263,17 +262,12 @@ export function EditorInspector({
       data-editor-region="inspector-shell"
     >
       <div className={styles.header}>
-        <span
-          className={styles.eyebrowPill}
-          data-variant={isSubtitleStyle ? 'subtitle' : 'default'}
-        >
-          {eyebrowLabel}
-        </span>
-
-        {isSubtitleStyle ? (
-          <>
-            <div className={styles.headerSpacer} />
-            <span className={styles.headerMeta}>字幕样式</span>
+        <span className={styles.headerTitle}>{headerTitle}</span>
+        <div className={styles.headerRight}>
+          {indexLabel ? (
+            <span className={styles.indexLabel}>{indexLabel}</span>
+          ) : null}
+          {selection.type !== 'empty' ? (
             <Button.Icon
               variant="ghost"
               aria-label="关闭右侧配置区"
@@ -283,25 +277,8 @@ export function EditorInspector({
             >
               <AppIcon name="x" size={14} />
             </Button.Icon>
-          </>
-        ) : (
-          <div className={styles.headerRight}>
-            {indexLabel ? (
-              <span className={styles.indexLabel}>{indexLabel}</span>
-            ) : null}
-            {selection.type !== 'empty' ? (
-              <Button.Icon
-                variant="ghost"
-                aria-label="关闭右侧配置区"
-                title="关闭右侧配置区"
-                onClick={onClose}
-                className={styles.closeButton}
-              >
-                <AppIcon name="x" size={14} />
-              </Button.Icon>
-            ) : null}
-          </div>
-        )}
+          ) : null}
+        </div>
       </div>
 
       <div className={styles.body}>{renderBody()}</div>

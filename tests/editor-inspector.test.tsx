@@ -168,7 +168,7 @@ describe('EditorInspector', () => {
       />,
     );
 
-    expect(html).toContain('AI CARD');
+    expect(html).toContain('AI 卡片');
     expect(html).toContain('第 2 段');
     expect(html).not.toContain('仅素材');
     expect(html).not.toContain('已上轨');
@@ -184,7 +184,7 @@ describe('EditorInspector', () => {
       />,
     );
 
-    expect(html).toContain('TEXT');
+    expect(html).toContain('文字');
     expect(html).toContain('动画');
     expect(html).toContain('这是文字标题');
   });
@@ -199,7 +199,7 @@ describe('EditorInspector', () => {
       />,
     );
 
-    expect(html).toContain('OVERLAY');
+    expect(html).toContain('素材图层');
     expect(html).toContain('cover.png');
     expect(html).toContain('slideInLeft');
   });
