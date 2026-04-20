@@ -105,6 +105,39 @@
   background: color-mix(in srgb, var(--color-panel-muted) 70%, transparent);
 }
 
+.modelItemActions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.testResult {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 260px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  background: color-mix(in srgb, var(--color-panel-elevated) 60%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.testResultOk {
+  color: var(--color-success, #32d74b);
+  background: color-mix(in srgb, var(--color-success, #32d74b) 18%, transparent);
+}
+
+.testResultError {
+  color: var(--color-danger, var(--color-system-red));
+  background: color-mix(in srgb, var(--color-danger, var(--color-system-red)) 16%, transparent);
+}
+
 .removeModelButton {
   min-width: 48px;
 }
@@ -126,6 +159,50 @@
 .footerError {
   font-size: var(--font-size-md);
   color: var(--color-system-red);
+}
+
+.fetchError {
+  margin: 0;
+  font-size: var(--font-size-md);
+  color: var(--color-danger, var(--color-system-red));
+}
+
+.fetchPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-panel-elevated) 60%, transparent);
+}
+
+.fetchPanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.fetchPanelActions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.fetchOptionList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-2);
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: var(--space-1);
+}
+
+.fetchPanelFooter {
+  display: flex;
+  justify-content: flex-end;
 }
 
 @media (max-width: 640px) {

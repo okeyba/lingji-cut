@@ -29,9 +29,8 @@ function assertNonEmptyContent(content: string, message: string): string {
 
 function pickModel(settings: AISettings, binding?: ResolvedBinding) {
   if (binding) {
-    return createChatModelFromProvider(binding.provider, binding.model, {
-      enableThinking: settings.enableThinking,
-    });
+    // provider.enableThinking 缺省时由 createChatModelFromProvider 内部默认 true
+    return createChatModelFromProvider(binding.provider, binding.model);
   }
   return createChatModel(settings);
 }
@@ -110,6 +109,7 @@ export async function streamTextWithProvider(
   onChunk: (chunk: string) => void,
   options?: { enableThinking?: boolean } & StreamCallbacks,
 ): Promise<string> {
+  // 默认沿用 provider.enableThinking；调用方显式传入 options.enableThinking 时优先生效
   const chatModel = createChatModelFromProvider(provider, model, {
     enableThinking: options?.enableThinking,
   });

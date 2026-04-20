@@ -52,10 +52,11 @@ describe('generate with optional binding', () => {
     expect(createChatModel).toHaveBeenCalled();
   });
 
-  it('传 binding：走 createChatModelFromProvider', async () => {
+  it('传 binding：走 createChatModelFromProvider 并由 provider 自身决定 thinking 模式', async () => {
     const r = await generateStructuredData(settings, 'sys', 'usr', binding);
     expect(r).toEqual({ k: 2 });
-    expect(createChatModelFromProvider).toHaveBeenCalledWith(provider, 'm', expect.any(Object));
+    // pickModel 不再注入 enableThinking 参数，让 model.ts 内部读 provider.enableThinking
+    expect(createChatModelFromProvider).toHaveBeenCalledWith(provider, 'm');
   });
 
   it('generateText 同样支持 binding 参数', async () => {

@@ -1,10 +1,20 @@
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { ChatOpenAI } from '@langchain/openai';
-import type { AISettings, LLMProvider } from '../../types/ai';
+import { LMSTUDIO_DEFAULT_BASE_URL, type AISettings, type LLMProvider } from '../../types/ai';
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, '');
+}
+
+function resolveEnableThinking(
+  provider: LLMProvider,
+  options?: { enableThinking?: boolean },
+): boolean {
+  if (options && options.enableThinking !== undefined) {
+    return options.enableThinking;
+  }
+  return provider.enableThinking ?? true;
 }
 
 function buildModelKwargs(settings: AISettings): Record<string, unknown> | undefined {
@@ -38,12 +48,13 @@ function createGeminiChatModel(
   options?: { enableThinking?: boolean },
 ): ChatGoogleGenerativeAI {
   const trimmedBaseUrl = provider.baseUrl?.trim();
+  const enableThinking = resolveEnableThinking(provider, options);
   return new ChatGoogleGenerativeAI({
     apiKey: provider.apiKey,
     model,
     temperature: 0.3,
     ...(trimmedBaseUrl ? { baseUrl: normalizeBaseUrl(trimmedBaseUrl) } : {}),
-    ...(options?.enableThinking === false ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+    ...(enableThinking === false ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
   });
 }
 
@@ -56,18 +67,24 @@ export function createChatModelFromProvider(
     return createGeminiChatModel(provider, model, options);
   }
 
+  const enableThinking = resolveEnableThinking(provider, options);
+  // LM Studio 走 OpenAI 兼容端点；apiKey 留空时填充占位值，避免 SDK 抛错
+  const isLMStudio = provider.type === 'lmstudio';
+  const apiKey = provider.apiKey?.trim() || (isLMStudio ? 'lm-studio' : provider.apiKey);
+  const baseURL = normalizeBaseUrl(provider.baseUrl?.trim() || (isLMStudio ? LMSTUDIO_DEFAULT_BASE_URL : provider.baseUrl));
+
   const modelKwargs =
-    options?.enableThinking === false
+    enableThinking === false
       ? { enable_thinking: false }
       : undefined;
 
   return new ChatOpenAI({
-    apiKey: provider.apiKey,
+    apiKey,
     model,
     temperature: 0.3,
     configuration: {
-      apiKey: provider.apiKey,
-      baseURL: normalizeBaseUrl(provider.baseUrl),
+      apiKey,
+      baseURL,
     },
     ...(modelKwargs ? { modelKwargs } : {}),
   });

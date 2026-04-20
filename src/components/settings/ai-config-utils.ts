@@ -18,7 +18,6 @@ interface AIConfigSnapshotInput {
   providers: LLMProvider[];
   defaultProviderId: string | null;
   defaultModel: string | null;
-  enableThinking: boolean;
   jimengApiUrl: string;
   jimengSessionId: string;
   jimengModel: string;
@@ -36,6 +35,7 @@ export function normalizeProviderDraft(provider: LLMProvider): LLMProvider {
     models: provider.models
       .map((model) => model.trim())
       .filter((model, index, list) => model.length > 0 && list.indexOf(model) === index),
+    enableThinking: provider.enableThinking ?? true,
   };
 }
 
@@ -51,11 +51,11 @@ export function validateProviderDraft(provider: LLMProvider): ProviderDraftError
     errors.name = '请输入 Provider 名称';
   }
 
-  if (!normalized.baseUrl && normalized.type !== 'gemini') {
+  if (!normalized.baseUrl && normalized.type !== 'gemini' && normalized.type !== 'lmstudio') {
     errors.baseUrl = '请输入 Base URL';
   }
 
-  if (!normalized.apiKey) {
+  if (!normalized.apiKey && normalized.type !== 'lmstudio') {
     errors.apiKey = '请输入 API Key';
   }
 
@@ -95,7 +95,6 @@ export function createAIConfigSnapshot({
   providers,
   defaultProviderId,
   defaultModel,
-  enableThinking,
   jimengApiUrl,
   jimengSessionId,
   jimengModel,
@@ -117,7 +116,6 @@ export function createAIConfigSnapshot({
     providers: normalizedProviders,
     defaultProviderId: selection.defaultProviderId,
     defaultModel: selection.defaultModel,
-    enableThinking,
     jimengApiUrl: jimengApiUrl.trim(),
     jimengSessionId: jimengSessionId.trim(),
     jimengModel: jimengModel.trim(),

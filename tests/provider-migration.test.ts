@@ -18,7 +18,7 @@ const baseSettings: AISettings = {
 };
 
 describe('migrateToProviders', () => {
-  it('返回原始设置（不迁移）当 providers 已存在且非空', () => {
+  it('providers 已存在但缺少 enableThinking 时回填全局 enableThinking', () => {
     const existing: LLMProvider = {
       id: 'existing-id',
       name: 'Existing',
@@ -29,13 +29,36 @@ describe('migrateToProviders', () => {
     };
     const settings: AISettings = {
       ...baseSettings,
+      enableThinking: false,
       llmProviders: [existing],
       defaultProviderId: 'existing-id',
       defaultModel: 'gpt-4',
     };
     const result = migrateToProviders(settings);
-    expect(result).toBe(settings); // 同一引用，未修改
     expect(result.llmProviders).toHaveLength(1);
+    expect(result.llmProviders[0].enableThinking).toBe(false);
+  });
+
+  it('providers 自身已设置 enableThinking 时不被全局值覆盖', () => {
+    const existing: LLMProvider = {
+      id: 'existing-id',
+      name: 'Existing',
+      type: 'openai_compatible',
+      baseUrl: 'https://api.example.com',
+      apiKey: 'key',
+      models: ['gpt-4'],
+      enableThinking: true,
+    };
+    const settings: AISettings = {
+      ...baseSettings,
+      enableThinking: false,
+      llmProviders: [existing],
+      defaultProviderId: 'existing-id',
+      defaultModel: 'gpt-4',
+    };
+    const result = migrateToProviders(settings);
+    expect(result).toBe(settings);
+    expect(result.llmProviders[0].enableThinking).toBe(true);
   });
 
   it('当 llmBaseUrl 为空时返回空 providers', () => {
@@ -116,6 +139,30 @@ describe('migrateToProviders', () => {
     };
     const result = migrateToProviders(settings);
     expect(result.llmProviders[0].name).toBe('Custom');
+  });
+
+  it('从 baseUrl 推断 LM Studio 类型', () => {
+    const settings: AISettings = {
+      ...baseSettings,
+      llmBaseUrl: 'http://localhost:1234/v1',
+      llmApiKey: '',
+      llmModel: 'qwen2.5-7b-instruct',
+    };
+    const result = migrateToProviders(settings);
+    expect(result.llmProviders[0].type).toBe('lmstudio');
+    expect(result.llmProviders[0].name).toBe('LM Studio');
+  });
+
+  it('迁移时把全局 enableThinking 拷贝到新 provider', () => {
+    const settings: AISettings = {
+      ...baseSettings,
+      enableThinking: false,
+      llmBaseUrl: 'https://api.openai.com/v1',
+      llmApiKey: 'sk-test',
+      llmModel: 'gpt-4o',
+    };
+    const result = migrateToProviders(settings);
+    expect(result.llmProviders[0].enableThinking).toBe(false);
   });
 
   it('llmModel 为空时 models 数组为空', () => {

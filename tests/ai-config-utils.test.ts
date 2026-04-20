@@ -63,7 +63,6 @@ describe('ai-config-utils', () => {
       providers: [createProvider()],
       defaultProviderId: 'provider-1',
       defaultModel: 'gpt-4.1',
-      enableThinking: true,
       jimengApiUrl: 'https://jimeng.example.com',
       jimengSessionId: 'session-a',
       jimengModel: 'jimeng-5.0',
@@ -76,7 +75,6 @@ describe('ai-config-utils', () => {
           providers: [createProvider()],
           defaultProviderId: 'provider-1',
           defaultModel: 'gpt-4.1',
-          enableThinking: true,
           jimengApiUrl: 'https://jimeng.example.com',
           jimengSessionId: 'session-a',
           jimengModel: 'jimeng-5.0',
@@ -91,13 +89,51 @@ describe('ai-config-utils', () => {
           providers: [createProvider()],
           defaultProviderId: 'provider-1',
           defaultModel: 'gpt-4.1',
-          enableThinking: true,
           jimengApiUrl: 'https://jimeng.example.com',
           jimengSessionId: 'session-b',
           jimengModel: 'jimeng-5.0',
         }),
       ),
     ).toBe(true);
+  });
+
+  it('treats per-provider enableThinking change as an unsaved diff', () => {
+    const baseSnapshot = createAIConfigSnapshot({
+      providers: [createProvider({ enableThinking: true })],
+      defaultProviderId: 'provider-1',
+      defaultModel: 'gpt-4.1',
+      jimengApiUrl: '',
+      jimengSessionId: '',
+      jimengModel: '',
+    });
+
+    expect(
+      hasUnsavedAIConfigChanges(
+        baseSnapshot,
+        createAIConfigSnapshot({
+          providers: [createProvider({ enableThinking: false })],
+          defaultProviderId: 'provider-1',
+          defaultModel: 'gpt-4.1',
+          jimengApiUrl: '',
+          jimengSessionId: '',
+          jimengModel: '',
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('treats LM Studio providers as not requiring base URL or API key', () => {
+    expect(
+      validateProviderDraft(
+        createProvider({
+          type: 'lmstudio',
+          name: 'LM Studio',
+          baseUrl: '',
+          apiKey: '',
+          models: ['llama-3.2-3b'],
+        }),
+      ),
+    ).toEqual({});
   });
 
   it('wires an unsaved-change guard into AIConfigTab and settings navigation', () => {

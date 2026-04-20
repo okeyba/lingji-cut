@@ -133,14 +133,19 @@ export interface AIAnalysisResult {
   globalPrompt?: string;
 }
 
+/** LM Studio 默认 OpenAI 兼容端点 */
+export const LMSTUDIO_DEFAULT_BASE_URL = 'http://localhost:1234/v1';
+
 /** 单个 LLM Provider 配置 */
 export interface LLMProvider {
   id: string;
   name: string;
-  type: 'openai_compatible' | 'anthropic' | 'gemini';
+  type: 'openai_compatible' | 'anthropic' | 'gemini' | 'lmstudio';
   baseUrl: string;
   apiKey: string;
   models: string[];
+  /** 是否启用模型思考模式；缺省视为 true */
+  enableThinking?: boolean;
 }
 
 export interface AISettings {
@@ -155,7 +160,7 @@ export interface AISettings {
   llmApiKey: string;
   /** @deprecated 迁移后由 llmProviders 替代 */
   llmModel: string;
-  /** 是否开启模型思考模式，默认开启 */
+  /** @deprecated 已迁移到 LLMProvider.enableThinking；保留仅用于旧数据迁移 */
   enableThinking?: boolean;
   // 图片生成
   jimengApiUrl: string;

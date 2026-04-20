@@ -73,4 +73,32 @@ describe('createChatModelFromProvider', () => {
     expect(chatGoogleMock).not.toHaveBeenCalled();
     expect(chatOpenAIMock).toHaveBeenCalledTimes(1);
   });
+
+  it('uses LM Studio defaults (localhost endpoint + placeholder key) when fields are blank', () => {
+    createChatModelFromProvider(
+      makeProvider({ type: 'lmstudio', apiKey: '', baseUrl: '' }),
+      'qwen2.5-7b-instruct',
+    );
+
+    const config = chatOpenAIMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(config).toMatchObject({
+      apiKey: 'lm-studio',
+      model: 'qwen2.5-7b-instruct',
+    });
+    expect((config.configuration as Record<string, unknown>).baseURL).toBe('http://localhost:1234/v1');
+  });
+
+  it('honors per-provider enableThinking when no override option is provided', () => {
+    createChatModelFromProvider(
+      makeProvider({
+        type: 'openai_compatible',
+        baseUrl: 'https://api.openai.com/v1',
+        enableThinking: false,
+      }),
+      'gpt-4o-mini',
+    );
+
+    const config = chatOpenAIMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(config.modelKwargs).toEqual({ enable_thinking: false });
+  });
 });

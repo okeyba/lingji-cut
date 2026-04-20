@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadAISettings, saveAISettings } from '../../store/ai';
-import { Field, Divider, Switch, Select, SaveButton, SettingsPageHeader } from '../../ui';
+import { Field, Divider, Select, SaveButton, SettingsPageHeader } from '../../ui';
 import type { SelectOption } from '../../ui';
 import { DEFAULT_JIMENG_MODEL, type ImageProvider, type LLMProvider } from '../../types/ai';
 import { ProviderListSection } from './ProviderListSection';
@@ -22,7 +22,6 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
   const [providers, setProviders] = useState<LLMProvider[]>([]);
   const [defaultProviderId, setDefaultProviderId] = useState<string | null>(null);
   const [defaultModel, setDefaultModel] = useState<string | null>(null);
-  const [enableThinking, setEnableThinking] = useState(true);
   // 旧 jimeng* 字段（UI 已下线，仅保留原值用于向后兼容持久化）
   const [legacyJimengApiUrl, setLegacyJimengApiUrl] = useState('');
   const [legacyJimengSessionId, setLegacyJimengSessionId] = useState('');
@@ -39,7 +38,6 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
   useEffect(() => {
     void loadAISettings().then((settings) => {
       const nextProviders = settings?.llmProviders ?? [];
-      const nextEnableThinking = settings?.enableThinking ?? true;
       const nextJimengApiUrl = settings?.jimengApiUrl ?? '';
       const nextJimengSessionId = settings?.jimengSessionId ?? '';
       const nextJimengModel = settings?.jimengModel ?? DEFAULT_JIMENG_MODEL;
@@ -55,7 +53,6 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
       setProviders(nextProviders);
       setDefaultProviderId(selection.defaultProviderId);
       setDefaultModel(selection.defaultModel);
-      setEnableThinking(nextEnableThinking);
       setLegacyJimengApiUrl(nextJimengApiUrl);
       setLegacyJimengSessionId(nextJimengSessionId);
       setLegacyJimengModel(nextJimengModel);
@@ -67,7 +64,6 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
           providers: nextProviders,
           defaultProviderId: selection.defaultProviderId,
           defaultModel: selection.defaultModel,
-          enableThinking: nextEnableThinking,
           jimengApiUrl: nextJimengApiUrl,
           jimengSessionId: nextJimengSessionId,
           jimengModel: nextJimengModel,
@@ -95,7 +91,6 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
         providers,
         defaultProviderId,
         defaultModel,
-        enableThinking,
         jimengApiUrl: legacyJimengApiUrl,
         jimengSessionId: legacyJimengSessionId,
         jimengModel: legacyJimengModel,
@@ -107,7 +102,6 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
       providers,
       defaultProviderId,
       defaultModel,
-      enableThinking,
       legacyJimengApiUrl,
       legacyJimengSessionId,
       legacyJimengModel,
@@ -137,7 +131,6 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
       providers: normalizedProviders,
       defaultProviderId: selection.defaultProviderId,
       defaultModel: selection.defaultModel,
-      enableThinking,
       jimengApiUrl: legacyJimengApiUrl,
       jimengSessionId: legacyJimengSessionId,
       jimengModel: legacyJimengModel,
@@ -170,7 +163,6 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
           current?.llmApiKey ??
           '',
         llmModel: selection.defaultModel ?? current?.llmModel ?? '',
-        enableThinking,
         jimengApiUrl: legacyJimengApiUrl,
         jimengSessionId: legacyJimengSessionId,
         jimengModel: legacyJimengModel,
@@ -197,7 +189,6 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
     providers,
     defaultProviderId,
     defaultModel,
-    enableThinking,
     legacyJimengApiUrl,
     legacyJimengSessionId,
     legacyJimengModel,
@@ -278,13 +269,6 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
               setDefaultModel(selection.defaultModel);
             }}
           />
-        </Field>
-
-        <Field
-          label="开启思考模式"
-          hint="默认开启；关闭后会向兼容 OpenAI 的接口追加 enable_thinking=false"
-        >
-          <Switch checked={enableThinking} onChange={(checked) => setEnableThinking(checked)} />
         </Field>
 
         <Divider label="封面图像生成" />

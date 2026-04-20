@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import type { LLMProvider } from '../../types/ai';
+import { LMSTUDIO_DEFAULT_BASE_URL, type LLMProvider } from '../../types/ai';
+import { fetchProviderModels } from '../../lib/llm/fetch-models';
+import { testProviderModel } from '../../lib/llm/test-provider';
 import {
   Badge,
   Button,
@@ -14,6 +16,7 @@ import {
   Input,
   ModalFooter,
   Select,
+  Switch,
 } from '../../ui';
 import type { SelectOption } from '../../ui';
 import { normalizeProviderDraft, validateProviderDraft } from './ai-config-utils';
@@ -26,6 +29,7 @@ function genId(): string {
 
 const PROVIDER_TYPE_OPTIONS: SelectOption[] = [
   { value: 'openai_compatible', label: 'OpenAI Compatible' },
+  { value: 'lmstudio', label: 'LM Studio (本地)' },
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'gemini', label: 'Google Gemini' },
 ];
@@ -41,6 +45,7 @@ function emptyProvider(): LLMProvider {
     baseUrl: '',
     apiKey: '',
     models: [],
+    enableThinking: true,
   };
 }
 
@@ -53,12 +58,52 @@ interface DialogProps {
   onCancel: () => void;
 }
 
+type FetchPickerState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'error'; message: string }
+  | { status: 'ready'; fetched: string[]; selected: Set<string> };
+
+type ModelTestState =
+  | { status: 'idle' }
+  | { status: 'testing' }
+  | { status: 'ok'; latencyMs: number }
+  | { status: 'error'; message: string };
+
+function truncateErrorMessage(message: string): string {
+  const normalized = message.replace(/\s+/g, ' ').trim();
+  return normalized.length > 120 ? `${normalized.slice(0, 120)}…` : normalized;
+}
+
 function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
-  const [form, setForm] = useState<LLMProvider>({ ...initial });
+  const [form, setForm] = useState<LLMProvider>({
+    ...initial,
+    enableThinking: initial.enableThinking ?? true,
+  });
   const [setAsDefault, setSetAsDefault] = useState(isDefault);
   const [newModel, setNewModel] = useState('');
   const [errors, setErrors] = useState<ReturnType<typeof validateProviderDraft>>({});
+  const [picker, setPicker] = useState<FetchPickerState>({ status: 'idle' });
+  const [modelTests, setModelTests] = useState<Record<string, ModelTestState>>({});
   const title = initial.name ? '编辑 Provider' : '添加 Provider';
+
+  const updateModelTest = (model: string, state: ModelTestState) =>
+    setModelTests((prev) => ({ ...prev, [model]: state }));
+
+  const handleTestModel = async (model: string) => {
+    updateModelTest(model, { status: 'testing' });
+    try {
+      const { latencyMs } = await testProviderModel(form, model);
+      updateModelTest(model, { status: 'ok', latencyMs });
+    } catch (error) {
+      updateModelTest(model, {
+        status: 'error',
+        message: truncateErrorMessage(
+          error instanceof Error ? error.message : '未知错误',
+        ),
+      });
+    }
+  };
 
   const clearFieldError = (key: keyof ReturnType<typeof validateProviderDraft>) =>
     setErrors((prev) => {
@@ -87,12 +132,73 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
     setNewModel('');
   };
 
-  const removeModel = (idx: number) =>
+  const removeModel = (idx: number) => {
+    const removed = form.models[idx];
     set(
       'models',
       form.models.filter((_, i) => i !== idx),
       'models',
     );
+    if (removed) {
+      setModelTests((prev) => {
+        if (!(removed in prev)) return prev;
+        const next = { ...prev };
+        delete next[removed];
+        return next;
+      });
+    }
+  };
+
+  const handleFetchModels = async () => {
+    setPicker({ status: 'loading' });
+    try {
+      const fetched = await fetchProviderModels(form);
+      if (fetched.length === 0) {
+        setPicker({ status: 'error', message: '远端返回了空模型列表' });
+        return;
+      }
+      const existing = new Set(form.models);
+      const candidates = fetched.filter((id) => !existing.has(id));
+      if (candidates.length === 0) {
+        setPicker({ status: 'error', message: '所有可拉取的模型都已存在' });
+        return;
+      }
+      setPicker({
+        status: 'ready',
+        fetched: candidates,
+        selected: new Set(candidates),
+      });
+    } catch (error) {
+      setPicker({
+        status: 'error',
+        message: error instanceof Error ? error.message : '拉取失败',
+      });
+    }
+  };
+
+  const togglePickerSelection = (id: string) => {
+    setPicker((prev) => {
+      if (prev.status !== 'ready') return prev;
+      const next = new Set(prev.selected);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { ...prev, selected: next };
+    });
+  };
+
+  const setAllPickerSelection = (all: boolean) => {
+    setPicker((prev) => {
+      if (prev.status !== 'ready') return prev;
+      return { ...prev, selected: new Set(all ? prev.fetched : []) };
+    });
+  };
+
+  const applyPickerSelection = () => {
+    if (picker.status !== 'ready' || picker.selected.size === 0) return;
+    const merged = Array.from(new Set([...form.models, ...picker.selected]));
+    set('models', merged, 'models');
+    setPicker({ status: 'idle' });
+  };
 
   const handleConfirm = () => {
     const pendingModel = newModel.trim();
@@ -141,39 +247,64 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
               options={PROVIDER_TYPE_OPTIONS}
               onChange={(e) => {
                 const nextType = e.target.value as LLMProvider['type'];
-                setForm((f) => ({ ...f, type: nextType }));
+                setForm((f) => {
+                  // 切换到 LM Studio 时，base URL 留空则填默认；apiKey 留空允许保留
+                  const next: LLMProvider = { ...f, type: nextType };
+                  if (nextType === 'lmstudio' && !next.baseUrl.trim()) {
+                    next.baseUrl = LMSTUDIO_DEFAULT_BASE_URL;
+                  }
+                  return next;
+                });
                 clearFieldError('baseUrl');
+                clearFieldError('apiKey');
               }}
             />
           </Field>
 
           <Field
             label="Base URL"
-            required={form.type !== 'gemini'}
+            required={form.type !== 'gemini' && form.type !== 'lmstudio'}
             error={errors.baseUrl}
             hint={
               form.type === 'gemini'
                 ? `留空使用 Google 官方端点（${GEMINI_DEFAULT_BASE_URL}）`
-                : undefined
+                : form.type === 'lmstudio'
+                  ? `LM Studio 默认本地端点为 ${LMSTUDIO_DEFAULT_BASE_URL}`
+                  : undefined
             }
           >
             <Input
               value={form.baseUrl}
-              onChange={(e) => set('baseUrl', e.target.value, 'baseUrl')}
+              onChange={(e) => {
+                set('baseUrl', e.target.value, 'baseUrl');
+                setModelTests({});
+              }}
               placeholder={
-                form.type === 'gemini' ? GEMINI_DEFAULT_BASE_URL : 'https://api.openai.com/v1'
+                form.type === 'gemini'
+                  ? GEMINI_DEFAULT_BASE_URL
+                  : form.type === 'lmstudio'
+                    ? LMSTUDIO_DEFAULT_BASE_URL
+                    : 'https://api.openai.com/v1'
               }
               size="sm"
               aria-invalid={Boolean(errors.baseUrl)}
             />
           </Field>
 
-          <Field label="API Key" required error={errors.apiKey}>
+          <Field
+            label="API Key"
+            required={form.type !== 'lmstudio'}
+            error={errors.apiKey}
+            hint={form.type === 'lmstudio' ? 'LM Studio 默认无需 API Key，可留空' : undefined}
+          >
             <Input
               variant="password"
               value={form.apiKey}
-              onChange={(e) => set('apiKey', e.target.value, 'apiKey')}
-              placeholder="sk-..."
+              onChange={(e) => {
+                set('apiKey', e.target.value, 'apiKey');
+                setModelTests({});
+              }}
+              placeholder={form.type === 'lmstudio' ? '可留空' : 'sk-...'}
               size="sm"
               aria-invalid={Boolean(errors.apiKey)}
             />
@@ -182,22 +313,57 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
           <Field label="模型列表" required error={errors.models}>
             {form.models.length > 0 ? (
               <div className={styles.modelList}>
-                {form.models.map((m, idx) => (
-                  <div key={`${m}-${idx}`} className={styles.modelItem}>
-                    <Badge variant="secondary" size="xs">
-                      {m}
-                    </Badge>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className={styles.removeModelButton}
-                      onClick={() => removeModel(idx)}
-                    >
-                      移除
-                    </Button>
-                  </div>
-                ))}
+                {form.models.map((m, idx) => {
+                  const testState = modelTests[m] ?? { status: 'idle' };
+                  return (
+                    <div key={`${m}-${idx}`} className={styles.modelItem}>
+                      <Badge variant="secondary" size="xs">
+                        {m}
+                      </Badge>
+                      <div className={styles.modelItemActions}>
+                        {testState.status === 'ok' ? (
+                          <span
+                            className={`${styles.testResult} ${styles.testResultOk}`}
+                            title="测试成功"
+                          >
+                            🟢 {testState.latencyMs} ms
+                          </span>
+                        ) : testState.status === 'error' ? (
+                          <span
+                            className={`${styles.testResult} ${styles.testResultError}`}
+                            title={testState.message}
+                          >
+                            🔴 {testState.message}
+                          </span>
+                        ) : testState.status === 'testing' ? (
+                          <span className={styles.testResult} title="正在测试">
+                            测试中…
+                          </span>
+                        ) : null}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            void handleTestModel(m);
+                          }}
+                          disabled={testState.status === 'testing'}
+                        >
+                          {testState.status === 'testing' ? '测试中…' : '测试'}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className={styles.removeModelButton}
+                          onClick={() => removeModel(idx)}
+                        >
+                          移除
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <p className={styles.hintText}>暂未添加模型</p>
@@ -220,7 +386,94 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
               <Button type="button" variant="secondary" size="sm" onClick={addModel}>
                 添加
               </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  void handleFetchModels();
+                }}
+                disabled={picker.status === 'loading'}
+              >
+                {picker.status === 'loading' ? '拉取中…' : '拉取模型列表'}
+              </Button>
             </div>
+
+            {picker.status === 'error' ? (
+              <p className={styles.fetchError}>{picker.message}</p>
+            ) : null}
+
+            {picker.status === 'ready' ? (
+              <div className={styles.fetchPanel}>
+                <div className={styles.fetchPanelHeader}>
+                  <span className={styles.hintText}>
+                    共拉取到 {picker.fetched.length} 个新模型，已勾选 {picker.selected.size} 个
+                  </span>
+                  <div className={styles.fetchPanelActions}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setAllPickerSelection(true)}
+                    >
+                      全选
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setAllPickerSelection(false)}
+                    >
+                      清空
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPicker({ status: 'idle' })}
+                    >
+                      关闭
+                    </Button>
+                  </div>
+                </div>
+                <div className={styles.fetchOptionList}>
+                  {picker.fetched.map((id) => (
+                    <Checkbox
+                      key={id}
+                      label={id}
+                      checked={picker.selected.has(id)}
+                      onChange={() => togglePickerSelection(id)}
+                      size="sm"
+                    />
+                  ))}
+                </div>
+                <div className={styles.fetchPanelFooter}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={applyPickerSelection}
+                    disabled={picker.selected.size === 0}
+                  >
+                    添加选中（{picker.selected.size}）
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </Field>
+
+          <Field
+            label="开启思考模式"
+            hint={
+              form.type === 'gemini'
+                ? '关闭后会向 Gemini 传入 thinkingConfig.thinkingBudget=0'
+                : '关闭后会向兼容 OpenAI 的接口追加 enable_thinking=false'
+            }
+          >
+            <Switch
+              checked={form.enableThinking ?? true}
+              onChange={(checked) => set('enableThinking', checked)}
+            />
           </Field>
 
           <Checkbox
