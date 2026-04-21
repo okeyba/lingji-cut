@@ -14,7 +14,7 @@ const CAPABILITIES: ImageProviderCapabilities = {
   maxN: 10,
   supportsImageToImage: false,
   isAsync: false,
-  defaultModels: ['gpt-image-1', 'dall-e-3'],
+  defaultModels: ['gpt-image-1', 'gpt-image-2', 'dall-e-3'],
 };
 
 const DEFAULT_BASE_URL = 'https://api.openai.com';
@@ -22,6 +22,16 @@ const DEFAULT_BASE_URL = 'https://api.openai.com';
 interface OpenAIApiResponse {
   data?: Array<{ b64_json?: string | null; url?: string | null } | null> | null;
   error?: { code?: string | null; message?: string | null } | null;
+}
+
+/** 将 provider 返回的 url 解析为可下载的绝对地址：相对路径按 baseUrl 拼接 */
+function resolveImageUrl(url: string | null | undefined, baseUrl: string): string | undefined {
+  if (!url) return undefined;
+  try {
+    return new URL(url, baseUrl).toString();
+  } catch {
+    return url;
+  }
 }
 
 function aspectRatioToSize(ar: ImageAspectRatio | undefined): string {
@@ -132,7 +142,7 @@ export const openaiImageProvider: ImageGenerationProvider = {
           if (item.b64_json) {
             return { base64: item.b64_json, mimeType: 'image/png' };
           }
-          return { url: item.url ?? undefined };
+          return { url: resolveImageUrl(item.url, baseUrl) };
         }),
       raw: payload,
     };

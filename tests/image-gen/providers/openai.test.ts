@@ -74,7 +74,7 @@ describe('openaiImageProvider', () => {
     expect(cap.maxN).toBe(10);
     expect(cap.supportsImageToImage).toBe(false);
     expect(cap.isAsync).toBe(false);
-    expect(cap.defaultModels).toEqual(['gpt-image-1', 'dall-e-3']);
+    expect(cap.defaultModels).toEqual(['gpt-image-1', 'gpt-image-2', 'dall-e-3']);
   });
 
   // ── 正常 b64_json 响应 ────────────────────────────────────────────────────
@@ -112,6 +112,34 @@ describe('openaiImageProvider', () => {
 
     expect(result.images).toHaveLength(1);
     expect(result.images[0].url).toBe('https://example.com/img.png');
+  });
+
+  it('相对路径 url：按 baseUrl 自动拼接为绝对地址', async () => {
+    mockFetchOk({
+      data: [{ url: '/p/img/img_31789a372f1d4361ba595ea3/0?exp=1776837437984&sig=feaf5b' }],
+    });
+
+    const result = await openaiImageProvider.generate(
+      makeReq(),
+      makeConfig({ baseUrl: 'http://127.0.0.1:8080' }),
+      makeCtx(),
+    );
+
+    expect(result.images[0].url).toBe(
+      'http://127.0.0.1:8080/p/img/img_31789a372f1d4361ba595ea3/0?exp=1776837437984&sig=feaf5b',
+    );
+  });
+
+  it('baseUrl 结尾斜杠与相对路径冲突：仍正确解析', async () => {
+    mockFetchOk({ data: [{ url: '/p/img/foo' }] });
+
+    const result = await openaiImageProvider.generate(
+      makeReq(),
+      makeConfig({ baseUrl: 'http://127.0.0.1:8080/' }),
+      makeCtx(),
+    );
+
+    expect(result.images[0].url).toBe('http://127.0.0.1:8080/p/img/foo');
   });
 
   // ── aspectRatio 映射 ──────────────────────────────────────────────────────

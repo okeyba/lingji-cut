@@ -50,7 +50,7 @@ const CAPABILITIES_SUMMARY: Record<ImageProviderType, CapabilitiesSummary> = {
     ratios: '1:1 / 16:9 / 9:16',
     maxN: 10,
     isAsync: false,
-    defaultModels: ['gpt-image-1', 'dall-e-3'],
+    defaultModels: ['gpt-image-1', 'gpt-image-2', 'dall-e-3'],
     defaultBaseUrl: 'https://api.openai.com',
   },
   minimax: {
