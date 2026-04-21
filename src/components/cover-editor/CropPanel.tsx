@@ -51,7 +51,7 @@ export function CropPanel({
     <aside className={styles.panel}>
       <div className={styles.header}>裁剪</div>
       <div className={styles.hint}>
-        拖拽画布上的蓝色框调整裁剪区域，或选择下方比例锁定。
+        先在画布上点击图片选中，再切换到裁剪工具，将对选中的图层直接裁剪；未选择时默认裁剪背景图。拖拽蓝色裁剪框调整区域，可选择下方比例锁定。
       </div>
 
       <div className={styles.section}>

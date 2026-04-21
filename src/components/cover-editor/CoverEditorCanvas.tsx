@@ -49,7 +49,9 @@ export const CoverEditorCanvas = forwardRef<CoverEditorCanvasHandle, CoverEditor
       initialEdits?.filters?.preset ?? 'none',
     );
     const cropRectRef = useRef<Rect | null>(null);
-    /** 进入裁剪模式时暂存的 clipPath，便于取消时恢复 */
+    /** 当前被裁剪的目标图像对象（通常就是背景图） */
+    const cropTargetRef = useRef<FabricImage | null>(null);
+    /** 进入裁剪模式时暂存的 clipPath（比例预设），便于取消/应用后恢复 */
     const prevClipPathRef = useRef<Rect | undefined>(undefined);
     /** 裁剪模式下的锁定宽高比；null = 自由 */
     const cropAspectRef = useRef<number | null>(null);
@@ -70,7 +72,6 @@ export const CoverEditorCanvas = forwardRef<CoverEditorCanvasHandle, CoverEditor
       FabricImage.fromURL(toFileSrc(cleanPath), { crossOrigin: 'anonymous' }).then((img) => {
         if (!fabricRef.current) return;
         bgImageRef.current = img;
-        img.set({ selectable: false, evented: false });
         const scale = Math.min(
           CANVAS_WIDTH / (img.width ?? CANVAS_WIDTH),
           CANVAS_HEIGHT / (img.height ?? CANVAS_HEIGHT),
@@ -79,6 +80,16 @@ export const CoverEditorCanvas = forwardRef<CoverEditorCanvasHandle, CoverEditor
         img.set({
           left: (CANVAS_WIDTH - (img.width ?? 0) * scale) / 2,
           top: (CANVAS_HEIGHT - (img.height ?? 0) * scale) / 2,
+          // 允许用户点击图片选中、移动、缩放（类 Photoshop 图层操作）
+          selectable: true,
+          evented: true,
+          hasControls: true,
+          hasBorders: true,
+          borderColor: 'rgba(10, 132, 255, 0.9)',
+          cornerColor: '#0A84FF',
+          cornerStyle: 'circle',
+          cornerSize: 10,
+          transparentCorners: false,
         });
         canvas.add(img);
         canvas.sendObjectToBack(img);
@@ -219,8 +230,25 @@ export const CoverEditorCanvas = forwardRef<CoverEditorCanvasHandle, CoverEditor
     useImperativeHandle(ref, (): CoverEditorCanvasHandle => ({
       setAspectRatio(ratio) {
         ratioRef.current = ratio;
-        // 切换比例时退出裁剪交互
-        clearCropRect();
+        // 若当前处于裁剪模式：不立即改动画布 clipPath（以免破坏裁剪 UI），
+        // 仅更新 prevClipPathRef，让退出/应用裁剪时落地为新比例。
+        if (cropRectRef.current) {
+          const canvas = fabricRef.current;
+          if (!canvas) return;
+          if (!ratio) {
+            prevClipPathRef.current = undefined;
+            return;
+          }
+          const size = computeClipSize(ratio, CANVAS_WIDTH, CANVAS_HEIGHT);
+          prevClipPathRef.current = new Rect({
+            left: (CANVAS_WIDTH - size.width) / 2,
+            top: (CANVAS_HEIGHT - size.height) / 2,
+            width: size.width,
+            height: size.height,
+            absolutePositioned: true,
+          });
+          return;
+        }
         applyClipPath(ratio);
         pushSnapshot();
         emitChange();
@@ -320,18 +348,38 @@ export const CoverEditorCanvas = forwardRef<CoverEditorCanvasHandle, CoverEditor
       enterCropMode() {
         const canvas = fabricRef.current;
         if (!canvas) return;
-        // 暂存当前 clipPath，便于取消时恢复
+
+        // 决定裁剪目标：当前选中的图片（若是 image 类型），否则回落到背景图
+        const active = canvas.getActiveObject();
+        const target: FabricImage | null =
+          active && active.type === 'image'
+            ? (active as FabricImage)
+            : bgImageRef.current;
+        if (!target) return;
+        cropTargetRef.current = target;
+
+        // 暂存当前 canvas.clipPath（比例预设遮罩），裁剪期间隐藏以便看全图
         prevClipPathRef.current = canvas.clipPath as Rect | undefined;
-        // 以当前 clipPath 为初始裁剪框；若无则用 80% 画布
-        const current = prevClipPathRef.current;
-        const defaultW = current?.width ?? CANVAS_WIDTH * 0.8;
-        const defaultH = current?.height ?? CANVAS_HEIGHT * 0.8;
-        const defaultL = current?.left ?? (CANVAS_WIDTH - defaultW) / 2;
-        const defaultT = current?.top ?? (CANVAS_HEIGHT - defaultH) / 2;
+        canvas.clipPath = undefined;
+
+        // 锁定目标图层交互，避免用户误拖图片
+        target.set({ selectable: false, evented: false });
+        canvas.discardActiveObject();
+
+        // 计算目标图像在画布上的可视边界
+        const imgL = target.left ?? 0;
+        const imgT = target.top ?? 0;
+        const displayW = (target.width ?? 0) * (target.scaleX ?? 1);
+        const displayH = (target.height ?? 0) * (target.scaleY ?? 1);
+
+        // 默认裁剪框：图像 80% 区域，居中
+        const defaultW = displayW * 0.8;
+        const defaultH = displayH * 0.8;
+        const defaultL = imgL + (displayW - defaultW) / 2;
+        const defaultT = imgT + (displayH - defaultH) / 2;
+
         clearCropRect();
         cropAspectRef.current = null;
-        // 裁剪时先移除 clipPath 以便用户看到完整图预览
-        canvas.clipPath = undefined;
         const rect = new Rect({
           left: defaultL,
           top: defaultT,
@@ -348,18 +396,16 @@ export const CoverEditorCanvas = forwardRef<CoverEditorCanvasHandle, CoverEditor
           lockRotation: true,
         });
 
-        // 比例锁：用户缩放裁剪框时如果锁定了比例，按比例约束最终 width/height
+        // 比例锁：用户缩放时按比例约束 scaleY
         rect.on('scaling', () => {
           const ratio = cropAspectRef.current;
           if (!ratio) return;
           const sx = rect.scaleX ?? 1;
-          const sy = rect.scaleY ?? 1;
           const baseW = rect.width ?? 0;
           const baseH = rect.height ?? 0;
           const currentW = baseW * sx;
-          // 以宽度为主，根据比例算高度
           const targetH = currentW / ratio;
-          const targetSy = baseH > 0 ? targetH / baseH : sy;
+          const targetSy = baseH > 0 ? targetH / baseH : rect.scaleY ?? 1;
           rect.set({ scaleY: targetSy });
         });
 
@@ -370,31 +416,75 @@ export const CoverEditorCanvas = forwardRef<CoverEditorCanvasHandle, CoverEditor
       },
       exitCropMode() {
         const canvas = fabricRef.current;
+        const target = cropTargetRef.current;
         clearCropRect();
         cropAspectRef.current = null;
-        // 恢复进入裁剪前的 clipPath
+        if (target) {
+          // 恢复目标图像可交互
+          target.set({ selectable: true, evented: true });
+        }
         if (canvas) {
+          // 恢复进入裁剪前的 clipPath（比例预设遮罩）
           canvas.clipPath = prevClipPathRef.current;
           canvas.requestRenderAll();
         }
+        cropTargetRef.current = null;
         prevClipPathRef.current = undefined;
       },
       commitCrop() {
         const canvas = fabricRef.current;
         const rect = cropRectRef.current;
-        if (!canvas || !rect) return;
-        const finalClip = new Rect({
-          left: rect.left ?? 0,
-          top: rect.top ?? 0,
-          width: (rect.width ?? 0) * (rect.scaleX ?? 1),
-          height: (rect.height ?? 0) * (rect.scaleY ?? 1),
-          absolutePositioned: true,
+        const img = cropTargetRef.current;
+        if (!canvas || !rect || !img) return;
+
+        const rectL = rect.left ?? 0;
+        const rectT = rect.top ?? 0;
+        const rectW = (rect.width ?? 0) * (rect.scaleX ?? 1);
+        const rectH = (rect.height ?? 0) * (rect.scaleY ?? 1);
+
+        // 将画布坐标系的裁剪矩形转换到图像"未缩放前"的局部坐标
+        const imgL = img.left ?? 0;
+        const imgT = img.top ?? 0;
+        const imgSx = img.scaleX ?? 1;
+        const imgSy = img.scaleY ?? 1;
+
+        const localX = (rectL - imgL) / imgSx;
+        const localY = (rectT - imgT) / imgSy;
+        const localW = rectW / imgSx;
+        const localH = rectH / imgSy;
+
+        // 夹到图像当前 width/height 范围内，防止越界
+        const curW = img.width ?? 0;
+        const curH = img.height ?? 0;
+        const clampedX = Math.max(0, Math.min(localX, curW));
+        const clampedY = Math.max(0, Math.min(localY, curH));
+        const clampedW = Math.max(1, Math.min(localW, curW - clampedX));
+        const clampedH = Math.max(1, Math.min(localH, curH - clampedY));
+
+        // Fabric Image 的裁剪语义：cropX/cropY 是源图像偏移；多次裁剪要累加
+        const prevCropX = img.cropX ?? 0;
+        const prevCropY = img.cropY ?? 0;
+
+        img.set({
+          cropX: prevCropX + clampedX,
+          cropY: prevCropY + clampedY,
+          width: clampedW,
+          height: clampedH,
+          // 图像落位到裁剪框位置，视觉上"原地"被裁剪
+          left: rectL,
+          top: rectT,
+          selectable: true,
+          evented: true,
         });
-        canvas.clipPath = finalClip;
+        img.setCoords();
+
         clearCropRect();
+        // 恢复比例预设遮罩
+        if (prevClipPathRef.current) canvas.clipPath = prevClipPathRef.current;
         cropAspectRef.current = null;
+        cropTargetRef.current = null;
         prevClipPathRef.current = undefined;
-        ratioRef.current = null; // 自定义裁剪后脱离预设比例
+
         canvas.requestRenderAll();
         pushSnapshot();
         emitChange();
@@ -403,23 +493,31 @@ export const CoverEditorCanvas = forwardRef<CoverEditorCanvasHandle, CoverEditor
         cropAspectRef.current = ratio;
         const canvas = fabricRef.current;
         const rect = cropRectRef.current;
-        if (!canvas || !rect) return;
+        const img = cropTargetRef.current;
+        if (!canvas || !rect || !img) return;
         if (ratio) {
-          // 按比例调整矩形：保持当前宽度，重算高度；若超出画布则按高度反推宽度
+          // 按比例调整矩形：约束在目标图像可视边界内
+          const imgL = img.left ?? 0;
+          const imgT = img.top ?? 0;
+          const imgW = (img.width ?? 0) * (img.scaleX ?? 1);
+          const imgH = (img.height ?? 0) * (img.scaleY ?? 1);
+
           const curL = rect.left ?? 0;
           const curT = rect.top ?? 0;
           const curW = (rect.width ?? 0) * (rect.scaleX ?? 1);
+
           let nextW = curW;
           let nextH = nextW / ratio;
-          if (curT + nextH > CANVAS_HEIGHT) {
-            nextH = Math.max(40, CANVAS_HEIGHT - curT);
+          // 超出图像底部：按剩余高度反推宽度
+          if (curT + nextH > imgT + imgH) {
+            nextH = Math.max(40, imgT + imgH - curT);
             nextW = nextH * ratio;
           }
-          if (curL + nextW > CANVAS_WIDTH) {
-            nextW = Math.max(40, CANVAS_WIDTH - curL);
+          // 超出图像右边界：按剩余宽度重算高度
+          if (curL + nextW > imgL + imgW) {
+            nextW = Math.max(40, imgL + imgW - curL);
             nextH = nextW / ratio;
           }
-          // 用绝对尺寸重设（scaleX/Y 归 1）
           rect.set({ width: nextW, height: nextH, scaleX: 1, scaleY: 1 });
           rect.setCoords();
         }
@@ -440,7 +538,7 @@ export const CoverEditorCanvas = forwardRef<CoverEditorCanvasHandle, CoverEditor
       exportDataUrl() {
         const canvas = fabricRef.current;
         if (!canvas) return '';
-        // 如果当前存在 clipPath（比例预设或自定义裁剪），导出时仅保留 clipPath 区域
+        // 优先使用画布的 clipPath（比例预设遮罩）作为导出边界
         const clip = canvas.clipPath as Rect | undefined;
         if (clip && typeof clip.left === 'number' && typeof clip.top === 'number') {
           return canvas.toDataURL({
@@ -450,6 +548,18 @@ export const CoverEditorCanvas = forwardRef<CoverEditorCanvasHandle, CoverEditor
             top: clip.top,
             width: (clip.width ?? 0) * (clip.scaleX ?? 1),
             height: (clip.height ?? 0) * (clip.scaleY ?? 1),
+          });
+        }
+        // 无比例预设时：按背景图的可视边界导出（反映 Photoshop 式裁剪后的真实画面）
+        const img = bgImageRef.current;
+        if (img && typeof img.left === 'number' && typeof img.top === 'number') {
+          return canvas.toDataURL({
+            format: 'png',
+            multiplier: 2,
+            left: img.left,
+            top: img.top,
+            width: (img.width ?? 0) * (img.scaleX ?? 1),
+            height: (img.height ?? 0) * (img.scaleY ?? 1),
           });
         }
         return canvas.toDataURL({ format: 'png', multiplier: 2 });
