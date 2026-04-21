@@ -11,6 +11,7 @@ import {
 } from '../../lib/cover-editor/cover-edit-state';
 import { getPresetAdjustments } from '../../lib/cover-editor/filters';
 import { computeClipSize } from '../../lib/cover-editor/aspect-ratios';
+import { toFileSrc } from '../../lib/utils';
 import type { CoverEditState, FilterPreset } from '../../lib/cover-editor/contracts';
 
 interface CoverEditorCanvasProps {
@@ -44,7 +45,9 @@ export const CoverEditorCanvas = forwardRef<CoverEditorCanvasHandle, CoverEditor
       });
       fabricRef.current = canvas;
 
-      FabricImage.fromURL(imageUrl, { crossOrigin: 'anonymous' }).then((img) => {
+      // 剥离 cache-bust query（如 ?v=timestamp），避免 toFileSrc 把 ? 编码破坏 file:// 路径
+      const cleanPath = imageUrl.split('?')[0];
+      FabricImage.fromURL(toFileSrc(cleanPath), { crossOrigin: 'anonymous' }).then((img) => {
         if (!fabricRef.current) return;
         bgImageRef.current = img;
         img.set({ selectable: false, evented: false });

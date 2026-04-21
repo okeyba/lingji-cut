@@ -1,59 +1,46 @@
-.backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.modal {
+.dialogContent {
   width: min(1280px, 92vw);
   height: 84vh;
-  background: var(--color-surface-primary);
-  border-radius: 16px;
-  overflow: hidden;
+  max-height: 84vh;
+  max-width: 92vw;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.4);
+  padding: 0;
+  overflow: hidden;
 }
-
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 12px 20px;
   border-bottom: 1px solid var(--color-border-secondary);
+  gap: 12px;
+  flex-shrink: 0;
 }
-
 .title {
   font-size: 13px;
   font-weight: 600;
   color: var(--color-text-primary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
 .headerActions {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
-
 .aspectSelect {
-  padding: 6px 10px;
-  border: 1px solid var(--color-border-secondary);
-  border-radius: 6px;
-  background: var(--color-surface-secondary);
-  color: var(--color-text-primary);
-  font-size: 12px;
+  min-width: 180px;
 }
-
 .saveSplit {
   position: relative;
   display: flex;
   gap: 0;
 }
-
 .saveMenu {
   position: absolute;
   top: calc(100% + 4px);
@@ -66,7 +53,6 @@
   overflow: hidden;
   z-index: 20;
 }
-
 .saveMenu button {
   display: block;
   width: 100%;
@@ -78,17 +64,14 @@
   text-align: left;
   cursor: pointer;
 }
-
 .saveMenu button:hover {
   background: var(--color-surface-secondary);
 }
-
 .body {
   flex: 1;
   display: flex;
   min-height: 0;
 }
-
 .canvasArea {
   flex: 1;
   display: flex;

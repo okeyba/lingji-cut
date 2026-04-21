@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button } from '../ui';
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  Select,
+  type SelectOption,
+} from '../ui';
 import { AppIcon } from './AppIcon';
 import { CoverEditorCanvas } from './cover-editor/CoverEditorCanvas';
 import type { CoverEditorCanvasHandle } from '../lib/cover-editor/fabric-bridge';
@@ -78,10 +84,6 @@ export function CoverEditorModal({
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        handleCancel();
-        return;
-      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         if (e.shiftKey) canvasRef.current?.redo();
         else canvasRef.current?.undo();
@@ -90,7 +92,7 @@ export function CoverEditorModal({
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, handleCancel]);
+  }, [open]);
 
   function handleAspectChange(next: AspectRatioPreset) {
     setPreset(next);
@@ -118,33 +120,41 @@ export function CoverEditorModal({
     onSaveRequested({ mode, dataUrl, edits: { ...edits, aspectRatio: preset } });
   }
 
-  if (!open) return null;
+  const aspectOptions: SelectOption[] = useMemo(
+    () =>
+      ASPECT_RATIO_PRESETS.map((p) => ({
+        value: p.id,
+        label:
+          p.id === 'timeline'
+            ? `时间线 ${timelineSize.width}×${timelineSize.height}`
+            : p.label,
+      })),
+    [timelineSize.width, timelineSize.height],
+  );
 
   const adjustments = getPresetAdjustments(filterPreset);
 
   return (
-    <div className={styles.backdrop} role="dialog" aria-modal="true">
-      <div className={styles.modal}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) handleCancel();
+      }}
+    >
+      <DialogContent size="full" className={styles.dialogContent}>
         <header className={styles.header}>
           <div className={styles.title}>
             编辑封面 · {prompt.slice(0, 24) || '未命名'}
           </div>
           <div className={styles.headerActions}>
-            <select
-              className={styles.aspectSelect}
+            <Select
               value={preset}
+              options={aspectOptions}
               onChange={(e) =>
                 handleAspectChange(e.target.value as AspectRatioPreset)
               }
-            >
-              {ASPECT_RATIO_PRESETS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.id === 'timeline'
-                    ? `时间线 ${timelineSize.width}×${timelineSize.height}`
-                    : p.label}
-                </option>
-              ))}
-            </select>
+              controlClassName={styles.aspectSelect}
+            />
             <Button variant="ghost" size="sm" onClick={handleCancel}>
               取消
             </Button>
@@ -206,7 +216,9 @@ export function CoverEditorModal({
             <CoverEditorCanvas
               ref={canvasRef}
               imageUrl={imageUrl}
-              initialEdits={initialEdits ? normalizeEditState(initialEdits) : undefined}
+              initialEdits={
+                initialEdits ? normalizeEditState(initialEdits) : undefined
+              }
               initialAspectRatio={initialRatio}
               onChange={() => setDirty(true)}
             />
@@ -248,7 +260,7 @@ export function CoverEditorModal({
             />
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

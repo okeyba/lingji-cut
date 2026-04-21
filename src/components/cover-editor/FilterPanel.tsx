@@ -1,9 +1,15 @@
+import { Button, Slider } from '../../ui';
 import styles from './FilterPanel.module.css';
 import type { FilterPreset } from '../../lib/cover-editor/contracts';
 
 interface FilterPanelProps {
   preset: FilterPreset;
-  adjustments: { brightness: number; contrast: number; saturation: number; temperature: number };
+  adjustments: {
+    brightness: number;
+    contrast: number;
+    saturation: number;
+    temperature: number;
+  };
   onPresetChange: (preset: FilterPreset) => void;
   onAdjustmentChange: (
     key: 'brightness' | 'contrast' | 'saturation' | 'temperature',
@@ -42,14 +48,15 @@ export function FilterPanel({
         <div className={styles.sectionTitle}>滤镜预设</div>
         <div className={styles.presetGrid}>
           {PRESETS.map((p) => (
-            <button
+            <Button
               key={p.id}
               type="button"
-              className={preset === p.id ? styles.presetActive : styles.preset}
+              size="sm"
+              variant={preset === p.id ? 'primary' : 'secondary'}
               onClick={() => onPresetChange(p.id)}
             >
               {p.label}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -57,17 +64,18 @@ export function FilterPanel({
       <div className={styles.section}>
         <div className={styles.sectionTitle}>手动调整</div>
         {SLIDERS.map((s) => (
-          <label key={s.key} className={styles.slider}>
-            <span>{s.label}</span>
-            <input
-              type="range"
+          <div key={s.key} className={styles.slider}>
+            <span className={styles.sliderLabel}>{s.label}</span>
+            <Slider
+              size="sm"
               min={-100}
               max={100}
+              step={1}
               value={adjustments[s.key]}
-              onChange={(e) => onAdjustmentChange(s.key, Number(e.target.value))}
+              onChange={(v) => onAdjustmentChange(s.key, v)}
             />
             <span className={styles.value}>{adjustments[s.key]}</span>
-          </label>
+          </div>
         ))}
       </div>
     </div>
