@@ -68,6 +68,8 @@
     "date-fns": "^3.6.0",
     "diff": "^8.0.4",
     "diff-match-patch": "^1.0.5",
+    "fabric": "^6.9.1",
+    "font-list": "^1.6.0",
     "framer-motion": "^12.38.0",
     "lucide-react": "^0.556.0",
     "node-pty": "^1.1.0",
