@@ -1219,22 +1219,31 @@ export function Timeline({
                 overflow: 'hidden',
               },
             )}
-            <div
-              className={styles.lockedLaneOverlay}
-              style={{
-                marginTop: -audioTrackHeight,
-                marginLeft: sidebarWidth,
-                width: Math.max(0, Math.round(visualEndMs * pxPerMs)),
-                height: audioTrackHeight,
-              }}
-            >
-              <TimelineAudioWaveform
-                audioPath={timeline.podcast.audioPath}
-                durationMs={durationMs}
-                trackWidth={Math.max(0, Math.round(visualEndMs * pxPerMs))}
-                trackHeight={audioTrackHeight}
-              />
-            </div>
+            {(() => {
+              // 主口播波形只能覆盖音频真实时长；若按 visualEndMs / durationMs
+              // 铺开，overlay 追加到末尾后波形会被拉伸到整个延长段，造成
+              // "音频继续播放"的视觉误导。
+              const podcastDurationMs = Math.max(0, timeline.podcast.durationMs ?? 0);
+              const podcastWidth = Math.max(0, Math.round(podcastDurationMs * pxPerMs));
+              return (
+                <div
+                  className={styles.lockedLaneOverlay}
+                  style={{
+                    marginTop: -audioTrackHeight,
+                    marginLeft: sidebarWidth,
+                    width: podcastWidth,
+                    height: audioTrackHeight,
+                  }}
+                >
+                  <TimelineAudioWaveform
+                    audioPath={timeline.podcast.audioPath}
+                    durationMs={podcastDurationMs}
+                    trackWidth={podcastWidth}
+                    trackHeight={audioTrackHeight}
+                  />
+                </div>
+              );
+            })()}
 
             {renderLaneBase(
               timeline.tracks[1],
