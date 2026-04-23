@@ -137,11 +137,6 @@ let fileWatcher: FSWatcher | null = null;
 const activeTtsRequests = new Map<string, AbortController>();
 let isAppQuitting = false;
 const videoImportService = getVideoImportService();
-videoImportService.onProgress((snapshot) => {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send('douyin-import-progress', snapshot);
-  }
-});
 let appConfig: ResolvedAppConfig | null = null;
 const remotionBinariesDirectory = resolveRemotionRendererBinariesDir();
 
@@ -2204,6 +2199,12 @@ app.whenReady().then(async () => {
     writeAppLog('warn', 'user-prompts', '迁移旧口播模板失败', String(err));
   }
   createWindow();
+  // 在 whenReady 内订阅，避免 electron-vite 开发模式下主模块 HMR 重新执行
+  // 时多次叠加监听器；广播只发给 mainWindow，与其他通道（analyze-progress /
+  // cover-progress / menu-action / app-log）保持一致。
+  videoImportService.onProgress((snapshot) => {
+    mainWindow?.webContents.send('douyin-import-progress', snapshot);
+  });
   // 启动 MCP Server
   try {
     await startMcpServer(19820, () => mainWindow);
