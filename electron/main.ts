@@ -132,6 +132,7 @@ let menuContext: MenuContext = {
   activePage: 'welcome',
   hasProject: false,
   recentProjects: [],
+  isAutoRunning: false,
 };
 let fileWatcher: FSWatcher | null = null;
 const activeTtsRequests = new Map<string, AbortController>();
@@ -1254,6 +1255,7 @@ ipcMain.handle('set-menu-context', async (_event, context: MenuContext) => {
             name: project.name || path.basename(project.path),
           }))
       : [],
+    isAutoRunning: Boolean(context.isAutoRunning),
   };
 
   refreshApplicationMenu();

@@ -15,6 +15,7 @@ interface ApplicationMenuHandlers {
 function createRecentProjectsSubmenu(
   recentProjects: MenuContext['recentProjects'],
   sendMenuEvent: (event: MenuEvent) => void,
+  isAutoRunning: boolean,
 ): MenuItemConstructorOptions[] {
   if (recentProjects.length === 0) {
     return [
@@ -28,6 +29,7 @@ function createRecentProjectsSubmenu(
   return recentProjects.map((project) => ({
     label: project.name,
     toolTip: project.path,
+    enabled: !isAutoRunning,
     click: () =>
       sendMenuEvent({
         type: 'open-recent-project',
@@ -46,6 +48,9 @@ export function createApplicationMenuTemplate(
     onOpenLogDirectory: handlers?.onOpenLogDirectory ?? (() => sendMenuEvent({ type: 'command', action: 'open-settings' })),
     onExportLogs: handlers?.onExportLogs ?? (() => sendMenuEvent({ type: 'command', action: 'open-settings' })),
   };
+  // 一键成稿运行中：禁用大部分会触发副作用 / 跳页 / 写文件的菜单项，
+  // 仅保留帮助、开发者工具与退出等无破坏性的入口。
+  const isAutoRunning = Boolean(context.isAutoRunning);
   const template: MenuItemConstructorOptions[] = [
     {
       label: '项目',
@@ -53,6 +58,7 @@ export function createApplicationMenuTemplate(
         {
           label: '新建项目',
           accelerator: 'CmdOrCtrl+N',
+          enabled: !isAutoRunning,
           click: () =>
             sendMenuEvent({
               type: 'command',
@@ -62,6 +68,7 @@ export function createApplicationMenuTemplate(
         {
           label: '打开项目',
           accelerator: 'CmdOrCtrl+O',
+          enabled: !isAutoRunning,
           click: () =>
             sendMenuEvent({
               type: 'command',
@@ -70,12 +77,18 @@ export function createApplicationMenuTemplate(
         },
         {
           label: '最近项目',
-          submenu: createRecentProjectsSubmenu(context.recentProjects, sendMenuEvent),
+          enabled: !isAutoRunning,
+          submenu: createRecentProjectsSubmenu(
+            context.recentProjects,
+            sendMenuEvent,
+            isAutoRunning,
+          ),
         },
         { type: 'separator' },
         {
           label: '全局设置',
           accelerator: 'CmdOrCtrl+,',
+          enabled: !isAutoRunning,
           click: () =>
             sendMenuEvent({
               type: 'command',
@@ -87,7 +100,7 @@ export function createApplicationMenuTemplate(
           ? {
               label: '关闭项目',
               accelerator: 'CmdOrCtrl+W',
-              enabled: true,
+              enabled: !isAutoRunning,
               click: () =>
                 sendMenuEvent({
                   type: 'command',
@@ -97,11 +110,12 @@ export function createApplicationMenuTemplate(
           : {
               label: '关闭窗口',
               accelerator: 'CmdOrCtrl+W',
+              enabled: !isAutoRunning,
               role: 'close',
             },
         {
           label: '在 Finder 中显示',
-          enabled: context.hasProject,
+          enabled: context.hasProject && !isAutoRunning,
           click: () =>
             sendMenuEvent({
               type: 'command',
@@ -119,25 +133,27 @@ export function createApplicationMenuTemplate(
     {
       label: '编辑',
       submenu: [
-        { label: '撤销', role: 'undo' },
-        { label: '重做', role: 'redo' },
+        { label: '撤销', role: 'undo', enabled: !isAutoRunning },
+        { label: '重做', role: 'redo', enabled: !isAutoRunning },
         { type: 'separator' },
-        { label: '剪切', role: 'cut' },
-        { label: '复制', role: 'copy' },
-        { label: '粘贴', role: 'paste' },
-        { label: '全选', role: 'selectAll' },
+        { label: '剪切', role: 'cut', enabled: !isAutoRunning },
+        { label: '复制', role: 'copy', enabled: !isAutoRunning },
+        { label: '粘贴', role: 'paste', enabled: !isAutoRunning },
+        { label: '全选', role: 'selectAll', enabled: !isAutoRunning },
         ...(context.activePage === 'script-workbench'
           ? [
               { type: 'separator' as const },
               {
                 label: '搜索',
                 accelerator: 'CmdOrCtrl+F',
+                enabled: !isAutoRunning,
                 click: () =>
                   sendMenuEvent({ type: 'command', action: 'find' }),
               },
               {
                 label: '搜索与替换',
                 accelerator: 'CmdOrCtrl+H',
+                enabled: !isAutoRunning,
                 click: () =>
                   sendMenuEvent({ type: 'command', action: 'find-replace' }),
               },
@@ -150,6 +166,7 @@ export function createApplicationMenuTemplate(
       submenu: [
         {
           label: '替换音频',
+          enabled: !isAutoRunning,
           click: () =>
             sendMenuEvent({
               type: 'command',
@@ -158,6 +175,7 @@ export function createApplicationMenuTemplate(
         },
         {
           label: '替换字幕',
+          enabled: !isAutoRunning,
           click: () =>
             sendMenuEvent({
               type: 'command',
@@ -166,6 +184,7 @@ export function createApplicationMenuTemplate(
         },
         {
           label: '添加素材',
+          enabled: !isAutoRunning,
           click: () =>
             sendMenuEvent({
               type: 'command',
@@ -175,6 +194,7 @@ export function createApplicationMenuTemplate(
         {
           label: '导出 MP4',
           accelerator: 'CmdOrCtrl+E',
+          enabled: !isAutoRunning,
           click: () =>
             sendMenuEvent({
               type: 'command',
@@ -200,6 +220,7 @@ export function createApplicationMenuTemplate(
         {
           label: '保存',
           accelerator: 'CmdOrCtrl+S',
+          enabled: !isAutoRunning,
           click: () =>
             sendMenuEvent({
               type: 'command',
@@ -208,6 +229,7 @@ export function createApplicationMenuTemplate(
         },
         {
           label: '返回主页',
+          enabled: !isAutoRunning,
           click: () =>
             sendMenuEvent({
               type: 'command',

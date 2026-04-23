@@ -75,6 +75,11 @@ export interface MenuContext {
   activePage: AppPage;
   hasProject: boolean;
   recentProjects: MenuRecentProject[];
+  /**
+   * 一键成稿（auto-run）页运行中。开启后菜单项会被禁用、
+   * 全局快捷键被屏蔽，避免在自动流程中触发副作用操作。
+   */
+  isAutoRunning?: boolean;
 }
 
 export type MenuEvent =

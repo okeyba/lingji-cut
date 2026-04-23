@@ -526,6 +526,8 @@ export default function App() {
         path: project.path,
         name: project.name,
       })),
+      // 一键成稿运行中：菜单项需要按禁用态渲染，避免误触
+      isAutoRunning: page === 'auto-run',
     });
   }, [currentProjectDir, page, recentProjects]);
 
@@ -850,6 +852,12 @@ export default function App() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      // 一键成稿运行中：屏蔽全部全局快捷键，避免触发撤销 / 重做 /
+      // 关闭项目 / 切换 Agent 侧栏等可能干扰自动流程的操作
+      if (page === 'auto-run') {
+        return;
+      }
+
       // Cmd+Shift+A 切换 Agent 侧边栏
       if (event.metaKey && event.shiftKey && event.key === 'a') {
         event.preventDefault();
@@ -875,7 +883,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentProjectDir, handleCommand]);
+  }, [currentProjectDir, handleCommand, page]);
 
   const handleSetupComplete = async (audioPath: string, srtPath: string) => {
     setIsSettingUp(true);
