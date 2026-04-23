@@ -25,7 +25,7 @@ import type {
   UserPromptSeed,
 } from './prompts';
 
-export type AppPage = 'welcome' | 'setup' | 'editor' | 'script-workbench' | 'settings';
+export type AppPage = 'welcome' | 'setup' | 'editor' | 'script-workbench' | 'settings' | 'auto-run';
 
 export interface FileEntry {
   name: string;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { useAIStore } from '../src/store/ai';
 import type { WorkflowStep } from '../src/store/ai';
+import type { AppPage } from '../src/lib/electron-api';
 
 describe('WorkflowStep type extensions', () => {
   it('accepts script_generating and douyin_importing as valid steps', () => {
@@ -21,5 +22,12 @@ describe('AIStore.pendingAutoParams', () => {
     expect(useAIStore.getState().pendingAutoParams?.voiceId).toBe('female-shaonv');
     useAIStore.getState().setPendingAutoParams(null);
     expect(useAIStore.getState().pendingAutoParams).toBeNull();
+  });
+});
+
+describe('AppPage type extension', () => {
+  it('accepts auto-run', () => {
+    const p: AppPage = 'auto-run';
+    expect(p).toBe('auto-run');
   });
 });
