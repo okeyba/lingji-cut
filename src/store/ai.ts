@@ -30,6 +30,8 @@ import { getCurrentProjectDir } from './timeline';
 
 export type WorkflowStep =
   | 'idle'
+  | 'douyin_importing'
+  | 'script_generating'
   | 'tts_generating'
   | 'tts_done'
   | 'ai_analyzing'
@@ -37,6 +39,12 @@ export type WorkflowStep =
   | 'arranging'
   | 'done'
   | 'error';
+
+export interface AutoWorkflowParams {
+  templateId: string;
+  roleId: string;
+  voiceId: string;
+}
 
 export interface WorkflowState {
   step: WorkflowStep;
@@ -94,6 +102,8 @@ export interface AIStore {
   motionCards: AICard[];
   isGeneratingMotion: boolean;
   motionError: string | null;
+  pendingAutoParams: AutoWorkflowParams | null;
+  setPendingAutoParams: (params: AutoWorkflowParams | null) => void;
   storyboardPlan: AIStoryboardPlan | null;
   isPlanningStoryboard: boolean;
   storyboardError: string | null;
@@ -158,6 +168,7 @@ export const useAIStore = create<AIStore>((set, get) => ({
   motionCards: [],
   isGeneratingMotion: false,
   motionError: null,
+  pendingAutoParams: null,
   storyboardPlan: null,
   isPlanningStoryboard: false,
   storyboardError: null,
@@ -337,6 +348,7 @@ export const useAIStore = create<AIStore>((set, get) => ({
     })),
   setGeneratingMotion: (generating) => set({ isGeneratingMotion: generating }),
   setMotionError: (error) => set({ motionError: error }),
+  setPendingAutoParams: (params) => set({ pendingAutoParams: params }),
   setPlanningStoryboard: (planning) => set({ isPlanningStoryboard: planning }),
   setStoryboardError: (error) =>
     set((state) => ({
