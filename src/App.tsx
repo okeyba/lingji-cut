@@ -585,9 +585,8 @@ export default function App() {
       parentDir: string,
       projectName: string,
       content: string,
-      // Task 7 仅同步签名以保证类型可编译，autoMode/autoParams 的实际行为由 Task 8 实现
-      _autoMode: boolean,
-      _autoParams: AutoWorkflowParams,
+      autoMode: boolean,
+      autoParams: AutoWorkflowParams,
     ) => {
       const trimmedName = projectName.trim();
       if (!parentDir || !trimmedName) {
@@ -608,9 +607,20 @@ export default function App() {
       await window.electronAPI.addRecentProject(projectDir);
       void syncWorkspaceState();
       setSetupError(null);
+
+      if (autoMode) {
+        useAIStore.getState().setPendingAutoParams(autoParams);
+        // 把原稿先落盘，AutoRunOverlay 起跑时直接读 originalText
+        await window.electronAPI.saveScriptFile(projectDir, 'original.md', content);
+        // 同时清掉 pending，否则进 ScriptWorkbench 时会被原写稿流程消费
+        useScriptStore.getState().setPendingImportedScript(null);
+        setPage('auto-run');
+        return;
+      }
+
       setPage('script-workbench');
     },
-    [clearAIAnalysis, setSrtEntries, setTimeline, syncWorkspaceState],
+    [clearAIAnalysis, setPage, setSrtEntries, setTimeline, syncWorkspaceState],
   );
 
   /**
@@ -622,9 +632,8 @@ export default function App() {
     parentDir: string,
     title: string,
     douyinUrl: string,
-    // Task 7 仅同步签名以保证类型可编译，autoMode/autoParams 的实际行为由 Task 8 实现
-    _autoMode: boolean,
-    _autoParams: AutoWorkflowParams,
+    autoMode: boolean,
+    autoParams: AutoWorkflowParams,
   ) => {
     const projectDir = `${parentDir}/${title}`;
 
@@ -641,8 +650,14 @@ export default function App() {
     await window.electronAPI.addRecentProject(projectDir);
     void syncWorkspaceState();
     setSetupError(null);
+
+    if (autoMode) {
+      useAIStore.getState().setPendingAutoParams(autoParams);
+      setPage('auto-run');
+      return;
+    }
     setPage('script-workbench');
-  }, [clearAIAnalysis, setSrtEntries, setTimeline, syncWorkspaceState]);
+  }, [clearAIAnalysis, setPage, setSrtEntries, setTimeline, syncWorkspaceState]);
 
   const handleCloseProject = useCallback(() => {
     clearCurrentProject();
@@ -1045,6 +1060,18 @@ export default function App() {
                 />
               ) : page === 'settings' ? (
                 <Settings onBack={() => setPage(previousPage)} />
+              ) : page === 'auto-run' ? (
+                // 占位：Task 9-10 将替换为 AutoRunOverlay/Controller
+                <div
+                  style={{
+                    display: 'grid',
+                    placeItems: 'center',
+                    height: '100%',
+                    color: 'var(--color-text-secondary)',
+                  }}
+                >
+                  Auto-run loading...
+                </div>
               ) : (
                 <>
                   {/* 写稿工作台和编辑器保持同时挂载，用 display 切换，避免重新挂载引起的布局振荡 */}
