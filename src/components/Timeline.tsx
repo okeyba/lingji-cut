@@ -39,6 +39,7 @@ import { AppIcon } from './AppIcon';
 import { OverlayBlock } from './OverlayBlock';
 import { TimelineAudioWaveform } from './TimelineAudioWaveform';
 import { TimelineSubtitleBlocks } from './TimelineSubtitleBlocks';
+import { SubtitleCardDialog } from './SubtitleCardDialog';
 import { TimelineToolbar } from './timeline/TimelineToolbar';
 import { TrackDropZone } from './timeline/TrackDropZone';
 import { SnapGuides } from './timeline/SnapGuides';
@@ -110,6 +111,12 @@ export function Timeline({
   const [hoverTrackId, setHoverTrackId] = useState<string | null>(null);
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
   const [contextTarget, setContextTarget] = useState<TimelineContextTarget | null>(null);
+  const [subtitleCardDialogOpen, setSubtitleCardDialogOpen] = useState(false);
+  const [subtitleCardDialogInitial, setSubtitleCardDialogInitial] = useState<{
+    text: string;
+    startMs: number;
+    endMs: number;
+  } | null>(null);
   const [pendingTrackDeletion, setPendingTrackDeletion] = useState<PendingTrackDeletion | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [viewportWidth, setViewportWidth] = useState(0);
@@ -1271,6 +1278,14 @@ export function Timeline({
                 trackHeight={subtitleTrackHeight}
                 highlightHint={subtitleHighlightHint}
                 onClickBlock={onOpenSubtitleInspector}
+                onRequestGenerateCard={(payload) => {
+                  setSubtitleCardDialogInitial({
+                    text: payload.text,
+                    startMs: payload.startMs,
+                    endMs: payload.endMs,
+                  });
+                  setSubtitleCardDialogOpen(true);
+                }}
               />
             </div>
 
@@ -1654,6 +1669,11 @@ export function Timeline({
           removeTrack(pendingTrackDeletion.trackId);
           setPendingTrackDeletion(null);
         }}
+      />
+      <SubtitleCardDialog
+        open={subtitleCardDialogOpen}
+        onOpenChange={setSubtitleCardDialogOpen}
+        initial={subtitleCardDialogInitial}
       />
     </div>
   );

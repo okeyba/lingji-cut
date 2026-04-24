@@ -46,6 +46,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     projectDir?: string;
     projectBindings?: PromptBindingMap | null;
   }) => ipcRenderer.invoke('regenerate-ai-card', args),
+  generateCardFromSubtitles: (args: {
+    entries: SrtEntry[];
+    draft: import('../src/lib/ai-analysis').SubtitleCardDraftInput;
+    settings: AISettings;
+    globalPrompt?: string;
+    programSummary?: string;
+    keywords?: string[];
+    projectDir?: string;
+    projectBindings?: PromptBindingMap | null;
+  }) => ipcRenderer.invoke('generate-card-from-subtitles', args),
   regenerateCoverPrompt: (args: {
     entries: SrtEntry[];
     settings: AISettings;
@@ -124,8 +134,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       audioFiles: string[];
       srtFiles: string[];
     }>,
-  renderVideo: (args: { timeline: string; outputPath: string; exportConfig: ExportConfig }) =>
-    ipcRenderer.invoke('render-video', args),
+  renderVideo: (args: {
+    timeline: string;
+    outputPath: string;
+    exportConfig: ExportConfig;
+    srtEntries?: SrtEntry[];
+  }) => ipcRenderer.invoke('render-video', args),
   onRenderProgress: (callback: (progress: number) => void) => {
     const handler = (_event: unknown, progress: number) => callback(progress);
     ipcRenderer.on('render-progress', handler);
@@ -244,6 +258,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cancelTTS: (requestId: string) => ipcRenderer.invoke('cancel-tts', requestId),
   selectOutputPath: (defaultPath?: string) =>
     ipcRenderer.invoke('select-output-path', defaultPath),
+  checkFileExists: (targetPath: string) =>
+    ipcRenderer.invoke('check-file-exists', targetPath),
+  confirmOverwrite: (targetPath: string) =>
+    ipcRenderer.invoke('confirm-overwrite', targetPath),
   showEditorContextMenu: () => ipcRenderer.invoke('show-editor-context-menu'),
   showWorkbenchTabContextMenu: (request: WorkbenchTabContextMenuRequest) =>
     ipcRenderer.invoke('show-workbench-tab-context-menu', request),

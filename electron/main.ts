@@ -11,7 +11,13 @@ import { promisify } from 'node:util';
 import type { FSWatcher } from 'chokidar';
 import type { MenuContext, MenuEvent, ProjectMetadata } from '../src/lib/electron-api';
 import { addAppLog, configureAppLogger, getAppLogFilePath, getAppLogs } from './app-logger';
-import { analyzeSrt, regenerateAICard, regenerateCoverPrompt } from '../src/lib/ai-analysis';
+import {
+  analyzeSrt,
+  generateSingleCardFromSubtitles,
+  regenerateAICard,
+  regenerateCoverPrompt,
+  type SubtitleCardDraftInput,
+} from '../src/lib/ai-analysis';
 import { buildExportRenderConfig, type ExportConfig } from '../src/lib/export-settings';
 import { generateCoverCandidates } from '../src/lib/cover-generation';
 import { resolvePromptBinding } from '../src/lib/llm/binding-resolver';
@@ -752,6 +758,53 @@ ipcMain.handle(
         'error',
         'ai-analysis',
         '单卡重生成失败',
+        error instanceof Error ? error.stack ?? error.message : String(error),
+      );
+      throw error;
+    }
+  },
+);
+
+ipcMain.handle(
+  'generate-card-from-subtitles',
+  async (
+    _event,
+    args: {
+      entries: SrtEntry[];
+      draft: SubtitleCardDraftInput;
+      settings: AISettings;
+      globalPrompt?: string;
+      programSummary?: string;
+      keywords?: string[];
+      projectDir?: string;
+      projectBindings?: PromptBindingMap | null;
+    },
+  ) => {
+    writeAppLog(
+      'info',
+      'ai-analysis',
+      '收到字幕手选卡片生成请求',
+      `entries=${args.entries.length}, type=${args.draft.type}, textLen=${args.draft.text.length}`,
+    );
+
+    try {
+      const userDataPath = app.getPath('userData');
+      const cardTemplate = await loadEffectivePromptTemplate('cards.segment', {
+        userDataPath,
+        projectDir: args.projectDir,
+      });
+      return await generateSingleCardFromSubtitles(args.entries, args.draft, args.settings, {
+        globalPrompt: args.globalPrompt,
+        programSummary: args.programSummary,
+        keywords: args.keywords,
+        cardTemplate,
+        projectBindings: args.projectBindings ?? null,
+      });
+    } catch (error) {
+      writeAppLog(
+        'error',
+        'ai-analysis',
+        '字幕手选卡片生成失败',
         error instanceof Error ? error.stack ?? error.message : String(error),
       );
       throw error;
@@ -1715,6 +1768,38 @@ ipcMain.handle('select-output-path', async (_event, defaultPath?: string) => {
   return result.canceled ? null : result.filePath;
 });
 
+ipcMain.handle('check-file-exists', async (_event, targetPath?: string) => {
+  if (typeof targetPath !== 'string' || targetPath.trim().length === 0) {
+    return false;
+  }
+  try {
+    const stat = await fs.stat(targetPath);
+    return stat.isFile();
+  } catch {
+    return false;
+  }
+});
+
+ipcMain.handle('confirm-overwrite', async (_event, targetPath?: string) => {
+  if (typeof targetPath !== 'string' || targetPath.trim().length === 0) {
+    return true;
+  }
+  const fileName = path.basename(targetPath);
+  const options = {
+    type: 'warning' as const,
+    buttons: ['取消', '覆盖导出'],
+    defaultId: 0,
+    cancelId: 0,
+    title: '文件已存在',
+    message: `目标位置已存在同名文件 "${fileName}"`,
+    detail: `继续导出将覆盖该文件。\n\n${targetPath}`,
+  };
+  const { response } = mainWindow
+    ? await dialog.showMessageBox(mainWindow, options)
+    : await dialog.showMessageBox(options);
+  return response === 1;
+});
+
 ipcMain.handle(
   'generate-tts',
   async (
@@ -1971,15 +2056,28 @@ ipcMain.handle('refresh-recent-projects', async () => {
 
 ipcMain.handle(
   'render-video',
-  async (_event, args: { timeline: string; outputPath: string; exportConfig: ExportConfig }) => {
+  async (
+    _event,
+    args: {
+      timeline: string;
+      outputPath: string;
+      exportConfig: ExportConfig;
+      // Renderer 侧 store 中切分后的字幕；若未提供则回退到磁盘原始 SRT。
+      // 磁盘 .srt 文件始终保持 MiniMax 原始输出（不写回），所以若只靠主进程重解析
+      // 就会忽略用户的字幕重切分结果，与预览播放器不一致。
+      srtEntries?: SrtEntry[];
+    },
+  ) => {
     const isDev = !app.isPackaged;
     const renderLogPrefix = '[render-video]';
     const renderStartedAt = Date.now();
     const timestamp = () => `${((Date.now() - renderStartedAt) / 1000).toFixed(2)}s`;
 
     const timelineData = JSON.parse(args.timeline) as TimelineData;
-    const srtContent = await fs.readFile(timelineData.podcast.srtPath, 'utf-8');
-    const srtEntries = parseSrt(srtContent);
+    const srtEntries =
+      args.srtEntries && args.srtEntries.length > 0
+        ? args.srtEntries
+        : parseSrt(await fs.readFile(timelineData.podcast.srtPath, 'utf-8'));
     const renderConfig = buildExportRenderConfig({
       timelineWidth: timelineData.width,
       timelineHeight: timelineData.height,
@@ -1988,8 +2086,9 @@ ipcMain.handle(
     });
 
     const cpuCount = os.cpus().length;
-    // 显式把并发拉满到物理核数；null = Remotion 默认策略（约 cpuCount/2）
-    const explicitConcurrency = cpuCount;
+    // Web Card iframe 每帧要做 postMessage / delayRender 握手，过高并发会让
+    // 多个 Chromium 实例抢 CPU，加剧 iframe 内部动画 seek 的抖动。折中取 cpuCount/2。
+    const explicitConcurrency = Math.max(1, Math.floor(cpuCount / 2));
 
     if (isDev) {
       console.log(`${renderLogPrefix} 开始导出`, {
@@ -2060,6 +2159,13 @@ ipcMain.handle(
         x264Preset: renderConfig.x264Preset,
         videoBitrate: renderConfig.videoBitrate,
         audioBitrate: renderConfig.audioBitrate as `${number}k` | `${number}K` | `${number}M`,
+        // Web Card iframe 首屏 + 每帧握手可能要等字体/脚本加载，放宽 delayRender 超时。
+        timeoutInMilliseconds: 60_000,
+        chromiumOptions: {
+          gl: 'angle',
+          // Web Card 有 file:// 资源或跨域字体时避免因同源策略黑屏。
+          disableWebSecurity: true,
+        },
         ...(isDev
           ? {
               logLevel: 'verbose' as const,

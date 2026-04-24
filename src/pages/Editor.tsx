@@ -673,6 +673,9 @@ export function Editor({
         timeline: JSON.stringify(timeline),
         outputPath: savePath,
         exportConfig,
+        // 切分后的字幕仅存在于内存 store 中（磁盘 .srt 保持原始 MiniMax 输出），
+        // 必须显式传给主进程，导出才能与预览播放器使用同一套切分字幕。
+        srtEntries: useTimelineStore.getState().srtEntries,
       });
       setExportProgress(1);
       useTaskProgressStore.getState().completeTask(exportTaskId, {

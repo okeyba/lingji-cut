@@ -5,6 +5,23 @@ import type { OverlayItem } from '../src/types';
 
 vi.mock('remotion', () => ({
   Sequence: ({ children }: { children: unknown }) => children,
+  getRemotionEnvironment: () => ({
+    isRendering: false,
+    isPlayer: false,
+    isStudio: false,
+    isReadOnlyStudio: false,
+    isClientSideRendering: false,
+  }),
+  useCurrentFrame: () => 0,
+  useVideoConfig: () => ({
+    fps: 30,
+    width: 1920,
+    height: 1080,
+    durationInFrames: 150,
+    defaultCodec: null,
+  }),
+  delayRender: () => 0,
+  continueRender: () => {},
 }));
 
 describe('AICardOverlay', () => {

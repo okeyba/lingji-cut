@@ -154,6 +154,16 @@ export interface ElectronAPI {
     projectDir?: string;
     projectBindings?: PromptBindingMap | null;
   }) => Promise<AICard>;
+  generateCardFromSubtitles: (args: {
+    entries: SrtEntry[];
+    draft: import('./ai-analysis').SubtitleCardDraftInput;
+    settings: AISettings;
+    globalPrompt?: string;
+    programSummary?: string;
+    keywords?: string[];
+    projectDir?: string;
+    projectBindings?: PromptBindingMap | null;
+  }) => Promise<AICard>;
   regenerateCoverPrompt: (args: {
     entries: SrtEntry[];
     settings: AISettings;
@@ -217,6 +227,7 @@ export interface ElectronAPI {
     timeline: string;
     outputPath: string;
     exportConfig: ExportConfig;
+    srtEntries?: SrtEntry[];
   }) => Promise<{ outputPath: string }>;
   getAppLogs: () => Promise<AppLogEntry[]>;
   getAppLogFilePath: () => Promise<string>;
@@ -278,6 +289,8 @@ export interface ElectronAPI {
   ) => () => void;
   cancelTTS: (requestId: string) => Promise<void>;
   selectOutputPath: (defaultPath?: string) => Promise<string | null>;
+  checkFileExists: (targetPath: string) => Promise<boolean>;
+  confirmOverwrite: (targetPath: string) => Promise<boolean>;
   showEditorContextMenu: () => Promise<void>;
   showWorkbenchTabContextMenu: (request: WorkbenchTabContextMenuRequest) => Promise<void>;
   onWorkbenchTabMenuAction: (callback: (event: WorkbenchTabMenuEvent) => void) => () => void;

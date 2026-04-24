@@ -49,6 +49,9 @@ export interface TimelineStore {
   overlayClipboard: OverlayClipboardItem | null;
   canUndo: boolean;
   canRedo: boolean;
+  subtitleSelection: number[];
+  setSubtitleSelection: (indices: number[]) => void;
+  clearSubtitleSelection: () => void;
   setTimeline: (timeline: TimelineData) => void;
   setSrtEntries: (entries: SrtEntry[]) => void;
   setSubtitleHighlights: (highlights: SubtitleHighlight[]) => void;
@@ -373,6 +376,26 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
   canRedo: false,
   historyPast: [],
   historyFuture: [],
+  subtitleSelection: [],
+  setSubtitleSelection: (indices) => {
+    const deduped = Array.from(new Set(indices.filter((i) => Number.isFinite(i)))).sort(
+      (a, b) => a - b,
+    );
+    const current = get().subtitleSelection;
+    if (
+      current.length === deduped.length &&
+      current.every((value, idx) => value === deduped[idx])
+    ) {
+      return;
+    }
+    set({ subtitleSelection: deduped });
+  },
+  clearSubtitleSelection: () => {
+    if (get().subtitleSelection.length === 0) {
+      return;
+    }
+    set({ subtitleSelection: [] });
+  },
   setTimeline: (timeline) =>
     set(() => {
       const normalizedTimeline = normalizeTimeline(timeline);
@@ -385,6 +408,7 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
         historyFuture: [],
         canUndo: false,
         canRedo: false,
+        subtitleSelection: [],
       };
     }),
   setSrtEntries: (entries) =>
@@ -409,6 +433,7 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
         originalSrtEntries: entries,
         srtEntries: nextSrtEntries,
         timeline: nextTimeline,
+        subtitleSelection: [],
       };
     }),
   setSubtitleHighlights: (highlights) =>

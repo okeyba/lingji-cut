@@ -8,6 +8,7 @@ import {
   type AIAnalysisCardError,
   type AIAnalysisResult,
   type AICard,
+  type AICardType,
   type AISegmentAnalysis,
   type AISegment,
   type AISegmentComplexityLevel,
@@ -772,6 +773,115 @@ export async function regenerateAICard(
     segmentId: segment.id,
     enabled: card.enabled,
     cardPrompt: cardPrompt?.trim() || undefined,
+  };
+}
+
+export interface SubtitleCardDraftInput {
+  /** 用户二次编辑后的字幕文本（默认来自选中条目拼接） */
+  text: string;
+  /** 卡片起始毫秒（默认来自首条 startMs） */
+  startMs: number;
+  /** 卡片结束毫秒（默认来自末条 endMs） */
+  endMs: number;
+  /** 卡片停留毫秒（默认 = endMs - startMs） */
+  displayDurationMs: number;
+  /** 卡片类型倾向（user hint，LLM 可自行微调） */
+  type: AICardType;
+  /** 用户补充指令，可选 */
+  promptHint?: string;
+}
+
+/**
+ * 面向"用户手选字幕 → 单张 web-card"的生成入口。
+ *
+ * 策略：复用 `cards.segment` 管线，把用户草稿组装成合成段落后喂入；
+ * 通过 cardPrompt 注入"只产出 1 张 web-card + 类型建议 + 用户补充"三条硬约束；
+ * 返回前强制要求 renderMode === 'web-card'，否则抛错让用户手动重试。
+ */
+export async function generateSingleCardFromSubtitles(
+  entries: SrtEntry[],
+  draft: SubtitleCardDraftInput,
+  settings: AISettings,
+  options: {
+    globalPrompt?: string;
+    programSummary?: string;
+    keywords?: string[];
+    cardTemplate?: PromptTemplate;
+    projectBindings?: PromptBindingMap | null;
+    generateStructuredData?: typeof generateStructuredData;
+  } = {},
+): Promise<AICard> {
+  const trimmedText = draft.text.trim();
+  if (trimmedText.length === 0) {
+    throw new Error('字幕内容为空，无法生成卡片');
+  }
+  if (!(draft.startMs < draft.endMs)) {
+    throw new Error('时间范围无效');
+  }
+  if (!Number.isFinite(draft.displayDurationMs) || draft.displayDurationMs <= 0) {
+    throw new Error('展示时长无效');
+  }
+  if (!isAICardType(draft.type)) {
+    throw new Error('卡片类型无效');
+  }
+
+  const {
+    globalPrompt,
+    programSummary,
+    keywords = [],
+    cardTemplate,
+    projectBindings,
+    generateStructuredData: requestStructuredData,
+  } = options;
+
+  const hint = draft.promptHint?.trim();
+  const cardPromptLines = [
+    `只产出 1 张卡片，renderMode 必须为 "web-card"（使用 webCard.srcDoc 返回完整 HTML）。`,
+    `卡片类型建议为 "${draft.type}"，可根据内容微调但请保留 web-card 形态。`,
+  ];
+  if (hint) {
+    cardPromptLines.push(`用户补充：${hint}`);
+  }
+  const cardPrompt = cardPromptLines.join('\n');
+
+  const syntheticSegment: AISegment = {
+    id: `manual-${Date.now()}`,
+    title: `手动选段 ${msToTimestamp(draft.startMs)} → ${msToTimestamp(draft.endMs)}`,
+    summary: hint || trimmedText.slice(0, 120),
+    startMs: draft.startMs,
+    endMs: draft.endMs,
+    transcriptExcerpt: trimmedText,
+  };
+
+  const card = await generateCardForSegment(
+    entries.length > 0 ? entries : [],
+    {
+      summary: programSummary ?? '',
+      keywords,
+      globalPrompt: globalPrompt?.trim() || undefined,
+    },
+    syntheticSegment,
+    settings,
+    {
+      generateStructuredData: requestStructuredData,
+      globalPrompt,
+      cardPrompt,
+      cardTemplate,
+      projectBindings,
+    },
+  );
+
+  if (card.renderMode !== 'web-card') {
+    throw new Error('LLM 未按要求产出 web-card，请重试');
+  }
+
+  return {
+    ...card,
+    segmentId: syntheticSegment.id,
+    startMs: draft.startMs,
+    endMs: draft.endMs,
+    displayDurationMs: draft.displayDurationMs,
+    cardPrompt: hint || card.cardPrompt,
   };
 }
 

@@ -29,9 +29,12 @@ function createEntries() {
   ];
 }
 
-const timelineState = {
+const timelineState: Record<string, unknown> = {
   timeline: createTimelineState(),
   srtEntries: createEntries(),
+  subtitleSelection: [],
+  setSubtitleSelection: () => undefined,
+  clearSubtitleSelection: () => undefined,
   addOverlay: () => undefined,
   addTrack: () => 'visual-2',
   setSubtitleHighlights: () => undefined,
@@ -41,7 +44,11 @@ const timelineState = {
 };
 
 vi.mock('../src/store/timeline', () => ({
-  useTimelineStore: () => timelineState,
+  useTimelineStore: (selector?: (state: Record<string, unknown>) => unknown) =>
+    typeof selector === 'function' ? selector(timelineState) : timelineState,
+  getProjectDir: () => '',
+  getCurrentSaveStatus: () => 'idle',
+  subscribeToSaveStatus: () => () => undefined,
 }));
 
 vi.mock('../src/store/ai', () => ({

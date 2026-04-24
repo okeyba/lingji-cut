@@ -55,6 +55,7 @@ export function ExportSettingsModal({
   const [quality, setQuality] = useState<ExportQuality>("balanced");
   const [outputPath, setOutputPath] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pathConflict, setPathConflict] = useState(false);
 
   useEffect(() => {
     if (!visible) {
@@ -65,7 +66,29 @@ export function ExportSettingsModal({
     setQuality("balanced");
     setOutputPath(buildDefaultExportPath(projectName, projectDir));
     setIsSubmitting(false);
+    setPathConflict(false);
   }, [visible, projectName, projectDir]);
+
+  useEffect(() => {
+    if (!visible || !outputPath) {
+      setPathConflict(false);
+      return;
+    }
+    const checker = window.electronAPI?.checkFileExists;
+    if (typeof checker !== "function") {
+      setPathConflict(false);
+      return;
+    }
+    let cancelled = false;
+    void checker(outputPath).then((exists) => {
+      if (!cancelled) {
+        setPathConflict(Boolean(exists));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, outputPath]);
 
   const renderConfig = useMemo(
     () =>
@@ -105,6 +128,16 @@ export function ExportSettingsModal({
   const handleConfirm = async () => {
     if (!outputPath || isSubmitting) {
       return;
+    }
+
+    if (pathConflict) {
+      const confirmOverwrite = window.electronAPI?.confirmOverwrite;
+      if (typeof confirmOverwrite === "function") {
+        const proceed = await confirmOverwrite(outputPath);
+        if (!proceed) {
+          return;
+        }
+      }
     }
 
     setIsSubmitting(true);
@@ -157,6 +190,12 @@ export function ExportSettingsModal({
               选择位置
             </Button>
           </Card>
+          {pathConflict ? (
+            <div className={styles.conflictNotice} role="alert">
+              <AppIcon name="alert-circle" size={14} className={styles.conflictIcon} />
+              <span>该位置已存在同名文件，继续导出将覆盖原文件。</span>
+            </div>
+          ) : null}
 
           <FieldGrid className={styles.grid}>
             <Field label="分辨率">

@@ -105,6 +105,24 @@
   font-weight: 500;
 }
 
+.conflictNotice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: -12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--color-system-orange, #ff9f0a) 40%, transparent);
+  background: color-mix(in srgb, var(--color-system-orange, #ff9f0a) 12%, transparent);
+  color: var(--color-system-orange, #ff9f0a);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.conflictIcon {
+  flex-shrink: 0;
+}
+
 .grid {
   gap: 16px;
   --font-size-xs: 12px;

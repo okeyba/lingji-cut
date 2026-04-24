@@ -54,6 +54,155 @@ function injectBeforeBodyEnd(source: string, injection: string): string {
 }
 
 /**
+ * 注入到 srcDoc <head> 最前端的虚拟时钟 prelude。
+ *
+ * Remotion 导出时 Chromium 会对外层 React 树逐帧 seek，但 iframe 内部的 CSS
+ * animation / rAF / setTimeout 走墙钟时间，与 Remotion 帧时间线不同步，导出
+ * 视频里就会卡顿。prelude 在 iframe 内部 hijack 时间相关 API，默认 realtime
+ * 模式不影响预览；父窗口发来 `lingji:web-card:set-frame` 时切到 frame-driven
+ * 模式，把 performance.now / Date.now / rAF / 定时器 / Web Animations 全部
+ * 对齐到父侧提供的 frame，然后回执 `lingji:web-card:frame-ack`。
+ */
+function buildVirtualClockScript(): string {
+  return `
+<script data-web-card-virtual-clock="true">
+(function(){
+  if (window.__lingjiVirtualClock) { return; }
+  var clock = { mode: 'realtime', timeMs: 0, frame: 0, fps: 30 };
+  window.__lingjiVirtualClock = clock;
+
+  var origPerfNow = performance.now.bind(performance);
+  var origDateNow = Date.now.bind(Date);
+  var origRAF = window.requestAnimationFrame.bind(window);
+  var origCAF = window.cancelAnimationFrame.bind(window);
+  var origSetTimeout = window.setTimeout.bind(window);
+  var origSetInterval = window.setInterval.bind(window);
+  var origClearTimeout = window.clearTimeout.bind(window);
+  var origClearInterval = window.clearInterval.bind(window);
+  var dateOrigin = origDateNow();
+
+  var rafSeq = 0;
+  var rafQueue = [];
+  function patchedRAF(cb) {
+    if (clock.mode !== 'frame-driven') { return origRAF(cb); }
+    rafSeq += 1;
+    var id = rafSeq;
+    rafQueue.push({ id: id, cb: cb });
+    return id;
+  }
+  function patchedCAF(id) {
+    if (clock.mode !== 'frame-driven') { return origCAF(id); }
+    rafQueue = rafQueue.filter(function(e){ return e.id !== id; });
+  }
+  function flushRAF() {
+    if (rafQueue.length === 0) { return; }
+    var q = rafQueue;
+    rafQueue = [];
+    for (var i = 0; i < q.length; i++) {
+      try { q[i].cb(clock.timeMs); } catch (e) { console.error('[virtual-clock] rAF', e); }
+    }
+  }
+
+  var timerSeq = 0;
+  var timers = new Map();
+  function patchedSetTimeout(cb, delay) {
+    var rest = Array.prototype.slice.call(arguments, 2);
+    if (clock.mode !== 'frame-driven') { return origSetTimeout.apply(null, [cb, delay].concat(rest)); }
+    timerSeq += 1;
+    var id = timerSeq;
+    timers.set(id, { type: 'timeout', due: clock.timeMs + (Number(delay) || 0), cb: cb, args: rest });
+    return id;
+  }
+  function patchedSetInterval(cb, delay) {
+    var rest = Array.prototype.slice.call(arguments, 2);
+    if (clock.mode !== 'frame-driven') { return origSetInterval.apply(null, [cb, delay].concat(rest)); }
+    timerSeq += 1;
+    var id = timerSeq;
+    var period = Math.max(1, Number(delay) || 0);
+    timers.set(id, { type: 'interval', due: clock.timeMs + period, period: period, cb: cb, args: rest });
+    return id;
+  }
+  function patchedClearTimer(id) {
+    if (timers.has(id)) { timers.delete(id); return; }
+    origClearTimeout(id);
+    origClearInterval(id);
+  }
+  function flushTimers() {
+    if (timers.size === 0) { return; }
+    var fired = [];
+    timers.forEach(function(t, id){
+      while (t.due <= clock.timeMs) {
+        fired.push({ id: id, type: t.type, cb: t.cb, args: t.args });
+        if (t.type === 'interval') { t.due += t.period; } else { break; }
+      }
+    });
+    fired.forEach(function(entry){
+      if (entry.type === 'timeout') { timers.delete(entry.id); }
+      try { entry.cb.apply(null, entry.args); } catch (e) { console.error('[virtual-clock] timer', e); }
+    });
+  }
+
+  function seekAnimations() {
+    if (typeof document.getAnimations !== 'function') { return; }
+    var anims;
+    try { anims = document.getAnimations(); } catch (e) { return; }
+    for (var i = 0; i < anims.length; i++) {
+      var a = anims[i];
+      try { a.pause(); a.currentTime = clock.timeMs; } catch (e) {}
+    }
+  }
+
+  try { performance.now = function(){ return clock.mode === 'frame-driven' ? clock.timeMs : origPerfNow(); }; } catch (e) {}
+  try { Date.now = function(){ return clock.mode === 'frame-driven' ? (dateOrigin + clock.timeMs) : origDateNow(); }; } catch (e) {}
+  window.requestAnimationFrame = patchedRAF;
+  window.cancelAnimationFrame = patchedCAF;
+  window.setTimeout = patchedSetTimeout;
+  window.setInterval = patchedSetInterval;
+  window.clearTimeout = patchedClearTimer;
+  window.clearInterval = patchedClearTimer;
+
+  window.addEventListener('message', function(event){
+    var data = event.data;
+    if (!data || typeof data !== 'object') { return; }
+    if (data.type === 'lingji:web-card:set-frame') {
+      clock.mode = 'frame-driven';
+      clock.timeMs = Number(data.timeMs) || 0;
+      clock.frame = Number(data.frame) || 0;
+      clock.fps = Number(data.fps) || 30;
+      flushTimers();
+      flushRAF();
+      seekAnimations();
+      // 两个原生 rAF 让样式/合成应用后再 ack，确保截图抓到 seek 结果
+      origRAF(function(){
+        origRAF(function(){
+          if (event.source && typeof event.source.postMessage === 'function') {
+            event.source.postMessage({
+              type: 'lingji:web-card:frame-ack',
+              frame: clock.frame,
+              token: data.token,
+            }, '*');
+          }
+        });
+      });
+    }
+  });
+
+  function announceReady(){
+    if (window.parent && window.parent !== window) {
+      try { window.parent.postMessage({ type: 'lingji:web-card:ready' }, '*'); } catch (e) {}
+    }
+  }
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    announceReady();
+  } else {
+    window.addEventListener('DOMContentLoaded', announceReady, { once: true });
+  }
+  window.addEventListener('load', announceReady);
+})();
+</script>`;
+}
+
+/**
  * Self-scaling script injected into the srcDoc.
  * Runs inside the iframe's own context — no cross-frame DOM access needed.
  * Scales the body (designed at stageWidth×stageHeight) to fit the iframe viewport.
@@ -138,7 +287,8 @@ export function normalizeWebCardSrcDoc(
     return srcDoc;
   }
 
-  const headInjection = `
+  // 虚拟时钟 prelude 必须最早注入，赶在 iframe 内其它 script 执行前 hijack 时间 API。
+  const headInjection = `${buildVirtualClockScript()}
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <style data-web-card-normalized="true">
 html, body {
