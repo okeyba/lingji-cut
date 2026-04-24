@@ -191,15 +191,23 @@ function ImageProviderDialog({ initial, isDefault, onSave, onCancel }: DialogPro
     }
   };
 
-  // type 切换时自动填 models（仅当 models 为空）
+  // type 切换时同步 models：若当前仍是原类型默认列表（或为空），跟随切换到新类型默认；
+  // 若用户已自定义过模型列表，则保留其选择
   const handleTypeChange = (nextType: ImageProviderType) => {
     setForm((f) => {
-      const cap = CAPABILITIES_SUMMARY[nextType];
-      const nextModels = f.models.length === 0 ? [...cap.defaultModels] : f.models;
+      if (f.type === nextType) return f;
+      const prevDefaults = CAPABILITIES_SUMMARY[f.type].defaultModels;
+      const nextDefaults = CAPABILITIES_SUMMARY[nextType].defaultModels;
+      const isUntouched =
+        f.models.length === 0 ||
+        (f.models.length === prevDefaults.length &&
+          f.models.every((m, i) => m === prevDefaults[i]));
+      const nextModels = isUntouched ? [...nextDefaults] : f.models;
       return { ...f, type: nextType, models: nextModels };
     });
     clearFieldError('baseUrl');
     clearFieldError('apiKey');
+    clearFieldError('models');
   };
 
   const addModel = () => {
