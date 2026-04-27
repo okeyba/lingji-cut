@@ -4,6 +4,7 @@ import type {
   LLMProvider,
   PromptBinding,
   PromptBindingMap,
+  VideoProvider,
 } from '../../types/ai';
 import { userPromptBindingKey, type PromptCategory, type PromptKind } from '../prompts/types';
 
@@ -11,7 +12,9 @@ export type PromptBindingErrorCode =
   | 'PROVIDER_MISSING'
   | 'MODEL_NOT_IN_PROVIDER'
   | 'IMAGE_PROVIDER_MISSING'
-  | 'IMAGE_MODEL_NOT_IN_PROVIDER';
+  | 'IMAGE_MODEL_NOT_IN_PROVIDER'
+  | 'VIDEO_PROVIDER_MISSING'
+  | 'VIDEO_MODEL_NOT_IN_PROVIDER';
 
 export class PromptBindingError extends Error {
   constructor(
@@ -29,6 +32,8 @@ export interface ResolvedBinding {
   model: string;
   imageProvider?: ImageProvider;
   imageModel?: string;
+  videoProvider?: VideoProvider;
+  videoModel?: string;
 }
 
 function pickFirstNonNull<T>(...values: Array<T | null | undefined>): T | null {
@@ -136,15 +141,63 @@ function resolveImage(
   return { imageProvider: provider, imageModel: model };
 }
 
+function resolveVideo(
+  kind: PromptKind,
+  settings: AISettings,
+  project: PromptBindingMap | null,
+): { videoProvider: VideoProvider; videoModel: string } {
+  const projectB = project?.[kind];
+  const globalB = settings.promptBindings?.[kind];
+
+  const providerId = pickFirstNonNull(
+    projectB?.videoProviderId,
+    globalB?.videoProviderId,
+    settings.defaultVideoProviderId,
+  );
+  const model = pickFirstNonNull(
+    projectB?.videoModel,
+    globalB?.videoModel,
+    settings.defaultVideoModel,
+  );
+
+  if (!providerId || !model) {
+    throw new PromptBindingError(
+      'VIDEO_PROVIDER_MISSING',
+      kind,
+      `提示词 ${kind} 未绑定 VideoProvider 且无全局默认`,
+    );
+  }
+  const provider = settings.videoProviders.find((p) => p.id === providerId);
+  if (!provider) {
+    throw new PromptBindingError(
+      'VIDEO_PROVIDER_MISSING',
+      kind,
+      `提示词 ${kind} 绑定的 VideoProvider ${providerId} 不存在`,
+    );
+  }
+  if (!provider.models.includes(model)) {
+    throw new PromptBindingError(
+      'VIDEO_MODEL_NOT_IN_PROVIDER',
+      kind,
+      `提示词 ${kind} 绑定的视频模型 ${model} 不在 VideoProvider ${provider.name} 的模型列表里`,
+    );
+  }
+  return { videoProvider: provider, videoModel: model };
+}
+
 export function resolvePromptBinding(
   kind: PromptKind,
   settings: AISettings,
   project: PromptBindingMap | null,
 ): ResolvedBinding {
   const llm = resolveLlm(kind, settings, project);
-  if (kind === 'cover.regeneration') {
+  if (kind === 'cover.regeneration' || kind === 'card.image') {
     const img = resolveImage(kind, settings, project);
     return { ...llm, ...img };
+  }
+  if (kind === 'card.video') {
+    const vid = resolveVideo(kind, settings, project);
+    return { ...llm, ...vid };
   }
   return llm;
 }

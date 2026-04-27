@@ -187,9 +187,51 @@ user: |-
 `;
 
 
+const CARD_IMAGE = `name: card.image
+description: 段落图片卡提示词
+version: 1
+user: |-
+  你是视觉创意 AI。基于以下 segment 信息，输出一段适合直接喂给文生图模型的英文 prompt：
+
+  标题：{{segmentTitle}}
+  摘要：{{segmentSummary}}
+  关键句：{{segmentExcerpt}}
+  显示模式：{{displayMode}}（fullscreen 优先 16:9 横构图；pip 可考虑方构图）
+  画幅比例：{{aspectRatio}}
+
+  要求：
+  1. 突出 segment 的核心意象，避免抽象口号；
+  2. 镜头语言：构图、光影、风格、镜头距离写明确；
+  3. 不出现任何文字 / Logo / UI 元素；
+  4. 直接输出英文 prompt，不要任何前后缀或解释。
+`;
+
+const CARD_VIDEO = `name: card.video
+description: 段落视频卡提示词
+version: 1
+user: |-
+  你是 AI 视频导演。基于以下 segment 信息，输出一段适合直接喂给文生视频模型的英文 prompt：
+
+  标题：{{segmentTitle}}
+  摘要：{{segmentSummary}}
+  关键句：{{segmentExcerpt}}
+  显示模式：{{displayMode}}
+  画幅比例：{{aspectRatio}}
+  时长：{{durationSeconds}} 秒
+
+  要求：
+  1. 给出主体、动作、镜头运动（推 / 拉 / 摇 / 跟）、转场节奏；
+  2. 时长内逻辑闭合，避免镜头跳切显得断裂；
+  3. 不出现任何文字 / Logo / UI 元素；
+  4. 直接输出英文 prompt，不要任何前后缀或解释。
+`;
+
+
 export const DEFAULT_PROMPT_YAML: Record<PromptKind, string> = {
   'planning.segment': PLANNING_SEGMENT,
   'cover.regeneration': COVER_REGENERATION,
   'cards.segment': CARDS_SEGMENT,
   'script.review': SCRIPT_REVIEW,
+  'card.image': CARD_IMAGE,
+  'card.video': CARD_VIDEO,
 };

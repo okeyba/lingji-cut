@@ -3,6 +3,8 @@ export const PROMPT_KINDS = [
   'cover.regeneration',
   'cards.segment',
   'script.review',
+  'card.image',
+  'card.video',
 ] as const;
 
 export type PromptKind = (typeof PROMPT_KINDS)[number];
@@ -259,5 +261,32 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
       content: LOCKED_SCRIPT_REVIEW,
       reason: '业务侧按 annotations[] 定位批注；修改会让审查结果无法在编辑器中展示。',
     },
+  },
+  'card.image': {
+    kind: 'card.image',
+    label: '段落图片卡',
+    description: '为单个 segment 生成 AI 图片卡的提示词；产物用于 image provider 文生图',
+    group: 'ai-analysis',
+    variables: [
+      { name: 'segmentTitle', description: 'segment 标题' },
+      { name: 'segmentSummary', description: 'segment 摘要' },
+      { name: 'segmentExcerpt', description: 'segment 字幕摘录' },
+      { name: 'displayMode', description: '显示模式：fullscreen 或 pip' },
+      { name: 'aspectRatio', description: '画幅比例：16:9 / 9:16 / 1:1 / 4:3 / 3:4' },
+    ],
+  },
+  'card.video': {
+    kind: 'card.video',
+    label: '段落视频卡',
+    description: '为单个 segment 生成 AI 视频卡的提示词；产物用于 video provider 文生视频',
+    group: 'ai-analysis',
+    variables: [
+      { name: 'segmentTitle', description: 'segment 标题' },
+      { name: 'segmentSummary', description: 'segment 摘要' },
+      { name: 'segmentExcerpt', description: 'segment 字幕摘录' },
+      { name: 'displayMode', description: '显示模式：fullscreen 或 pip' },
+      { name: 'aspectRatio', description: '画幅比例：16:9 / 9:16 / 1:1' },
+      { name: 'durationSeconds', description: '视频时长（秒），档位由 provider capabilities 决定' },
+    ],
   },
 };
