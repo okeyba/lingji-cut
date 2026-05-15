@@ -221,6 +221,10 @@ Lingji Cut 目前是桌面优先的创作工具，最小窗口约束约为 `1100
 
 欢迎提交 issue、建议和 PR。建议在较大改动前先说明你想修改的模块和目标，尤其是时间线、工程存储、IPC、Remotion 导出和 AI Provider 相关改动。
 
+## 友情链接
+
+- [LINUX DO](https://linux.do) — 新一代开源社区
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
