@@ -161,4 +161,26 @@ describe('SessionManager', () => {
       sessionId: 'new-session-id',
     });
   });
+
+  it('can connect with restricted client capabilities for headless provider use', async () => {
+    const manager = new SessionManager(client as never, 'always_ask', {
+      clientCapabilities: {
+        terminal: false,
+        fs: { readTextFile: false, writeTextFile: false },
+      },
+      permissionRequestBehavior: 'reject',
+    });
+
+    await manager.connect('/tmp/project', 'node', ['mock-agent.cjs']);
+
+    expect(client.sendRequest).toHaveBeenCalledWith('initialize', {
+      protocolVersion: 1,
+      clientCapabilities: {
+        terminal: false,
+        fs: { readTextFile: false, writeTextFile: false },
+      },
+    });
+    expect(client.requestHandlers.has('fs/read_text_file')).toBe(false);
+    expect(client.requestHandlers.has('fs/write_text_file')).toBe(false);
+  });
 });

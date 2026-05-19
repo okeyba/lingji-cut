@@ -77,6 +77,15 @@ export type AISegmentSemanticType =
 export type AISegmentComplexityLevel = 'low' | 'medium' | 'high';
 export type AISegmentPacingNeed = 'steady' | 'accent' | 'transition';
 
+/**
+ * 段落最适合的卡片可视化形式：
+ * - motion：抽象 / 摘要 / 数据演示 / 时间线 / 概念对比 → 适合 Remotion 动画卡片
+ * - image：产品 / 参数 / 界面 / 物件 / 复杂场景 → 适合 AI 生成的实拍/插画图片
+ *
+ * planning.segment LLM 自行判定；缺省回退 motion。
+ */
+export type AISegmentVisualType = 'motion' | 'image';
+
 export interface AISegmentAnalysis extends AISegment {
   semanticType: AISegmentSemanticType;
   complexityLevel: AISegmentComplexityLevel;
@@ -84,6 +93,7 @@ export interface AISegmentAnalysis extends AISegment {
   pacingNeed: AISegmentPacingNeed;
   keywords: string[];
   entities: string[];
+  visualType?: AISegmentVisualType;
 }
 
 export interface AICard {
@@ -149,7 +159,7 @@ export const LMSTUDIO_DEFAULT_BASE_URL = 'http://localhost:1234/v1';
 export interface LLMProvider {
   id: string;
   name: string;
-  type: 'openai_compatible' | 'anthropic' | 'gemini' | 'lmstudio';
+  type: 'openai_compatible' | 'anthropic' | 'gemini' | 'lmstudio' | 'claude_code_acp';
   baseUrl: string;
   apiKey: string;
   models: string[];
@@ -187,6 +197,12 @@ export interface AISettings {
   imageProviders: ImageProvider[];
   defaultImageProviderId: string | null;
   defaultImageModel: string | null;
+  /**
+   * 全局封面图生成提示词。
+   * 在生成封面图时与"基于内容生成的提示词"拼接后再发送给图像 Provider，
+   * 用于稳定承载用户偏好的整体风格、品牌、画质等约束。
+   */
+  globalCoverImagePrompt?: string;
   // —— 新增：视频 Provider ——
   videoProviders: VideoProvider[];
   defaultVideoProviderId: string | null;

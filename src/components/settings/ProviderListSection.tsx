@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { LMSTUDIO_DEFAULT_BASE_URL, type LLMProvider } from '../../types/ai';
+import { CLAUDE_CODE_ACP_DEFAULT_MODEL } from '../../lib/llm/claude-code-acp-model';
 import { fetchProviderModels } from '../../lib/llm/fetch-models';
 import { testProviderModel } from '../../lib/llm/test-provider';
 import {
@@ -32,6 +33,7 @@ const PROVIDER_TYPE_OPTIONS: SelectOption[] = [
   { value: 'lmstudio', label: 'LM Studio (本地)' },
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'gemini', label: 'Google Gemini' },
+  { value: 'claude_code_acp', label: 'Claude Code ACP' },
 ];
 
 const GEMINI_DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com';
@@ -86,6 +88,7 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
   const [picker, setPicker] = useState<FetchPickerState>({ status: 'idle' });
   const [modelTests, setModelTests] = useState<Record<string, ModelTestState>>({});
   const title = initial.name ? '编辑 Provider' : '添加 Provider';
+  const isClaudeCodeAcp = form.type === 'claude_code_acp';
 
   const updateModelTest = (model: string, state: ModelTestState) =>
     setModelTests((prev) => ({ ...prev, [model]: state }));
@@ -253,62 +256,81 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
                   if (nextType === 'lmstudio' && !next.baseUrl.trim()) {
                     next.baseUrl = LMSTUDIO_DEFAULT_BASE_URL;
                   }
+                  if (nextType === 'claude_code_acp') {
+                    next.baseUrl = '';
+                    next.apiKey = '';
+                    if (next.models.length === 0) {
+                      next.models = [CLAUDE_CODE_ACP_DEFAULT_MODEL];
+                    }
+                    if (!next.name.trim()) {
+                      next.name = 'Claude Code ACP';
+                    }
+                  }
                   return next;
                 });
                 clearFieldError('baseUrl');
                 clearFieldError('apiKey');
+                clearFieldError('models');
               }}
             />
           </Field>
 
-          <Field
-            label="Base URL"
-            required={form.type !== 'gemini' && form.type !== 'lmstudio'}
-            error={errors.baseUrl}
-            hint={
-              form.type === 'gemini'
-                ? `留空使用 Google 官方端点（${GEMINI_DEFAULT_BASE_URL}）`
-                : form.type === 'lmstudio'
-                  ? `LM Studio 默认本地端点为 ${LMSTUDIO_DEFAULT_BASE_URL}`
-                  : undefined
-            }
-          >
-            <Input
-              value={form.baseUrl}
-              onChange={(e) => {
-                set('baseUrl', e.target.value, 'baseUrl');
-                setModelTests({});
-              }}
-              placeholder={
-                form.type === 'gemini'
-                  ? GEMINI_DEFAULT_BASE_URL
-                  : form.type === 'lmstudio'
-                    ? LMSTUDIO_DEFAULT_BASE_URL
-                    : 'https://api.openai.com/v1'
-              }
-              size="sm"
-              aria-invalid={Boolean(errors.baseUrl)}
-            />
-          </Field>
+          {!isClaudeCodeAcp ? (
+            <>
+              <Field
+                label="Base URL"
+                required={form.type !== 'gemini' && form.type !== 'lmstudio'}
+                error={errors.baseUrl}
+                hint={
+                  form.type === 'gemini'
+                    ? `留空使用 Google 官方端点（${GEMINI_DEFAULT_BASE_URL}）`
+                    : form.type === 'lmstudio'
+                      ? `LM Studio 默认本地端点为 ${LMSTUDIO_DEFAULT_BASE_URL}`
+                      : undefined
+                }
+              >
+                <Input
+                  value={form.baseUrl}
+                  onChange={(e) => {
+                    set('baseUrl', e.target.value, 'baseUrl');
+                    setModelTests({});
+                  }}
+                  placeholder={
+                    form.type === 'gemini'
+                      ? GEMINI_DEFAULT_BASE_URL
+                      : form.type === 'lmstudio'
+                        ? LMSTUDIO_DEFAULT_BASE_URL
+                        : 'https://api.openai.com/v1'
+                  }
+                  size="sm"
+                  aria-invalid={Boolean(errors.baseUrl)}
+                />
+              </Field>
 
-          <Field
-            label="API Key"
-            required={form.type !== 'lmstudio'}
-            error={errors.apiKey}
-            hint={form.type === 'lmstudio' ? 'LM Studio 默认无需 API Key，可留空' : undefined}
-          >
-            <Input
-              variant="password"
-              value={form.apiKey}
-              onChange={(e) => {
-                set('apiKey', e.target.value, 'apiKey');
-                setModelTests({});
-              }}
-              placeholder={form.type === 'lmstudio' ? '可留空' : 'sk-...'}
-              size="sm"
-              aria-invalid={Boolean(errors.apiKey)}
-            />
-          </Field>
+              <Field
+                label="API Key"
+                required={form.type !== 'lmstudio'}
+                error={errors.apiKey}
+                hint={form.type === 'lmstudio' ? 'LM Studio 默认无需 API Key，可留空' : undefined}
+              >
+                <Input
+                  variant="password"
+                  value={form.apiKey}
+                  onChange={(e) => {
+                    set('apiKey', e.target.value, 'apiKey');
+                    setModelTests({});
+                  }}
+                  placeholder={form.type === 'lmstudio' ? '可留空' : 'sk-...'}
+                  size="sm"
+                  aria-invalid={Boolean(errors.apiKey)}
+                />
+              </Field>
+            </>
+          ) : (
+            <p className={styles.hintText}>
+              复用 Claude Code 设置中的认证、安装和版本配置，不需要 Base URL 或 API Key。
+            </p>
+          )}
 
           <Field label="模型列表" required error={errors.models}>
             {form.models.length > 0 ? (
@@ -462,19 +484,21 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
             ) : null}
           </Field>
 
-          <Field
-            label="开启思考模式"
-            hint={
-              form.type === 'gemini'
-                ? '关闭后会向 Gemini 传入 thinkingConfig.thinkingBudget=0'
-                : '关闭后会向兼容 OpenAI 的接口追加 enable_thinking=false'
-            }
-          >
-            <Switch
-              checked={form.enableThinking ?? true}
-              onChange={(checked) => set('enableThinking', checked)}
-            />
-          </Field>
+          {!isClaudeCodeAcp ? (
+            <Field
+              label="开启思考模式"
+              hint={
+                form.type === 'gemini'
+                  ? '关闭后会向 Gemini 传入 thinkingConfig.thinkingBudget=0'
+                  : '关闭后会向兼容 OpenAI 的接口追加 enable_thinking=false'
+              }
+            >
+              <Switch
+                checked={form.enableThinking ?? true}
+                onChange={(checked) => set('enableThinking', checked)}
+              />
+            </Field>
+          ) : null}
 
           <Checkbox
             label="设为默认 Provider"
@@ -589,7 +613,11 @@ export function ProviderListSection({ providers, defaultProviderId, onChange }: 
                   </div>
                 </div>
 
-                {p.baseUrl ? <span className={styles.providerBaseUrl}>{p.baseUrl}</span> : null}
+                {p.type === 'claude_code_acp' ? (
+                  <span className={styles.providerBaseUrl}>Claude Code ACP · 本机运行时</span>
+                ) : p.baseUrl ? (
+                  <span className={styles.providerBaseUrl}>{p.baseUrl}</span>
+                ) : null}
 
                 {p.models.length > 0 ? (
                   <div className={styles.providerModels}>

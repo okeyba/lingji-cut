@@ -118,7 +118,10 @@ export function AICardOverlay({ overlay, fps, chapterIndex = 1, zIndex }: AICard
   const isMotionCard =
     overlay.aiCardData.renderMode === 'motion-card' &&
     !!overlay.aiCardData.motionCard?.compiledCode;
-  const isSpecialCard = isMotionCard;
+  // 自带 100%×100% 布局的卡片：motion / image / video。否则按 1920×1080 设计基准 + scale。
+  const isMediaCard =
+    overlay.aiCardData.cardType === 'image' || overlay.aiCardData.cardType === 'video';
+  const isSpecialCard = isMotionCard || isMediaCard;
   const scale = Math.min(overlay.position.width / 1_920, overlay.position.height / 1_080);
   // Motion Card 需要知道 sequence 自己的宽高（非整个 composition），
   // PiP 模式下用 overlay 实际尺寸，fullscreen 模式回退到 1920x1080 设计基准。

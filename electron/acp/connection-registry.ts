@@ -54,6 +54,7 @@ export interface SessionManagerLike {
   cancelTurn(): Promise<void>;
   setMode(modeId: string): Promise<void>;
   setConfigOption(configId: string, valueId: string): Promise<void>;
+  setModel?(modelId: string): Promise<void>;
   respondPermission(requestId: string, optionId: string): Promise<void>;
   setPermissionPolicy(policy: PermissionPolicy): void;
   disconnect(): void;

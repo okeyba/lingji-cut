@@ -73,90 +73,35 @@ const MOTION_RUNTIME_SCOPE = Object.freeze({
 
 export const SANDBOX_API_KEYS = Object.freeze(Object.keys(MOTION_SANDBOX).sort());
 
-function buildCategoryKeys(prefixes: string[]): string[] {
-  return SANDBOX_API_KEYS.filter((key) => prefixes.some((prefix) => key === prefix || key.startsWith(prefix)));
-}
+const RECOMMENDED_SANDBOX_API_KEYS = [
+  'React',
+  'AbsoluteFill',
+  'Sequence',
+  'interpolate',
+  'interpolateColors',
+  'spring',
+  'Easing',
+  'Img',
+  'Audio',
+  'Rect',
+  'Circle',
+  'Ellipse',
+  'Polygon',
+  'Triangle',
+  'Star',
+  'makeRect',
+  'makeCircle',
+  'makeTriangle',
+  'interpolatePath',
+  'serializeInstructions',
+  'createSmoothSvgPath',
+].filter((key) => SANDBOX_API_KEYS.includes(key));
 
-const SANDBOX_REFERENCE_SECTIONS: Array<{ title: string; keys: string[] }> = [
-  {
-    title: 'React',
-    keys: ['React'],
-  },
-  {
-    title: 'Remotion 核心',
-    keys: [
-      'interpolate',
-      'interpolateColors',
-      'spring',
-      'Easing',
-      'random',
-      'useCurrentFrame',
-      'useVideoConfig',
-      'delayRender',
-      'continueRender',
-      'AbsoluteFill',
-      'Sequence',
-      'Series',
-      'Loop',
-      'Img',
-      'OffthreadVideo',
-      'Audio',
-      'IFrame',
-      'staticFile',
-    ],
-  },
-  {
-    title: 'Shapes',
-    keys: buildCategoryKeys(['Arrow', 'Circle', 'Ellipse', 'Heart', 'Pie', 'Polygon', 'Rect', 'Star', 'Triangle', 'make']),
-  },
-  {
-    title: 'Paths',
-    keys: buildCategoryKeys([
-      'cutPath',
-      'evolvePath',
-      'extendViewBox',
-      'getBoundingBox',
-      'getInstructionIndexAtLength',
-      'getLength',
-      'getPointAtLength',
-      'getSubpaths',
-      'getTangentAtLength',
-      'interpolatePath',
-      'normalizePath',
-      'parsePath',
-      'reduceInstructions',
-      'resetPath',
-      'reversePath',
-      'scalePath',
-      'serializeInstructions',
-      'translatePath',
-      'warpPath',
-      'PathInternals',
-    ]),
-  },
-  {
-    title: 'Noise',
-    keys: ['noise2D', 'noise3D'],
-  },
-  {
-    title: 'Transitions',
-    keys: buildCategoryKeys(['TransitionSeries', 'linearTiming', 'springTiming', 'useTransitionProgress']),
-  },
-  {
-    title: 'Media Utils',
-    keys: ['visualizeAudio', 'getWaveformPortion', 'createSmoothSvgPath'],
-  },
-  {
-    title: 'Effects',
-    keys: ['CameraMotionBlur'],
-  },
-];
-
-export const MOTION_SANDBOX_REFERENCE = SANDBOX_REFERENCE_SECTIONS.filter(
-  (section) => section.keys.length > 0,
-)
-  .map((section) => `${section.title}:\n${section.keys.map((key) => `- ${key}`).join('\n')}`)
-  .join('\n\n');
+export const MOTION_SANDBOX_REFERENCE = [
+  `推荐 API：${RECOMMENDED_SANDBOX_API_KEYS.join(', ')}`,
+  '可用但慎用：Loop, Series, random, noise2D, noise3D, staticFile, OffthreadVideo',
+  '不要使用：useCurrentFrame, useVideoConfig, delayRender, continueRender, IFrame, CameraMotionBlur',
+].join('\n');
 
 export function formatMotionRuntimeError(error: unknown): string {
   if (error instanceof Error) {

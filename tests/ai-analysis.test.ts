@@ -77,6 +77,32 @@ const baseCard: AICard = {
 /** 一段能被 @babel/standalone 正常编译的 Motion Card 源码 */
 const VALID_MOTION_SOURCE = 'const MotionComponent = (props) => null;';
 
+const makeLongEntries = () =>
+  Array.from({ length: 18 }, (_, index) =>
+    makeSrtEntry(
+      index + 1,
+      index * 10_000,
+      (index + 1) * 10_000,
+      `第 ${index + 1} 条长字幕内容`,
+    ),
+  );
+
+const longSegment = {
+  id: 'long-seg',
+  title: '超长主题',
+  summary: '一个被模型误判成单段的超长主题',
+  startMs: 0,
+  endMs: 180_000,
+  transcriptExcerpt: '超长主题原始摘录',
+  semanticType: 'explanation',
+  complexityLevel: 'medium',
+  visualizationScore: 80,
+  pacingNeed: 'steady',
+  keywords: ['长视频', '分段'],
+  entities: ['Motion Card'],
+  visualType: 'motion',
+};
+
 describe('buildSrtText', () => {
   it('formats subtitle entries into readable timestamped lines', () => {
     const text = buildSrtText(baseEntries);
@@ -163,6 +189,38 @@ describe('planTranscriptSegments', () => {
     expect(result.keywords).toEqual(['AI', '播客']);
     expect(modelCaller).toHaveBeenCalledTimes(1);
     expect(modelCaller.mock.calls[0]?.[2]).toBe(fullTranscript);
+  });
+
+  it('splits overlong planned segments by subtitle boundaries', async () => {
+    const longEntries = makeLongEntries();
+    const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
+      segments: [longSegment],
+      coverPrompts: ['封面提示词'],
+      summary: '节目总结',
+      keywords: ['AI', '播客'],
+    });
+
+    const result = await planTranscriptSegments(longEntries, settings, {
+      generateStructuredData: modelCaller,
+    });
+
+    expect(result.segments).toHaveLength(5);
+    expect(result.segments.every((segment) => segment.endMs - segment.startMs <= 60_000)).toBe(
+      true,
+    );
+    expect(result.segments.map((segment) => segment.id)).toEqual([
+      'long-seg-part-1',
+      'long-seg-part-2',
+      'long-seg-part-3',
+      'long-seg-part-4',
+      'long-seg-part-5',
+    ]);
+    expect(result.segments[0]?.title).toBe('超长主题（1/5）');
+    expect(result.segments[0]?.summary).toContain('第 1/5 小节');
+    expect(result.segments[0]?.transcriptExcerpt).toContain('第 1 条长字幕内容');
+    expect(result.segments[0]?.transcriptExcerpt).not.toContain('第 8 条长字幕内容');
+    expect(result.segments[0]?.keywords).toEqual(['长视频', '分段']);
+    expect(result.segments[0]?.visualType).toBe('motion');
   });
 });
 
@@ -252,6 +310,41 @@ describe('generateCardForSegment', () => {
         { generateStructuredData: modelCaller },
       ),
     ).rejects.toThrow(/请重新生成/);
+  });
+
+  it('falls back to a compiled motion-card when LLM omits motionCard sourceCode', async () => {
+    const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
+      id: 'generated-card-fallback',
+      type: 'summary',
+      title: '兜底卡片',
+      content: '模型只返回了结构化文案，没有返回 Motion 源码。',
+      startMs: 0,
+      endMs: 3_000,
+      displayDurationMs: 5_000,
+      displayMode: 'fullscreen',
+      template: 'summary-default',
+      enabled: true,
+      renderMode: 'motion-card',
+      style: { primaryColor: '#79c4ff', backgroundColor: '#151922', fontSize: 48 },
+    });
+
+    const result = await generateCardForSegment(
+      baseEntries,
+      {
+        segments: [baseSegment],
+        coverPrompts: [],
+        summary: '',
+        keywords: [],
+      },
+      baseSegment,
+      settings,
+      { generateStructuredData: modelCaller },
+    );
+
+    expect(result.renderMode).toBe('motion-card');
+    expect(result.motionCard?.sourceCode).toContain('const MotionComponent');
+    expect(result.motionCard?.compiledCode).toContain('React.createElement');
+    expect(result.title).toBe('兜底卡片');
   });
 });
 
@@ -369,6 +462,55 @@ describe('analyzeSrt', () => {
     expect(result.cardErrors?.[0]?.segmentId).toBe('seg-1');
     expect(result.cardErrors?.[0]?.message).toContain('空闲超时');
     expect(result.segments).toHaveLength(2);
+  });
+
+  it('generates one card per split segment when planning returns an overlong segment', async () => {
+    const longEntries = makeLongEntries();
+    const modelCaller = vi.fn<typeof generateStructuredData>();
+    modelCaller.mockImplementation(async (_settings, _system, _user, _binding, opts) => {
+      if (opts?.label === 'planning.segment') {
+        return {
+          segments: [longSegment],
+          coverPrompts: ['封面提示词'],
+          summary: '节目总结',
+          keywords: ['AI', '播客'],
+        };
+      }
+
+      const label = typeof opts?.label === 'string' ? opts.label : '';
+      const idMatch = /（(.+?)）$/.exec(label);
+      const segmentId = idMatch?.[1] ?? 'unknown';
+      return {
+        id: `card-${segmentId}`,
+        type: 'summary',
+        title: `卡片 ${segmentId}`,
+        content: '拆分后的子段内容',
+        startMs: 0,
+        endMs: 30_000,
+        displayDurationMs: 5_000,
+        displayMode: 'fullscreen',
+        template: 'summary-default',
+        enabled: true,
+        renderMode: 'motion-card',
+        motionCard: { sourceCode: VALID_MOTION_SOURCE },
+        style: { primaryColor: '#79c4ff', backgroundColor: '#151922', fontSize: 48 },
+      };
+    });
+
+    const result = await analyzeSrt(longEntries, settings, {
+      generateStructuredData: modelCaller,
+    });
+
+    expect(result.segments).toHaveLength(5);
+    expect(result.cards).toHaveLength(5);
+    expect(result.cards.map((card) => card.segmentId)).toEqual([
+      'long-seg-part-1',
+      'long-seg-part-2',
+      'long-seg-part-3',
+      'long-seg-part-4',
+      'long-seg-part-5',
+    ]);
+    expect(modelCaller).toHaveBeenCalledTimes(6);
   });
 });
 

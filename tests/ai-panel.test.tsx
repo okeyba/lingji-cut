@@ -4,9 +4,19 @@ import { AIPanel } from '../src/components/AIPanel';
 
 const mockModules = vi.hoisted(() => {
   const buildAnalysisResult = () => ({
+    segments: [
+      {
+        id: 'seg-1',
+        title: '开场段落',
+        summary: '开场总结',
+        startMs: 0,
+        endMs: 45_000,
+      },
+    ],
     cards: [
       {
         id: 'card-1',
+        segmentId: 'seg-1',
         type: 'summary' as const,
         title: '本期要点',
         content: '重点内容',
@@ -191,6 +201,51 @@ describe('AIPanel', () => {
     expect(html).toContain('data-ai-footer-button="true"');
     expect(html).toContain('上轨 1');
     expect(html).toContain('卡片');
+  });
+
+  it('renders failed segment retry entries from analysisResult.cardErrors', () => {
+    mockModules.aiStoreState.analysisResult = {
+      ...mockModules.buildAnalysisResult(),
+      segments: [
+        ...mockModules.buildAnalysisResult().segments,
+        {
+          id: 'seg-2',
+          title: '模型选择',
+          summary: '讲模型选择',
+          startMs: 45_000,
+          endMs: 90_000,
+        },
+      ],
+      cardErrors: [
+        {
+          segmentId: 'seg-1',
+          segmentIndex: 0,
+          totalSegments: 2,
+          segmentTitle: '开场段落',
+          message: '空闲超时',
+        },
+        {
+          segmentId: 'seg-2',
+          segmentIndex: 1,
+          totalSegments: 2,
+          message: '模型返回空内容',
+        },
+      ],
+    };
+
+    const html = renderToStaticMarkup(<AIPanel compact={false} />);
+
+    expect(html).toContain('data-ai-card-errors="true"');
+    expect(html).toContain('失败段 2');
+    expect(html).toContain('卡片生成失败，可单独重试');
+    expect(html).toContain('data-ai-card-error-item="seg-1"');
+    expect(html).toContain('data-ai-card-error-item="seg-2"');
+    expect(html).toContain('开场段落');
+    expect(html).toContain('模型选择');
+    expect(html).toContain('空闲超时');
+    expect(html).toContain('模型返回空内容');
+    expect(html).toContain('data-ai-retry-card-errors-all="true"');
+    expect(html).toContain('data-ai-retry-card-error="seg-1"');
   });
 
 });

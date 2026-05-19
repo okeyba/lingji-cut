@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadAISettings, saveAISettings } from '../../store/ai';
-import { Field, Divider, Select, SaveButton, SettingsPageHeader } from '../../ui';
+import { Field, Divider, Select, SaveButton, SettingsPageHeader, Textarea } from '../../ui';
 import type { SelectOption } from '../../ui';
 import {
   DEFAULT_JIMENG_MODEL,
@@ -36,6 +36,7 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
   const [imageProviders, setImageProviders] = useState<ImageProvider[]>([]);
   const [defaultImageProviderId, setDefaultImageProviderId] = useState<string | null>(null);
   const [defaultImageModel, setDefaultImageModel] = useState<string | null>(null);
+  const [globalCoverImagePrompt, setGlobalCoverImagePrompt] = useState('');
   // 新：视频 Provider
   const [videoProviders, setVideoProviders] = useState<VideoProvider[]>([]);
   const [defaultVideoProviderId, setDefaultVideoProviderId] = useState<string | null>(null);
@@ -54,6 +55,7 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
       const nextImageProviders = settings?.imageProviders ?? [];
       const nextDefaultImageProviderId = settings?.defaultImageProviderId ?? null;
       const nextDefaultImageModel = settings?.defaultImageModel ?? null;
+      const nextGlobalCoverImagePrompt = settings?.globalCoverImagePrompt ?? '';
       const nextVideoProviders = settings?.videoProviders ?? [];
       const nextDefaultVideoProviderId = settings?.defaultVideoProviderId ?? null;
       const nextDefaultVideoModel = settings?.defaultVideoModel ?? null;
@@ -72,6 +74,7 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
       setImageProviders(nextImageProviders);
       setDefaultImageProviderId(nextDefaultImageProviderId);
       setDefaultImageModel(nextDefaultImageModel);
+      setGlobalCoverImagePrompt(nextGlobalCoverImagePrompt);
       setVideoProviders(nextVideoProviders);
       setDefaultVideoProviderId(nextDefaultVideoProviderId);
       setDefaultVideoModel(nextDefaultVideoModel);
@@ -86,6 +89,7 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
           imageProviders: nextImageProviders,
           defaultImageProviderId: nextDefaultImageProviderId,
           defaultImageModel: nextDefaultImageModel,
+          globalCoverImagePrompt: nextGlobalCoverImagePrompt,
           videoProviders: nextVideoProviders,
           defaultVideoProviderId: nextDefaultVideoProviderId,
           defaultVideoModel: nextDefaultVideoModel,
@@ -116,6 +120,7 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
         imageProviders,
         defaultImageProviderId,
         defaultImageModel,
+        globalCoverImagePrompt,
         videoProviders,
         defaultVideoProviderId,
         defaultVideoModel,
@@ -130,6 +135,7 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
       imageProviders,
       defaultImageProviderId,
       defaultImageModel,
+      globalCoverImagePrompt,
       videoProviders,
       defaultVideoProviderId,
       defaultVideoModel,
@@ -162,6 +168,7 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
       imageProviders,
       defaultImageProviderId,
       defaultImageModel,
+      globalCoverImagePrompt,
       videoProviders,
       defaultVideoProviderId,
       defaultVideoModel,
@@ -177,6 +184,7 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
           imageProviders: [],
           defaultImageProviderId: null,
           defaultImageModel: null,
+          globalCoverImagePrompt: '',
           videoProviders: [],
           defaultVideoProviderId: null,
           defaultVideoModel: null,
@@ -200,6 +208,7 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
         imageProviders,
         defaultImageProviderId,
         defaultImageModel,
+        globalCoverImagePrompt: globalCoverImagePrompt.trim(),
         videoProviders,
         defaultVideoProviderId,
         defaultVideoModel,
@@ -229,6 +238,7 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
     imageProviders,
     defaultImageProviderId,
     defaultImageModel,
+    globalCoverImagePrompt,
     videoProviders,
     defaultVideoProviderId,
     defaultVideoModel,
@@ -377,6 +387,19 @@ export function AIConfigTab({ onRegisterLeaveGuard }: AIConfigTabProps) {
             options={imageModelOptions}
             onChange={(e) => setDefaultImageModel(e.target.value || null)}
             disabled={!currentDefaultImageProvider}
+          />
+        </Field>
+
+        <Field
+          label="全局封面图提示词"
+          hint="生成封面时将与基于内容生成的提示词拼接后发送给图像 Provider，可用于固定品牌、画质、风格、构图偏好等。"
+        >
+          <Textarea
+            value={globalCoverImagePrompt}
+            onChange={(e) => setGlobalCoverImagePrompt(e.target.value)}
+            placeholder="例如：写实摄影风格，电影级布光，8K 高清，细腻纹理，禁止水印与 logo"
+            rows={4}
+            resize="vertical"
           />
         </Field>
 

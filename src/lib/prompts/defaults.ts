@@ -1,17 +1,46 @@
 import type { PromptKind } from './types';
 
+const PROJECT_STYLE = `name: project.style
+description: 项目统一风格提示词
+version: 1
+user: |-
+  冷静克制的现代科技纪录片风格，深色背景，低饱和青蓝色点缀，细腻磨砂玻璃层次，电影级侧逆光，构图留白稳定，镜头运动缓慢顺滑，中文无衬线粗体标题，信息层级清晰，避免霓虹紫、强饱和电商橙、营销页式渐变、夸张粒子和廉价光效。
+`;
+
 const PLANNING_SEGMENT = `name: planning.segment
 description: 字幕分段规划提示词
-version: 2
+version: 4
 user: |-
   你是一个播客内容分析助手。请先完整理解整篇字幕，再把节目拆成有明确语义边界的段落。
   {{globalPromptLine}}
+  {{projectStylePromptBlock}}
 
   段落拆分要求：
-  - 必须按真实话题边界拆分，而不是按 token 长度硬切
+  - 必须按真实话题边界拆分，而不是按 token 长度硬切；同一话题的展开与收束可以分成 2-3 段，让卡片承载更细的子主题
+  - 段落数量按整期时长动态决定，目标是"每段对应 1 张信息密度合适的卡片"：
+    · 短稿（<3 分钟）：4-8 段
+    · 中稿（3-8 分钟）：8-16 段
+    · 长稿（>8 分钟）：每 30-45 秒一段，建议 12-30 段或更多；超长节目允许超过 30 段
+  - 单段时长建议 20-60 秒，过短的过渡 / 客套话尽量并入相邻段，不要硬塞成独立段
+  - 单段绝不能超过 60 秒；如果同一话题连续讲了更久，必须按子观点继续拆成多个连续段落
   - startMs / endMs 必须对应该段真正开始与结束的字幕时间
   - 如果前面只是铺垫，不要把时间提前算进该段
   - transcriptExcerpt 保留该段最关键的原始字幕摘录，便于后续逐段生成卡片
+
+  每段必须给出 visualType（"motion" 或 "image"）。**默认必须是 "motion"**，只有当段落同时满足下面"image 强信号"的多个条件时才能选 "image"：
+  - "motion"（默认）：总结观点、数据 / 数字对比、抽象概念、流程 / 时间线、列表枚举、评价 / 态度、对比 / 因果、定义、口播解释、提问与回答、过渡铺垫、几乎所有"在讲道理"的段落
+  - "image"（仅在强信号下使用，必须同时满足以下 ≥2 条才允许选择）：
+    1. 段落核心是一个**具体的、可被一张静态图清晰呈现**的视觉对象：单一产品 / 单一人物 / 单一地点 / 单一场景 / 单一物件特写
+    2. 段落出现了**专有名词、品牌名、产品型号、地点名或人物名**，并且该名词就是这段内容的视觉主体（不是顺带提到）
+    3. 段落正在做一段画面化的描写（描述长相、场景、氛围、动作姿态），口播此时是在"带观众看"而不是在"讲道理"
+  - 反例（必须选 motion，不许选 image）：
+    · 只是抽象提到了某个品牌 / 概念，但段落主线是评价或对比 → motion
+    · 段落是数字、要点、清单、流程 → motion
+    · 段落是观点输出、价值判断、因果分析 → motion
+    · 段落是抛问题、做铺垫、转场 → motion
+    · 不确定属于哪一类 → motion
+  - 硬性配额（重要，写到 LLM 自检里）：整期里 visualType="image" 的段数 **不得超过总段数的 1/3**；如果挑出来的 image 段已经接近这个上限，剩余段必须全部选 motion
+  - 选择 "image" 的段落必须在 transcriptExcerpt 或 summary 中明确包含上面 3 条强信号里的具体名词 / 描写，便于人工复核
 
   coverPrompts 要求（数组中只能且必须 1 条字符串）：
   - 必须使用简体中文；除品牌名、专有名词或必要缩写外，不要出现英文
@@ -36,6 +65,9 @@ user: |-
 
   已有整期创作提示词：
   {{globalPrompt}}
+
+  项目统一风格要求：
+  {{projectStylePrompt}}
 
   当前封面提示词（仅用于参考，可改写）：
   {{currentPrompt}}
@@ -90,80 +122,44 @@ user: |-
 `;
 
 const CARDS_SEGMENT = `name: cards.segment
-description: 围绕单个 segment 生成 Motion Card（Remotion 动画组件）
-version: 3
+description: 围绕单个 segment 生成 Motion Card 或 Image Card 描述
+version: 5
 user: |-
-  你是一个播客内容分析助手，同时也是一个 Remotion 动画组件生成器。现在要围绕单个内容段落生成一张 Motion Card，输出一段**可直接被 Babel 编译**的 React/Remotion JSX 组件源码。
+  任务：只为当前 segment 生成 1 张卡片，严格跟随 visualType={{segmentVisualType}}。
 
-  整期创作提示词：
-  {{globalPrompt}}
-
-  节目级总结：
-  {{programSummary}}
-
-  节目关键词：
-  {{keywords}}
-
-  当前 segment 信息：
-  - id: {{segmentId}}
-  - title: {{segmentTitle}}
-  - summary: {{segmentSummary}}
-  - startMs: {{segmentStartMs}}
-  - endMs: {{segmentEndMs}}
-  - transcriptExcerpt: {{segmentTranscriptExcerpt}}
-
-  单卡追加提示词：
-  {{cardPrompt}}
-
+  上下文：
+  - 全局提示：{{globalPrompt}}
+  - 项目风格：{{projectStylePrompt}}
+  - 节目总结：{{programSummary}}
+  - 关键词：{{keywords}}
+  - segment：{{segmentId}}｜{{segmentTitle}}｜{{segmentStartMs}}-{{segmentEndMs}}ms
+  - 摘要：{{segmentSummary}}
+  - 摘录：{{segmentTranscriptExcerpt}}
+  - 单卡提示：{{cardPrompt}}
   {{currentCardSection}}
 
-  时间轴约束（非常重要）：
-  - startMs 必须对应"观众真正听到该主题"的那句字幕开始时间
-  - 不要把铺垫、转场、提问或上一话题的时间提前算进来
-  - endMs 必须对应该主题核心表达完成的那句字幕结束时间
-  - displayDurationMs 必须覆盖这张卡片对应的核心表达
-  - 如果一个主题在后半段才真正展开，宁可把 startMs 设晚，也不要让卡片提前出现
+  时间轴：startMs/endMs/displayDurationMs 必须围绕当前段核心表达；不提前覆盖铺垫、转场或相邻段。
 
-  Motion Card 源码硬约束（motionCard.sourceCode 必须同时满足以下全部规则）：
-  - 必须定义 \`const MotionComponent = (props) => { ... }\`，并在函数体内 return 一段 JSX
-  - props 固定为 \`{ frame, fps, durationInFrames, width, height }\`
-    - frame：当前 Sequence 内相对帧号（0 ~ durationInFrames）
-    - durationInFrames：该卡片自身总帧数，所有 interpolate / spring 的进度都要基于它归一化
-    - width / height：容器像素尺寸（fullscreen 为 1920×1080，PiP 为 PiP 尺寸），布局必须用这两个值，禁止硬编码 1920/1080
-  - 禁止使用 import / export / async / await
-  - 禁止使用 useCurrentFrame / useVideoConfig（运行时已通过 props 注入 frame / fps / durationInFrames / width / height）
-  - 禁止从 window / globalThis 读取 React / Remotion，禁止 require()
-  - 可以直接使用沙箱注入的 API：interpolate、spring、Easing、Sequence、AbsoluteFill、Img、Video、Audio、Noise、Paths、Shapes 等
-  - 可以使用 React.useMemo / React.useState / React.useEffect 等 React API
-  - 面向 16:9 视频画面设计，默认铺满整个容器（使用 props.width / props.height）
-  - 必须用纯内联 CSS（style={{...}}）；不要引入外部字体 / 网络图片 / HTML <link>
-  - 不要输出 markdown 代码块；sourceCode 字段里只放 JSX 源码本身
-  - 内容必须忠于字幕事实，不要编造；不要在画面里放"数据来源""Source""免责声明"等标注
-  - 保留顶层 title / content 作为结构化兜底文本（用于时间轴显示）
+  image 分支：
+  - 输出 type="image"，不要 motionCard，不要 cardPrompt。
+  - title ≤14 字；content 30-80 字，写清图像主体/场景，供 card.image 后续生成文生图 prompt。
+  - displayMode 合理；imageAspectRatio 从 "16:9"|"9:16"|"1:1"|"4:3"|"3:4" 中选。
 
-  颜色建议：
-  - summary: #79c4ff
-  - data: #4ed38a
-  - insight: #ffb347
-  - chapter: #9eb7ff
-  - quote: #ff8f7a
+  motion 分支：
+  - type 从 summary/data/insight/chapter/quote/motion 中选；renderMode="motion-card"。
+  - motionCard.sourceCode 必须定义 const MotionComponent = (props) => { ... } 并 return JSX。
+  - props 只用 { frame, fps, durationInFrames, width, height }；布局基于 width/height，不硬编码 1920/1080。
+  - 禁止 import/export/async/await/useCurrentFrame/useVideoConfig/window/globalThis/require。
+  - 纯内联 style；不引入外部字体/网络资源；不输出 markdown 代码块。
+  - 内容忠于字幕，不编造，不写 Source/免责声明等画面小字。
+  - 性能：最多 1 标题 + 3 要点、6 个主元素、2 层背景装饰、1 个 SVG；禁止粒子雨/复杂滤镜/大量 path/逐帧随机/CameraMotionBlur。
+  - 动画：入场 12-24 帧、退出 12-20 帧；长卡用 2-4 个轻量 beats + 低成本微动循环；interpolate 必须 clamp。
+  - 风格：克制 dark / SwiftUI 磨砂层次；避免霓虹紫、强饱和橙、营销渐变和闪烁。
 
-  整体风格建议：
-  - 偏 macOS desktop dark / SwiftUI 的半透明磨砂层次
-  - 高光和阴影要克制，避免霓虹紫、强饱和电商橙、网页营销页式渐变
-  - 动画要有明确进入 / 停留 / 退出节奏，不要堆砌粒子或闪烁
+  可用 API：{{sandboxReference}}
 
-  其他要求：
-  - 必须围绕当前 segment 生成，不要偏离整期主线
-  - 可以参考"当前卡片线索"延续视觉方向，但不要照抄旧内容
-  - 当前 segment 的逐字稿会作为用户消息传入，直接基于它判断卡片信息结构
-  - 不需要复述整期全文，只需要利用下方"节目级上下文"理解定位即可
-
-  节目级上下文（节目摘要 / 关键词 / 当前段在整期中的位置，用于把握定位，不要逐字复述）：
+  节目定位：
   {{programContext}}
-
-  当前可用 Motion 沙箱 API：
-  {{sandboxReference}}
 `;
 
 const SCRIPT_REVIEW = `name: script.review
@@ -188,23 +184,50 @@ user: |-
 
 
 const CARD_IMAGE = `name: card.image
-description: 段落图片卡提示词
-version: 1
+description: 段落图片卡文生图提示词（中文）
+version: 2
 user: |-
-  你是视觉创意 AI。基于以下 segment 信息，输出一段适合直接喂给文生图模型的英文 prompt：
+  你是一名资深中文文生图提示词工程师，服务于一档播客 / 口播节目的"段落图片卡"。
+  请基于下方节目级与段落级信息，为当前段落生成 1 段可直接喂给文生图模型的**简体中文**提示词。
 
-  标题：{{segmentTitle}}
-  摘要：{{segmentSummary}}
-  关键句：{{segmentExcerpt}}
-  显示模式：{{displayMode}}（fullscreen 优先 16:9 横构图；pip 可考虑方构图）
+  ===== 节目级上下文 =====
+  整期创作提示词：{{globalPrompt}}
+  项目统一风格要求：{{projectStylePrompt}}
+  节目级总结：{{programSummary}}
+  节目关键词：{{keywords}}
+
+  ===== 当前段落信息 =====
+  段落 id：{{segmentId}}
+  段落标题：{{segmentTitle}}
+  段落摘要：{{segmentSummary}}
+  段落字幕摘录：{{segmentExcerpt}}
+
+  ===== 当前卡片结构（cards.segment 已确定，必须保持视觉一致）=====
+  卡片标题：{{cardTitle}}
+  卡片描述：{{cardContent}}
+  显示模式：{{displayMode}}（fullscreen 优先大画面构图；pip 优先方构图或竖构图）
   画幅比例：{{aspectRatio}}
 
-  要求：
-  1. 突出 segment 的核心意象，避免抽象口号；
-  2. 镜头语言：构图、光影、风格、镜头距离写明确；
-  3. 不出现任何文字 / Logo / UI 元素；
-  4. 直接输出英文 prompt，不要任何前后缀或解释。
-`;
+  ===== 用户单卡追加提示（可选）=====
+  {{cardPromptHint}}
+
+  【提示词结构规范】
+  请按以下 6 个维度，按序、用中文逗号"，"或分号"；"串联，整体长度 100-180 字：
+  1. 主体（自然语言）：明确"画面里有谁/有什么"，给出形态、材质、数量、外貌等可视化要素
+  2. 行为 / 状态（自然语言）：主体正在做什么、神态、互动关系
+  3. 环境（自然语言）：场景、时间、天气、空间氛围、关键道具
+  4. 画面风格（独立词组，选 1 种为主）：写实摄影 / 编辑插画 / 极简线条 / 3D 渲染 / 中式水墨 / 赛博朋克 / 等距信息图 等
+  5. 美学词（独立词组，覆盖色彩 / 灯光 / 景别 / 构图 中至少 3 类，每类 1-2 个）
+  6. 质量词（独立词组，2-3 个）：8K 高清 / 电影质感 / 细腻纹理 / 大师构图 等
+
+  【强制规则】
+  - 必须使用简体中文；除品牌名、专有名词或必要缩写外，不要出现英文
+  - 主体 / 行为 / 环境 必须是可读的自然语言句子；风格 / 美学 / 质量 必须是独立词组，禁止展开成长句
+  - 紧扣当前段落的核心视觉对象，不要堆砌"美丽、震撼、惊艳"等空泛形容词
+  - **画面里禁止出现任何文字、UI 元素、字幕条、Logo、水印、二维码、署名、日期**
+  - 禁止出现裸露、暴力、政治敏感、品牌侵权等违规元素
+  - 必须按 fullscreen / pip 与 aspectRatio 暗示的画幅设计构图（横/方/竖），不要让主体被裁掉
+  - 禁止使用换行 / 斜杠 / markdown 代码块；只输出一段连续的中文描述`;
 
 const CARD_VIDEO = `name: card.video
 description: 段落视频卡提示词
@@ -215,6 +238,7 @@ user: |-
   标题：{{segmentTitle}}
   摘要：{{segmentSummary}}
   关键句：{{segmentExcerpt}}
+  项目统一风格要求：{{projectStylePrompt}}
   显示模式：{{displayMode}}
   画幅比例：{{aspectRatio}}
   时长：{{durationSeconds}} 秒
@@ -228,6 +252,7 @@ user: |-
 
 
 export const DEFAULT_PROMPT_YAML: Record<PromptKind, string> = {
+  'project.style': PROJECT_STYLE,
   'planning.segment': PLANNING_SEGMENT,
   'cover.regeneration': COVER_REGENERATION,
   'cards.segment': CARDS_SEGMENT,

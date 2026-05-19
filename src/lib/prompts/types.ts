@@ -1,4 +1,5 @@
 export const PROMPT_KINDS = [
+  'project.style',
   'planning.segment',
   'cover.regeneration',
   'cards.segment',
@@ -15,7 +16,7 @@ export function isPromptKind(value: unknown): value is PromptKind {
 
 export type PromptScope = 'builtin' | 'global' | 'project';
 
-export type PromptGroup = 'ai-analysis' | 'script';
+export type PromptGroup = 'project' | 'ai-analysis' | 'script';
 
 export const PROMPT_CATEGORIES = ['script-template'] as const;
 export type PromptCategory = (typeof PROMPT_CATEGORIES)[number];
@@ -129,7 +130,7 @@ const LOCKED_PLANNING_SEGMENT = `【系统契约 · 不可修改】
 输出必须是严格 JSON，且只返回 JSON，不要附加解释。
 
 顶层结构必须包含：
-- segments: 2-8 个段落
+- segments: 按整期时长动态规划；短稿 4-8 段，中稿 8-16 段，长稿按 30-45 秒拆分，可超过 30 段
 - coverPrompts: 数组，且只能包含 1 条字符串
 - summary: 一句话总结
 - keywords: 关键词数组
@@ -156,22 +157,12 @@ const LOCKED_COVER_REGENERATION = `【系统契约 · 不可修改】
 - coverPrompts: 数组，且只能包含 1 条字符串`;
 
 const LOCKED_CARDS_SEGMENT = `【系统契约 · 不可修改】
-输出必须是严格 JSON 对象，且只返回 JSON，不要附加解释。
-
-字段必须包含：
-id, segmentId, type, title, content, startMs, endMs, displayDurationMs,
-displayMode, template, enabled, style, renderMode, cardPrompt, motionCard
-
-约束：
-- renderMode 必须输出 "motion-card"
-- motionCard.sourceCode 必须是一段可直接被 Babel 解析的 React/Remotion JSX 源码，严格满足：
-  1) 定义 const MotionComponent = (props) => { ... }
-  2) props 形状 { frame, fps, durationInFrames, width, height }
-  3) 禁止 import / export / async / await
-  4) 禁止 useCurrentFrame / useVideoConfig / window / globalThis / require
-  5) 布局基于 props.width / props.height，不要硬编码 1920/1080
-  6) sourceCode 字段值只放 JSX 源码字符串本身，不要包 markdown 代码块
-- startMs / endMs / displayDurationMs 必须输出毫秒数字`;
+只返回严格 JSON 对象，不要解释。
+必填：id, segmentId, type, title, content, startMs, endMs, displayDurationMs, displayMode, template, enabled, style。
+image：必须给 imageAspectRatio；禁止 motionCard 与 cardPrompt；renderMode 留空或 "legacy"。
+motion：必须给 cardPrompt、renderMode="motion-card"、motionCard.sourceCode。
+sourceCode：定义 const MotionComponent = (props)=>{...}；props 为 {frame,fps,durationInFrames,width,height}；禁止 import/export/async/await/useCurrentFrame/useVideoConfig/window/globalThis/require；布局用 width/height；不要 markdown 代码块。
+时间字段必须是毫秒数字。`;
 
 const LOCKED_SCRIPT_REVIEW = `【系统契约 · 不可修改】
 请以严格 JSON 格式返回审查结果，且只返回 JSON：
@@ -191,7 +182,19 @@ const LOCKED_SCRIPT_REVIEW = `【系统契约 · 不可修改】
 - severity 必须是 error | warning | info 之一
 - suggestion 必须是可以直接替换 originalText 的完整文本`;
 
+const LOCKED_CARD_IMAGE = `【系统契约 · 不可修改】
+只输出**一段连续的简体中文文生图提示词**，不要附加任何前缀、后缀、解释、标题、列表、JSON 或 markdown 代码块。
+不要包裹引号；不要换行；不要标注"提示词："或"Prompt:"等前导文本。
+画面中禁止出现任何文字 / UI 元素 / Logo / 水印 / 字幕条。`;
+
 export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
+  'project.style': {
+    kind: 'project.style',
+    label: '项目统一风格',
+    description: '统一定义整期项目的设计语言，可被其他提示词通过 {{projectStylePrompt}} 复用引用',
+    group: 'project',
+    variables: [],
+  },
   'planning.segment': {
     kind: 'planning.segment',
     label: '字幕分段规划',
@@ -199,6 +202,8 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     group: 'ai-analysis',
     variables: [
       { name: 'globalPromptLine', description: '额外创作要求行；有值时形如"额外创作要求：xxx"，无值为空字符串' },
+      { name: 'projectStylePrompt', description: '项目统一风格要求（为空填"无"）' },
+      { name: 'projectStylePromptBlock', description: '项目统一风格要求块；无值为空字符串' },
     ],
     lockedContract: {
       position: 'user-tail',
@@ -213,6 +218,8 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     group: 'ai-analysis',
     variables: [
       { name: 'globalPrompt', description: '整期创作提示词（为空填"无"）' },
+      { name: 'projectStylePrompt', description: '项目统一风格要求（为空填"无"）' },
+      { name: 'projectStylePromptBlock', description: '项目统一风格要求块；无值为空字符串' },
       { name: 'currentPrompt', description: '当前封面提示词（为空填"无"）' },
     ],
     lockedContract: {
@@ -228,6 +235,8 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     group: 'ai-analysis',
     variables: [
       { name: 'globalPrompt', description: '整期创作提示词' },
+      { name: 'projectStylePrompt', description: '项目统一风格要求（为空填"无"）' },
+      { name: 'projectStylePromptBlock', description: '项目统一风格要求块；无值为空字符串' },
       { name: 'programSummary', description: '节目级总结' },
       { name: 'keywords', description: '节目关键词（顿号分隔）' },
       { name: 'segmentId', description: 'segment id' },
@@ -236,6 +245,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
       { name: 'segmentStartMs', description: 'segment 起始毫秒' },
       { name: 'segmentEndMs', description: 'segment 结束毫秒' },
       { name: 'segmentTranscriptExcerpt', description: 'segment 原始摘录' },
+      { name: 'segmentVisualType', description: '上游判定的卡片形式：motion 或 image' },
       { name: 'cardPrompt', description: '单卡追加提示词' },
       { name: 'currentCardSection', description: '当前卡片线索多行块（由调用方构造）' },
       { name: 'programContext', description: '节目级浓缩上下文（节目摘要、关键词、当前段在整期中的位置）' },
@@ -265,15 +275,31 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
   'card.image': {
     kind: 'card.image',
     label: '段落图片卡',
-    description: '为单个 segment 生成 AI 图片卡的提示词；产物用于 image provider 文生图',
+    description:
+      '为单个 segment 生成中文文生图提示词；由 cards.segment 拆出 image 卡片后单独调用，产物用于 image provider 文生图',
     group: 'ai-analysis',
     variables: [
+      { name: 'globalPrompt', description: '整期创作提示词（为空填"无"）' },
+      { name: 'projectStylePrompt', description: '项目统一风格要求（为空填"无"）' },
+      { name: 'projectStylePromptBlock', description: '项目统一风格要求块；无值为空字符串' },
+      { name: 'programSummary', description: '节目级总结（为空填"无"）' },
+      { name: 'keywords', description: '节目关键词（顿号分隔，无则为"无"）' },
+      { name: 'segmentId', description: 'segment id' },
       { name: 'segmentTitle', description: 'segment 标题' },
       { name: 'segmentSummary', description: 'segment 摘要' },
       { name: 'segmentExcerpt', description: 'segment 字幕摘录' },
+      { name: 'cardTitle', description: '卡片标题（cards.segment 已确定）' },
+      { name: 'cardContent', description: '卡片描述（cards.segment 已确定，承载视觉意象）' },
       { name: 'displayMode', description: '显示模式：fullscreen 或 pip' },
       { name: 'aspectRatio', description: '画幅比例：16:9 / 9:16 / 1:1 / 4:3 / 3:4' },
+      { name: 'cardPromptHint', description: '用户单卡追加提示词，可选（无则为"无"）' },
     ],
+    lockedContract: {
+      position: 'user-tail',
+      content: LOCKED_CARD_IMAGE,
+      reason:
+        '业务侧直接把模型返回值作为文生图 prompt 喂给 ImageProvider；附加任何前后缀或 JSON 都会污染图像生成效果。',
+    },
   },
   'card.video': {
     kind: 'card.video',
@@ -284,6 +310,8 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
       { name: 'segmentTitle', description: 'segment 标题' },
       { name: 'segmentSummary', description: 'segment 摘要' },
       { name: 'segmentExcerpt', description: 'segment 字幕摘录' },
+      { name: 'projectStylePrompt', description: '项目统一风格要求（为空填"无"）' },
+      { name: 'projectStylePromptBlock', description: '项目统一风格要求块；无值为空字符串' },
       { name: 'displayMode', description: '显示模式：fullscreen 或 pip' },
       { name: 'aspectRatio', description: '画幅比例：16:9 / 9:16 / 1:1' },
       { name: 'durationSeconds', description: '视频时长（秒），档位由 provider capabilities 决定' },

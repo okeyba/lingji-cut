@@ -79,6 +79,7 @@ interface OverviewItem {
 }
 
 const GROUP_LABEL: Record<PromptKindMeta['group'], string> = {
+  project: '项目设计语言',
   'ai-analysis': '内容分析与卡片',
   script: '文稿流程',
 };
@@ -298,6 +299,7 @@ export function PromptsConfigTab() {
 
   const groupedKinds = useMemo(() => {
     const groups: Record<PromptKindMeta['group'], OverviewItem[]> = {
+      project: [],
       'ai-analysis': [],
       script: [],
     };
@@ -680,7 +682,7 @@ export function PromptsConfigTab() {
             <CardDescription>按优先级：项目 &gt; 全局 &gt; 内置默认</CardDescription>
           </CardHeader>
           <CardContent className={styles.sidebarList}>
-            {(['ai-analysis', 'script'] as const).map((group) => (
+            {(['project', 'ai-analysis', 'script'] as const).map((group) => (
               <div className={styles.group} key={group}>
                 <div className={styles.groupTitle}>{GROUP_LABEL[group]}</div>
                 {groupedKinds[group].map((item) => {

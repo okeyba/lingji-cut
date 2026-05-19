@@ -2,6 +2,7 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { ChatOpenAI } from '@langchain/openai';
 import { LMSTUDIO_DEFAULT_BASE_URL, type AISettings, type LLMProvider } from '../../types/ai';
+import { ClaudeCodeAcpChatModel } from './claude-code-acp-model';
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, '');
@@ -63,6 +64,12 @@ export function createChatModelFromProvider(
   model: string,
   options?: { enableThinking?: boolean },
 ): BaseChatModel {
+  if (provider.type === 'claude_code_acp') {
+    return new ClaudeCodeAcpChatModel({
+      model,
+    }) as unknown as BaseChatModel;
+  }
+
   if (provider.type === 'gemini') {
     return createGeminiChatModel(provider, model, options);
   }
