@@ -4,6 +4,7 @@ import type { SrtEntry } from '../types';
 import type {
   AICard,
   AISegment,
+  AISegmentVisualType,
   AISettings,
   CoverCandidate,
   PromptBindingMap,
@@ -136,12 +137,51 @@ export interface GenerateCardVideoArgs {
   projectBindings?: PromptBindingMap | null;
 }
 
+export interface GenerateAICardForSegmentArgs {
+  entries: SrtEntry[];
+  segment: AISegment;
+  settings: AISettings;
+  globalPrompt?: string;
+  cardPrompt?: string;
+  programSummary?: string;
+  keywords?: string[];
+  projectDir?: string;
+  projectBindings?: PromptBindingMap | null;
+  segmentIndex?: number;
+  totalSegments?: number;
+  prevSegment?: AISegment;
+  nextSegment?: AISegment;
+  visualType?: AISegmentVisualType;
+}
+
 export interface CardMediaProgressPayload {
   cardId: string;
   taskId: string;
   percent?: number;
   phase?: string;
   message?: string;
+}
+
+export type ClaudeCodeAcpLLMEvent =
+  | { type: 'content_delta'; text: string }
+  | { type: 'thinking'; text: string };
+
+export interface ClaudeCodeAcpLLMRunRequest {
+  requestId: string;
+  model: string;
+  messages: Array<{ role: string; content: string }>;
+  projectDir?: string | null;
+  jsonMode?: boolean;
+}
+
+export interface ClaudeCodeAcpLLMRunResult {
+  text: string;
+}
+
+export interface ClaudeCodeAcpModelInfo {
+  modelId: string;
+  name: string;
+  description?: string;
 }
 
 export interface ProjectMetadata {
@@ -184,6 +224,7 @@ export interface ElectronAPI {
     projectDir?: string;
     projectBindings?: PromptBindingMap | null;
   }) => Promise<AICard>;
+  generateAICardForSegment: (args: GenerateAICardForSegmentArgs) => Promise<AICard>;
   generateCardFromSubtitles: (args: {
     entries: SrtEntry[];
     draft: import('./ai-analysis').SubtitleCardDraftInput;
@@ -217,6 +258,14 @@ export interface ElectronAPI {
   ) => Promise<{ ok: true }>;
   onCardMediaProgress: (
     callback: (payload: CardMediaProgressPayload) => void,
+  ) => () => void;
+  runClaudeCodeAcpLLM: (
+    args: ClaudeCodeAcpLLMRunRequest,
+  ) => Promise<ClaudeCodeAcpLLMRunResult>;
+  cancelClaudeCodeAcpLLM: (requestId: string) => Promise<{ ok: true }>;
+  listClaudeCodeAcpModels: () => Promise<ClaudeCodeAcpModelInfo[]>;
+  onClaudeCodeAcpLLMEvent: (
+    callback: (payload: { requestId: string; event: ClaudeCodeAcpLLMEvent }) => void,
   ) => () => void;
   saveCoverEdit: (
     args: import('./cover-editor/contracts').SaveCoverEditArgs,

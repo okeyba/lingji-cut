@@ -119,6 +119,15 @@ describe('fetchProviderModels', () => {
     expect(url).toContain('g-key');
   });
 
+  it('Claude Code ACP：无 Electron runtime 时返回默认模型', async () => {
+    const result = await fetchProviderModels(
+      makeProvider({ type: 'claude_code_acp', baseUrl: '', apiKey: '' }),
+    );
+
+    expect(result).toEqual(['claude-code-default']);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('HTTP 失败时抛出携带状态码的错误', async () => {
     fetchMock.mockResolvedValue(mockResponse({ error: 'unauthorized' }, { ok: false, status: 401 }));
 

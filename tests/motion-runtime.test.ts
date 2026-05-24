@@ -84,9 +84,12 @@ describe('motion-runtime', () => {
     expect(SANDBOX_API_KEYS).toContain('CameraMotionBlur');
     expect(SANDBOX_API_KEYS).toContain('createSmoothSvgPath');
 
-    expect(MOTION_SANDBOX_REFERENCE).toContain('React:');
-    expect(MOTION_SANDBOX_REFERENCE).toContain('Remotion 核心:');
-    expect(MOTION_SANDBOX_REFERENCE).toContain('- interpolate');
-    expect(MOTION_SANDBOX_REFERENCE).toContain('Shapes:');
+    expect(MOTION_SANDBOX_REFERENCE).toContain('推荐 API：');
+    expect(MOTION_SANDBOX_REFERENCE).toContain('React');
+    expect(MOTION_SANDBOX_REFERENCE).toContain('interpolate');
+    expect(MOTION_SANDBOX_REFERENCE).toContain('不要使用：');
+    expect(MOTION_SANDBOX_REFERENCE).toContain('useCurrentFrame');
+    expect(MOTION_SANDBOX_REFERENCE).not.toContain('Remotion 核心:');
+    expect(MOTION_SANDBOX_REFERENCE).not.toContain('Shapes:');
   });
 });

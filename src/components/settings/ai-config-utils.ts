@@ -31,6 +31,7 @@ interface AIConfigSnapshotInput {
   imageProviders?: ImageProvider[];
   defaultImageProviderId?: string | null;
   defaultImageModel?: string | null;
+  globalCoverImagePrompt?: string;
   videoProviders?: VideoProvider[];
   defaultVideoProviderId?: string | null;
   defaultVideoModel?: string | null;
@@ -61,11 +62,20 @@ export function validateProviderDraft(provider: LLMProvider): ProviderDraftError
     errors.name = '请输入 Provider 名称';
   }
 
-  if (!normalized.baseUrl && normalized.type !== 'gemini' && normalized.type !== 'lmstudio') {
+  if (
+    !normalized.baseUrl &&
+    normalized.type !== 'gemini' &&
+    normalized.type !== 'lmstudio' &&
+    normalized.type !== 'claude_code_acp'
+  ) {
     errors.baseUrl = '请输入 Base URL';
   }
 
-  if (!normalized.apiKey && normalized.type !== 'lmstudio') {
+  if (
+    !normalized.apiKey &&
+    normalized.type !== 'lmstudio' &&
+    normalized.type !== 'claude_code_acp'
+  ) {
     errors.apiKey = '请输入 API Key';
   }
 
@@ -111,6 +121,7 @@ export function createAIConfigSnapshot({
   imageProviders,
   defaultImageProviderId,
   defaultImageModel,
+  globalCoverImagePrompt,
   videoProviders,
   defaultVideoProviderId,
   defaultVideoModel,
@@ -138,6 +149,7 @@ export function createAIConfigSnapshot({
     imageProviders: normalizedImageProviders,
     defaultImageProviderId: defaultImageProviderId ?? null,
     defaultImageModel: defaultImageModel ?? null,
+    globalCoverImagePrompt: (globalCoverImagePrompt ?? '').trim(),
     videoProviders: normalizedVideoProviders,
     defaultVideoProviderId: defaultVideoProviderId ?? null,
     defaultVideoModel: defaultVideoModel ?? null,

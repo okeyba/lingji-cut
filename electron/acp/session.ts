@@ -5,6 +5,7 @@ import type { AcpClient } from './client';
 import type {
   AcpEvent,
   ConnectionStatus,
+  InitializeParams,
   InitializeResult,
   NewSessionResult,
   PermissionPolicy,
@@ -15,11 +16,23 @@ interface PendingPermission {
   resolve: (response: { outcome: { outcome: string; optionId?: string } }) => void;
 }
 
+export interface SessionManagerOptions {
+  agentType?: string;
+  clientCapabilities?: InitializeParams['clientCapabilities'];
+  permissionRequestBehavior?: 'interactive' | 'reject';
+}
+
+const DEFAULT_CLIENT_CAPABILITIES: InitializeParams['clientCapabilities'] = {
+  terminal: true,
+  fs: { readTextFile: true, writeTextFile: true },
+};
+
 export class SessionManager extends EventEmitter {
   private client: AcpClient;
   private pendingPermissions = new Map<number, PendingPermission>();
   private permissionSeq = 0;
   private permissionPolicy: PermissionPolicy;
+  private options: SessionManagerOptions;
 
   private status: ConnectionStatus = 'disconnected';
   private sessionId: string | null = null;
@@ -29,10 +42,12 @@ export class SessionManager extends EventEmitter {
   constructor(
     client: AcpClient,
     permissionPolicy: PermissionPolicy,
+    options: SessionManagerOptions = {},
   ) {
     super();
     this.client = client;
     this.permissionPolicy = permissionPolicy;
+    this.options = options;
 
     // 监听 client 通知 — ACP 协议中所有事件均通过 session/update 通知传递
     this.client.on('notification', (method: string, params: unknown) => {
@@ -107,10 +122,7 @@ export class SessionManager extends EventEmitter {
     // initialize（protocolVersion 必须为数字）
     this.initializeResult = (await this.client.sendRequest('initialize', {
       protocolVersion: 1,
-      clientCapabilities: {
-        terminal: true,
-        fs: { readTextFile: true, writeTextFile: true },
-      },
+      clientCapabilities: this.options.clientCapabilities ?? DEFAULT_CLIENT_CAPABILITIES,
     })) as InitializeResult;
 
     let sessionResult: NewSessionResult;
@@ -189,7 +201,7 @@ export class SessionManager extends EventEmitter {
         type: 'turn_complete',
         sessionId: this.sessionId!,
         stopReason,
-        agentType: 'claude-acp',
+        agentType: this.options.agentType ?? 'claude-acp',
         usage,
       });
     }
@@ -219,6 +231,14 @@ export class SessionManager extends EventEmitter {
       sessionId: this.sessionId,
       configId,
       valueId,
+    });
+  }
+
+  async setModel(modelId: string): Promise<void> {
+    if (!this.sessionId) return;
+    await this.client.sendRequest('session/set_model', {
+      sessionId: this.sessionId,
+      modelId,
     });
   }
 
@@ -275,30 +295,34 @@ export class SessionManager extends EventEmitter {
   private registerRuntimeHandlers(): void {
     // ─── 文件系统 handlers ─────────────────────────────────────
     // Claude Code 内置工具的文件操作通过 ACP 协议路由到这些 handler
-    this.client.onRequest('fs/read_text_file', async (params) => {
-      const { path: filePath } = params as { path: string };
-      const resolved = path.isAbsolute(filePath) ? filePath : path.join(this.projectDir ?? '', filePath);
-      try {
-        const content = await fs.readFile(resolved, 'utf-8');
-        return { content };
-      } catch (err) {
-        return { error: err instanceof Error ? err.message : 'Read failed' };
-      }
-    });
+    if (this.options.clientCapabilities?.fs?.readTextFile !== false) {
+      this.client.onRequest('fs/read_text_file', async (params) => {
+        const { path: filePath } = params as { path: string };
+        const resolved = path.isAbsolute(filePath) ? filePath : path.join(this.projectDir ?? '', filePath);
+        try {
+          const content = await fs.readFile(resolved, 'utf-8');
+          return { content };
+        } catch (err) {
+          return { error: err instanceof Error ? err.message : 'Read failed' };
+        }
+      });
+    }
 
-    this.client.onRequest('fs/write_text_file', async (params) => {
-      const { path: filePath, content } = params as { path: string; content: string };
-      const resolved = path.isAbsolute(filePath) ? filePath : path.join(this.projectDir ?? '', filePath);
-      try {
-        await fs.mkdir(path.dirname(resolved), { recursive: true });
-        await fs.writeFile(resolved, content, 'utf-8');
-        // 通知前端文件已变更
-        this.emit('file_changed', { path: resolved, before: null, after: content });
-        return { success: true };
-      } catch (err) {
-        return { error: err instanceof Error ? err.message : 'Write failed' };
-      }
-    });
+    if (this.options.clientCapabilities?.fs?.writeTextFile !== false) {
+      this.client.onRequest('fs/write_text_file', async (params) => {
+        const { path: filePath, content } = params as { path: string; content: string };
+        const resolved = path.isAbsolute(filePath) ? filePath : path.join(this.projectDir ?? '', filePath);
+        try {
+          await fs.mkdir(path.dirname(resolved), { recursive: true });
+          await fs.writeFile(resolved, content, 'utf-8');
+          // 通知前端文件已变更
+          this.emit('file_changed', { path: resolved, before: null, after: content });
+          return { success: true };
+        } catch (err) {
+          return { error: err instanceof Error ? err.message : 'Write failed' };
+        }
+      });
+    }
 
     // ─── 权限请求 ─────────────────────────────────────────────
     // 权限请求 — Agent 发送 session/request_permission 请求，Client 异步返回用户决定
@@ -308,6 +332,16 @@ export class SessionManager extends EventEmitter {
         options: { optionId: string; name: string; kind: string }[];
         sessionId: string;
       };
+
+      if (this.options.permissionRequestBehavior === 'reject') {
+        const rejectOption =
+          options.find((o) => o.kind === 'reject_always') ??
+          options.find((o) => o.kind === 'reject_once');
+        if (rejectOption) {
+          return { outcome: { outcome: 'selected', optionId: rejectOption.optionId } };
+        }
+        return { outcome: { outcome: 'cancelled' } };
+      }
 
       // auto_approve 策略：直接放行，不弹 UI
       const autoResponse = this.autoResolvePermission(options);

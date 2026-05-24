@@ -3,7 +3,9 @@ import { Player, type PlayerRef } from '@remotion/player';
 import { fitPreviewStage } from '../lib/preview';
 import { formatTime, getEffectiveTimelineDurationMs, msToFrame } from '../lib/utils';
 import { PodcastComposition } from '../remotion/PodcastComposition';
+import { hydrateAICardAssetPaths } from '../lib/remotion-assets';
 import { useTimelineStore } from '../store/timeline';
+import { useAIStore } from '../store/ai';
 import { Button, Card, Tooltip, TooltipContent, TooltipTrigger } from '../ui';
 import { AppIcon } from './AppIcon';
 import { CanvasInteractionLayer } from './CanvasInteractionLayer';
@@ -37,6 +39,7 @@ function PreviewPanelComponent({
   onUpdateOverlayPosition,
 }: PreviewPanelProps) {
   const { timeline, srtEntries } = useTimelineStore();
+  const projectDir = useAIStore((s) => s.currentProjectDir);
   const fps = timeline.fps || 30;
   // 把所有 overlay（含动画卡片、媒体）的最远结束时间纳入计算，避免没素材时
   // Player 默认只有 1 秒导致动画播一秒就结束。
@@ -45,7 +48,16 @@ function PreviewPanelComponent({
     () => Math.max(1, msToFrame(effectiveDurationMs, fps)),
     [effectiveDurationMs, fps],
   );
-  const playerInputProps = useMemo(() => ({ timeline, srtEntries }), [srtEntries, timeline]);
+  // 把 ai-card 里相对的 ai-cards/<id>/image.png 拼成绝对，否则 resolveRemotionAssetSrc
+  // 会把它当 staticFile 走，而 ai-cards 不在 Remotion public 目录里，导致破图
+  const hydratedTimeline = useMemo(
+    () => hydrateAICardAssetPaths(timeline, projectDir),
+    [timeline, projectDir],
+  );
+  const playerInputProps = useMemo(
+    () => ({ timeline: hydratedTimeline, srtEntries }),
+    [srtEntries, hydratedTimeline],
+  );
   const cardRef = useRef<HTMLDivElement>(null);
   const previewAreaRef = useRef<HTMLDivElement | null>(null);
   const stageFrameRef = useRef<HTMLDivElement>(null);

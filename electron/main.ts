@@ -13,13 +13,19 @@ import type { MenuContext, MenuEvent, ProjectMetadata } from '../src/lib/electro
 import { addAppLog, configureAppLogger, getAppLogFilePath, getAppLogs } from './app-logger';
 import {
   analyzeSrt,
+  generateCardForSegment,
   generateSingleCardFromSubtitles,
+  materializeImageCard,
   regenerateAICard,
   regenerateCoverPrompt,
   type SubtitleCardDraftInput,
 } from '../src/lib/ai-analysis';
 import { buildExportRenderConfig, type ExportConfig } from '../src/lib/export-settings';
 import { generateCoverCandidates } from '../src/lib/cover-generation';
+import {
+  appendProjectStylePrompt,
+  getProjectStylePromptFromTemplate,
+} from '../src/lib/project-style-prompt';
 import { resolvePromptBinding } from '../src/lib/llm/binding-resolver';
 import {
   handleGenerateCardImage,
@@ -39,7 +45,14 @@ import {
 } from '../src/lib/minimax-tts';
 import { parseSrt } from '../src/lib/srt-parser';
 import type { SrtEntry, TimelineData } from '../src/types';
-import type { AICard, AISegment, AISettings, PromptBindingMap } from '../src/types/ai';
+import type {
+  AICard,
+  AISegment,
+  AISegmentVisualType,
+  AISettings,
+  ImageAspectRatio,
+  PromptBindingMap,
+} from '../src/types/ai';
 import { createApplicationMenuTemplate } from './app-menu';
 import {
   loadRuntimeDebugConfigSync,
@@ -54,6 +67,7 @@ import {
   readVideoDurationMs,
 } from './media-duration';
 import { registerAgentIpc } from './acp/ipc';
+import { HeadlessAcpProvider, type HeadlessAcpProviderEvent } from './acp/headless-provider';
 import { registerConversationIpc } from './conversations/ipc';
 import { registerMcpIpc } from './mcp/ipc';
 import { registerScriptHistoryIpc } from './script-history/ipc';
@@ -73,6 +87,7 @@ import {
   saveGlobalSettings,
   type GlobalSettingsFile,
 } from './global-settings';
+import { setClaudeCodeAcpRuntime } from '../src/lib/llm/claude-code-acp-model';
 import { resolveWindowCloseAction } from './window-close';
 import {
   collectBackup,
@@ -127,10 +142,37 @@ import {
   resolveRemotionBinariesDirectory,
 } from './remotion-paths';
 import { getWindowChromeOptions } from './window-chrome';
+import { getPipelineService, attachTaskProgressBridge } from './pipeline';
+import { setActiveProjectPath } from './pipeline/context';
 
 const execFileAsync = promisify(execFile);
 
 const AGENT_CONFIG_PATH = path.join(os.homedir(), '.lingji', 'agent-config.json');
+const headlessAcpRuntimeListeners: Array<(payload: {
+  requestId: string;
+  event: HeadlessAcpProviderEvent;
+}) => void> = [];
+
+const headlessAcpProvider = new HeadlessAcpProvider({
+  eventSink: (requestId: string, event: HeadlessAcpProviderEvent) => {
+    mainWindow?.webContents.send('llm:claude-code-acp-event', { requestId, event });
+    for (const listener of headlessAcpRuntimeListeners) {
+      listener({ requestId, event });
+    }
+  },
+});
+
+setClaudeCodeAcpRuntime({
+  runClaudeCodeAcpLLM: (args) => headlessAcpProvider.runPrompt(args),
+  cancelClaudeCodeAcpLLM: (requestId) => headlessAcpProvider.cancel(requestId),
+  onClaudeCodeAcpLLMEvent: (callback) => {
+    headlessAcpRuntimeListeners.push(callback);
+    return () => {
+      const idx = headlessAcpRuntimeListeners.indexOf(callback);
+      if (idx >= 0) headlessAcpRuntimeListeners.splice(idx, 1);
+    };
+  },
+});
 
 function resolveAppIconPath(): string | null {
   const candidates = [
@@ -479,10 +521,27 @@ async function copyDirectoryRecursive(sourceDir: string, targetDir: string): Pro
   );
 }
 
+/**
+ * 从 timeline 反推项目目录：podcast-audio.mp3 / podcast-subtitles.srt 都
+ * 位于 projectDir 根，用 audioPath 的 dirname 即得（项目硬约定）。
+ * 用于把 ai-card MediaCardContent 的相对路径解析为绝对，再做 public 映射。
+ */
+function inferProjectDirFromTimeline(timeline: TimelineData): string | null {
+  const audio = timeline.podcast?.audioPath;
+  if (audio && path.isAbsolute(audio)) return path.dirname(audio);
+  const srt = timeline.podcast?.srtPath;
+  if (srt && path.isAbsolute(srt)) return path.dirname(srt);
+  return null;
+}
+
 async function createRenderPublicDir(
   timeline: TimelineData,
 ): Promise<{ timeline: TimelineData; publicDir: string }> {
-  const { timeline: renderTimeline, assets } = prepareTimelineForRemotionRender(timeline);
+  const projectDir = inferProjectDirFromTimeline(timeline);
+  const { timeline: renderTimeline, assets } = prepareTimelineForRemotionRender(
+    timeline,
+    projectDir,
+  );
   const publicDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lingjijianying-public-'));
   await materializeRenderAssets(publicDir, assets);
 
@@ -515,7 +574,11 @@ async function prepareRenderBundle(
     const publicDir = path.join(tmpBundleDir, 'public');
     await fs.mkdir(publicDir, { recursive: true });
 
-    const { timeline: renderTimeline, assets } = prepareTimelineForRemotionRender(timeline);
+    const projectDir = inferProjectDirFromTimeline(timeline);
+    const { timeline: renderTimeline, assets } = prepareTimelineForRemotionRender(
+      timeline,
+      projectDir,
+    );
     await materializeRenderAssets(publicDir, assets);
 
     return {
@@ -639,11 +702,51 @@ ipcMain.handle(
         userDataPath,
         projectDir: args.projectDir,
       });
+      const imageTemplate = await loadEffectivePromptTemplate('card.image', {
+        userDataPath,
+        projectDir: args.projectDir,
+      });
+      const projectStyleTemplate = await loadEffectivePromptTemplate('project.style', {
+        userDataPath,
+        projectDir: args.projectDir,
+      });
+      const projectStylePrompt = getProjectStylePromptFromTemplate(projectStyleTemplate);
+      // 仅当 renderer 提供了 projectDir 时，才把 image 卡片物化能力注入；
+      // 否则 LLM 仍可吐出 image 类型 prompt，但保留 generationStatus='pending'，
+      // 用户后续可在 Inspector 手动触发 generate-card-image 完成。
+      const generateCardImage = args.projectDir
+        ? async (invoke: {
+            cardId: string;
+            prompt: string;
+            aspectRatio: ImageAspectRatio;
+            segmentId: string;
+          }) => {
+            return handleGenerateCardImage(
+              {
+                projectDir: args.projectDir!,
+                cardId: invoke.cardId,
+                prompt: invoke.prompt,
+                aspectRatio: invoke.aspectRatio,
+              },
+              {
+                settings: args.settings,
+                projectBindings: args.projectBindings ?? null,
+                projectStylePrompt,
+                onProgress: () => {
+                  // analyze-srt 主进度由 onProgress 已覆盖；图像生成内部进度暂不上报
+                },
+              },
+            );
+          }
+        : undefined;
       const result = await analyzeSrt(entries, args.settings, {
         globalPrompt: args.globalPrompt,
+        projectStylePrompt,
         planningTemplate,
         cardTemplate,
+        imageTemplate,
         projectBindings: args.projectBindings ?? null,
+        generateCardImage,
         onProgress: (progress) => {
           mainWindow?.webContents.send('analyze-progress', progress);
         },
@@ -652,7 +755,17 @@ ipcMain.handle(
         'info',
         'ai-analysis',
         '字幕分析完成',
-        `cards=${result.cards.length}, coverPrompts=${result.coverPrompts.length}`,
+        [
+          `cards=${result.cards.length}, coverPrompts=${result.coverPrompts.length}`,
+          result.cardErrors?.length
+            ? `cardErrors=${result.cardErrors.length}; sample=${result.cardErrors
+                .slice(0, 3)
+                .map((item) => `${item.segmentTitle ?? item.segmentId}: ${item.message}`)
+                .join(' | ')}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
       );
       return result;
     } catch (error) {
@@ -697,12 +810,23 @@ ipcMain.handle(
         userDataPath,
         projectDir: args.projectDir,
       });
+      const imageTemplate = await loadEffectivePromptTemplate('card.image', {
+        userDataPath,
+        projectDir: args.projectDir,
+      });
+      const projectStyleTemplate = await loadEffectivePromptTemplate('project.style', {
+        userDataPath,
+        projectDir: args.projectDir,
+      });
+      const projectStylePrompt = getProjectStylePromptFromTemplate(projectStyleTemplate);
       return await regenerateAICard(args.entries, args.card, args.segment, args.settings, {
         globalPrompt: args.globalPrompt,
+        projectStylePrompt,
         cardPrompt: args.cardPrompt,
         programSummary: args.programSummary,
         keywords: args.keywords,
         cardTemplate,
+        imageTemplate,
         projectBindings: args.projectBindings ?? null,
       });
     } catch (error) {
@@ -710,6 +834,113 @@ ipcMain.handle(
         'error',
         'ai-analysis',
         '单卡重生成失败',
+        error instanceof Error ? error.stack ?? error.message : String(error),
+      );
+      throw error;
+    }
+  },
+);
+
+ipcMain.handle(
+  'generate-ai-card-for-segment',
+  async (
+    _event,
+    args: {
+      entries: SrtEntry[];
+      segment: AISegment;
+      settings: AISettings;
+      globalPrompt?: string;
+      cardPrompt?: string;
+      programSummary?: string;
+      keywords?: string[];
+      projectDir?: string;
+      projectBindings?: PromptBindingMap | null;
+      segmentIndex?: number;
+      totalSegments?: number;
+      prevSegment?: AISegment;
+      nextSegment?: AISegment;
+      visualType?: AISegmentVisualType;
+    },
+  ) => {
+    writeAppLog(
+      'info',
+      'ai-analysis',
+      '收到失败段卡片补生成请求',
+      `segmentId=${args.segment.id}, entries=${args.entries.length}`,
+    );
+
+    try {
+      const userDataPath = app.getPath('userData');
+      const cardTemplate = await loadEffectivePromptTemplate('cards.segment', {
+        userDataPath,
+        projectDir: args.projectDir,
+      });
+      const imageTemplate = await loadEffectivePromptTemplate('card.image', {
+        userDataPath,
+        projectDir: args.projectDir,
+      });
+      const projectStyleTemplate = await loadEffectivePromptTemplate('project.style', {
+        userDataPath,
+        projectDir: args.projectDir,
+      });
+      const projectStylePrompt = getProjectStylePromptFromTemplate(projectStyleTemplate);
+      let card = await generateCardForSegment(
+        args.entries,
+        {
+          summary: args.programSummary ?? '',
+          keywords: args.keywords ?? [],
+          globalPrompt: args.globalPrompt?.trim() || undefined,
+        },
+        args.segment,
+        args.settings,
+        {
+          globalPrompt: args.globalPrompt,
+          projectStylePrompt,
+          cardPrompt: args.cardPrompt,
+          cardTemplate,
+          imageTemplate,
+          projectBindings: args.projectBindings ?? null,
+          segmentIndex: args.segmentIndex,
+          totalSegments: args.totalSegments,
+          prevSegment: args.prevSegment,
+          nextSegment: args.nextSegment,
+          visualType: args.visualType ?? 'motion',
+        },
+      );
+
+      if (card.type === 'image' && args.projectDir) {
+        card = await materializeImageCard(card, async (invoke) =>
+          handleGenerateCardImage(
+            {
+              projectDir: args.projectDir!,
+              cardId: invoke.cardId,
+              prompt: invoke.prompt,
+              aspectRatio: invoke.aspectRatio,
+            },
+            {
+              settings: args.settings,
+              projectBindings: args.projectBindings ?? null,
+              projectStylePrompt,
+              onProgress: (update) => {
+                mainWindow?.webContents.send('card-media-progress', {
+                  cardId: invoke.cardId,
+                  percent: update.percent,
+                  phase: update.phase,
+                  message: update.message,
+                  taskId: `card-media-${invoke.cardId}`,
+                });
+              },
+            },
+          ),
+        );
+      }
+
+      return card;
+    } catch (error) {
+      writeAppLog(
+        'error',
+        'ai-analysis',
+        '失败段卡片补生成失败',
         error instanceof Error ? error.stack ?? error.message : String(error),
       );
       throw error;
@@ -745,11 +976,22 @@ ipcMain.handle(
         userDataPath,
         projectDir: args.projectDir,
       });
+      const imageTemplate = await loadEffectivePromptTemplate('card.image', {
+        userDataPath,
+        projectDir: args.projectDir,
+      });
+      const projectStyleTemplate = await loadEffectivePromptTemplate('project.style', {
+        userDataPath,
+        projectDir: args.projectDir,
+      });
+      const projectStylePrompt = getProjectStylePromptFromTemplate(projectStyleTemplate);
       return await generateSingleCardFromSubtitles(args.entries, args.draft, args.settings, {
         globalPrompt: args.globalPrompt,
+        projectStylePrompt,
         programSummary: args.programSummary,
         keywords: args.keywords,
         cardTemplate,
+        imageTemplate,
         projectBindings: args.projectBindings ?? null,
       });
     } catch (error) {
@@ -790,8 +1032,14 @@ ipcMain.handle(
         userDataPath,
         projectDir: args.projectDir,
       });
+      const projectStyleTemplate = await loadEffectivePromptTemplate('project.style', {
+        userDataPath,
+        projectDir: args.projectDir,
+      });
+      const projectStylePrompt = getProjectStylePromptFromTemplate(projectStyleTemplate);
       return await regenerateCoverPrompt(args.entries, args.settings, {
         globalPrompt: args.globalPrompt,
+        projectStylePrompt,
         currentPrompt: args.currentPrompt,
         coverTemplate,
         projectBindings: args.projectBindings ?? null,
@@ -828,7 +1076,18 @@ ipcMain.handle(
     if (!binding.imageProvider || !binding.imageModel) {
       throw new Error('cover.regeneration 未绑定 ImageProvider/Model');
     }
-    const total = args.prompts.length;
+    const userDataPath = app.getPath('userData');
+    const projectStyleTemplate = await loadEffectivePromptTemplate('project.style', {
+      userDataPath,
+      projectDir: args.projectDir,
+    });
+    const projectStylePrompt = getProjectStylePromptFromTemplate(projectStyleTemplate);
+    const coverSuffix = (args.settings.globalCoverImagePrompt ?? '').trim();
+    const mergedPrompts = args.prompts.map((prompt) => {
+      const withCoverSuffix = coverSuffix ? `${prompt.trim()}\n${coverSuffix}` : prompt;
+      return appendProjectStylePrompt(withCoverSuffix, projectStylePrompt);
+    });
+    const total = mergedPrompts.length;
     const coverProgressCtx = {
       taskId: 'cover-generation',
       signal: new AbortController().signal,
@@ -842,7 +1101,7 @@ ipcMain.handle(
       },
     };
     return generateCoverCandidates(
-      args.prompts,
+      mergedPrompts,
       binding.imageProvider,
       binding.imageModel,
       coversDir,
@@ -868,9 +1127,16 @@ ipcMain.handle(
     const ac = new AbortController();
     cardMediaAbortMap.set(args.cardId, ac);
     try {
+      const userDataPath = app.getPath('userData');
+      const projectStyleTemplate = await loadEffectivePromptTemplate('project.style', {
+        userDataPath,
+        projectDir: args.projectDir,
+      });
+      const projectStylePrompt = getProjectStylePromptFromTemplate(projectStyleTemplate);
       return await handleGenerateCardImage(args, {
         settings: args.settings,
         projectBindings: args.projectBindings ?? null,
+        projectStylePrompt,
         signal: ac.signal,
         onProgress: (u) => {
           mainWindow?.webContents.send('card-media-progress', {
@@ -904,9 +1170,16 @@ ipcMain.handle(
     const ac = new AbortController();
     cardMediaAbortMap.set(args.cardId, ac);
     try {
+      const userDataPath = app.getPath('userData');
+      const projectStyleTemplate = await loadEffectivePromptTemplate('project.style', {
+        userDataPath,
+        projectDir: args.projectDir,
+      });
+      const projectStylePrompt = getProjectStylePromptFromTemplate(projectStyleTemplate);
       return await handleGenerateCardVideo(args, {
         settings: args.settings,
         projectBindings: args.projectBindings ?? null,
+        projectStylePrompt,
         signal: ac.signal,
         onProgress: (u) => {
           mainWindow?.webContents.send('card-media-progress', {
@@ -941,6 +1214,7 @@ ipcMain.handle('delete-card-media-assets', async (_event, args: { projectDir: st
 
 ipcMain.handle('load-project', async (_event, projectDir: string) => {
   const data = await loadProjectFile(projectDir);
+  setActiveProjectPath(projectDir);
   return JSON.stringify(data, null, 2);
 });
 
@@ -2295,6 +2569,18 @@ ipcMain.handle('list-system-fonts', async () => {
   return listSystemFonts();
 });
 
+ipcMain.handle('llm:claude-code-acp-run', async (_event, args) => {
+  return headlessAcpProvider.runPrompt(args);
+});
+
+ipcMain.handle('llm:claude-code-acp-cancel', async (_event, requestId: string) => {
+  return headlessAcpProvider.cancel(requestId);
+});
+
+ipcMain.handle('llm:claude-code-acp-list-models', async () => {
+  return headlessAcpProvider.listModels();
+});
+
 // 开发模式下让 Ctrl+C 能正常退出 Electron
 if (process.env.NODE_ENV_ELECTRON_VITE === 'development') {
   process.on('SIGINT', () => app.quit());
@@ -2364,6 +2650,8 @@ app.whenReady().then(async () => {
     writeAppLog('warn', 'user-prompts', '迁移旧口播模板失败', String(err));
   }
   createWindow();
+  // 启动 PipelineService 并桥接任务进度到 renderer
+  attachTaskProgressBridge(getPipelineService(), () => mainWindow);
   // 在 whenReady 内订阅，避免 electron-vite 开发模式下主模块 HMR 重新执行
   // 时多次叠加监听器；广播只发给 mainWindow，与其他通道（analyze-progress /
   // cover-progress / menu-action / app-log）保持一致。

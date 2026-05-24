@@ -16,6 +16,8 @@
 - **专业时间线编辑**：支持音频、字幕、图片、视频、文字、AI 卡片、多视觉轨、多音频轨、拖拽、吸附、拆分、裁剪、复制 / 剪切 / 粘贴和轨道锁定。
 - **多 Provider AI 配置**：支持 OpenAI 兼容模型、Gemini、LM Studio、图片生成 Provider、MiniMax TTS 等配置。
 - **Agent / MCP 集成**：应用内可连接 Claude ACP Runtime，并提供 `lingji_*` MCP 工具给 Claude Code / Codex / Gemini 等客户端操作脚本工作台。
+- **Pipeline / 自动化**：通过 MCP `pipeline.*` 工具集（create_project、open_project、get/cancel/list_task、get_settings 等）把项目创建、状态查询、流程编排开放给外部 Agent。
+- **手动 image/video 卡**：除 AI 生成卡外，可直接通过表单创建 image/video 卡，或导入本地视频 / 音频素材。
 - **Remotion 导出**：通过 Remotion 渲染 `PodcastComposition`，支持 H.264 MP4、分辨率与质量配置、导出进度展示。
 - **本地优先**：项目文件保存在用户选择的本地目录，仓库不需要保存任何真实 API Key。
 
@@ -87,6 +89,13 @@ Windows：
 npm run dist:win
 ```
 
+默认产物在 `release/` 下：
+
+- `release/灵机剪影-darwin-arm64/灵机剪影.app`
+- `release/灵机剪影-darwin-x64/灵机剪影.app`
+
+当前打包产物是本地 `.app`，尚未接入正式签名、notarization、DMG / PKG 分发。
+
 ### 5. Test
 
 ```bash
@@ -134,14 +143,15 @@ npm run test:watch   # Run Vitest in watch mode
 
 ## AI Configuration
 
-Lingji Cut 主要通过应用内“设置”页面保存 AI 配置，不依赖仓库内 `.env` 存放密钥。
+Lingji Cut 主要通过应用内"设置"页面保存 AI 配置，不依赖仓库内 `.env` 存放密钥。
 
 主要配置区域：
 
 - **AI 基础配置**：管理 OpenAI 兼容、Gemini、LM Studio 等 LLM Provider。
 - **图片生成**：管理即梦、OpenAI Image、MiniMax、豆包、Imagen、通义万相和自定义图像 Provider。
+- **视频生成**：管理视频 Provider 配置（与 image/video 卡片表单联动）。
 - **TTS 语音合成**：配置 MiniMax API Key、音色、语速、音量、音调、情绪和模型。
-- **提示词配置**：管理内置 / 全局 / 项目级提示词，并为不同 Prompt Kind 绑定不同 Provider。
+- **提示词配置**：管理内置 / 全局 / 项目级提示词，并为不同 Prompt Kind 绑定不同 Provider（含 `card.image`、`card.video`）。
 - **AI Agent**：配置 Claude ACP Runtime、权限策略和 Agent API Key。
 - **MCP 服务**：启动本地 MCP Server，并注册到 Claude Code / Codex / Gemini。
 - **配置备份**：导出、预览、导入全局设置与 Agent 配置备份。
@@ -172,6 +182,7 @@ electron/
   acp/                  Claude ACP Runtime、权限策略、Agent 配置
   conversations/         Agent 会话数据库与 IPC
   mcp/                   Lingji MCP Server、工具注册、客户端注册配置
+  pipeline/              Pipeline 任务编排、TaskRegistry、HeadlessProjectContext
   script-history/        脚本文稿版本历史
   video-import/          视频导入、抽音频、ASR、转录落盘
   main.ts                Electron 主进程、IPC、Remotion 渲染
@@ -203,9 +214,20 @@ docs/superpowers/        设计规格与实施计划沉淀
 - 工程主存储是 `project.json`。新增工程段落前需要评估迁移、并发写锁和旧数据兼容。
 - Remotion 导出入口固定为 `src/remotion/index.ts`，Composition ID 固定为 `PodcastComposition`。
 - 导出前会把绝对路径素材映射到临时 public 目录，避免 Remotion 打包时无法访问本地文件。
+- AI 网页卡片的 `srcDoc` 会落盘到 `ai-cards/`，持久化后优先保存 `src` 路径。
 - 所有耗时操作应接入 `src/store/task-progress.ts` 和底部 `AppStatusBar` 统一进度系统。
 - UI 新实现应遵循 `DESIGN.md` 的 macOS 专业创作工具规范。
 - Agent / MCP 操作脚本文稿时，应优先通过 `lingji_*` MCP 工具进入编辑器状态。
+
+## 开发建议
+
+- 修改时间线结构前，先看 `src/types.ts`、`src/store/timeline.ts`、`src/lib/timeline-tracks.ts`、`src/lib/timeline-placement.ts`。
+- 修改 AI 卡片结构前，先看 `src/types/ai.ts`、`src/lib/ai-persistence.ts`、`src/store/ai.ts`、`src/remotion/cards/`。
+- 修改脚本工作台前，先看 `src/pages/ScriptWorkbench.tsx`、`src/store/script.ts`、`src/lib/script-persistence.ts`。
+- 修改提示词前，先看 `src/lib/prompts/`、`electron/prompts-io.ts`、`electron/prompt-bindings-io.ts`。
+- 修改 Agent / MCP 前，先看 `electron/acp/`、`electron/mcp/`、`src/components/agent/`。
+- 修改 Pipeline 前，先看 `electron/pipeline/` 与 `electron/mcp/tools.ts` 中的 `pipeline.*` 注册。
+- 修改导出链路前，先看 `electron/main.ts`、`src/lib/remotion-assets.ts`、`src/remotion/Root.tsx`。
 
 ## Security
 
@@ -213,11 +235,13 @@ docs/superpowers/        设计规格与实施计划沉淀
 - 仓库不应包含真实 API Key、Session ID、Cookie、私钥、配置备份或用户项目数据。
 - 如果你曾经在旧仓库或本地历史中提交过真实密钥，请立即在对应服务侧轮换密钥。
 
-## Status
+## 已知边界
 
-Lingji Cut 目前是桌面优先的创作工具，最小窗口约束约为 `1100 × 760`，暂不以移动端为主要目标。
-
-当前 macOS 打包产物是本地 `.app`，尚未接入正式签名、notarization、DMG / PKG 分发；外部 AI、TTS、ASR、图片生成服务的可用性取决于用户自己的配置。
+- 桌面优先，最小窗口约束约为 `1100 × 760`，暂不以移动端为主要目标。
+- Setup 的传统导入仍以音频 + SRT 为主；脚本到视频流程依赖 MiniMax TTS。
+- 抖音导入当前使用 `bcut` 转录链路，外部服务可用性会影响结果。
+- AI 分析、图片 / 视频生成、TTS、Agent Runtime 都依赖用户配置的外部服务。
+- macOS 打包尚未覆盖正式签名和分发链路。
 
 ## Contributing
 

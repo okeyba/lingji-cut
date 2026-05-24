@@ -15,6 +15,7 @@ import { getProjectDir, useTimelineStore } from '../store/timeline';
 import {
   buildAICardTimelineDraft,
   type AICard,
+  type AIAnalysisCardError,
   type AIAnalysisResult,
   type CoverCandidate,
 } from '../types/ai';
@@ -121,6 +122,8 @@ export function AIPanel({
   );
 
   const [isRegeneratingCoverPrompt, setIsRegeneratingCoverPrompt] = useState(false);
+  const [retryingSegmentIds, setRetryingSegmentIds] = useState<Set<string>>(() => new Set());
+  const [isRetryingAllFailedCards, setIsRetryingAllFailedCards] = useState(false);
   const [globalPromptDraft, setGlobalPromptDraft] = useState('');
   const [aiSettingsIssue, setAISettingsIssue] = useState<string | null>(() =>
     getAISettingsIssue(null),
@@ -147,6 +150,8 @@ export function AIPanel({
   }, []);
 
   const enabledCount = analysisResult?.cards.filter((card) => card.enabled).length ?? 0;
+  const failedCardErrors = analysisResult?.cardErrors ?? [];
+  const isRetryingAnyFailedCard = retryingSegmentIds.size > 0 || isRetryingAllFailedCards;
   const enabledCardIds =
     analysisResult?.cards.filter((card) => card.enabled).map((card) => card.id) ?? [];
   const selectedCount = enabledCardIds.length;
@@ -379,8 +384,17 @@ export function AIPanel({
           )
           .join('、');
         const more = failedCount > 3 ? ` 等共 ${failedCount} 段` : '';
+        const reasons = Array.from(
+          new Set(
+            result.cardErrors!
+              .map((e) => e.message?.trim())
+              .filter((message): message is string => Boolean(message)),
+          ),
+        )
+          .slice(0, 2)
+          .join('；');
         setAnalysisError(
-          `${sample}${more} 卡片生成失败，可在 Editor Inspector 中对该段单独"重新生成卡片"。`,
+          `${sample}${more} 卡片生成失败${reasons ? `：${reasons}` : ''}。可在下方失败段列表中重试。`,
         );
       }
       useTaskProgressStore.getState().completeTask(analyzeTaskId);
@@ -402,6 +416,177 @@ export function AIPanel({
     srtEntries,
     timeline.podcast.srtPath,
   ]);
+
+  const buildRetriedResult = useCallback(
+    (
+      baseResult: AIAnalysisResult,
+      error: AIAnalysisCardError,
+      card: AICard,
+    ): AIAnalysisResult => {
+      const nextCards = [
+        ...baseResult.cards.filter((item) => item.segmentId !== error.segmentId),
+        card,
+      ].sort((a, b) => a.startMs - b.startMs);
+      const nextCardErrors = (baseResult.cardErrors ?? []).filter(
+        (item) => item.segmentId !== error.segmentId,
+      );
+
+      return {
+        ...baseResult,
+        cards: nextCards,
+        cardErrors: nextCardErrors.length > 0 ? nextCardErrors : undefined,
+      };
+    },
+    [],
+  );
+
+  const handleRetryFailedSegment = useCallback(
+    async (error: AIAnalysisCardError) => {
+      const currentResult = useAIStore.getState().analysisResult ?? analysisResult;
+      if (!currentResult) {
+        return null;
+      }
+
+      const segmentIndex = currentResult.segments.findIndex(
+        (segment) => segment.id === error.segmentId,
+      );
+      const segment = segmentIndex >= 0 ? currentResult.segments[segmentIndex] : null;
+      if (!segment) {
+        setAnalysisError(`找不到失败段「${error.segmentTitle ?? error.segmentId}」，请重新分析内容。`);
+        return null;
+      }
+
+      const settings = await loadAISettings();
+      const settingsIssue = getAISettingsIssue(settings);
+      if (settingsIssue) {
+        setAISettingsIssue(settingsIssue);
+        setAnalysisError(settingsIssue);
+        onOpenSettings?.();
+        return null;
+      }
+      if (!settings) {
+        setAISettingsIssue(getAISettingsIssue(null));
+        setAnalysisError('请先完成 AI 配置');
+        onOpenSettings?.();
+        return null;
+      }
+
+      if (srtEntries.length === 0) {
+        setAnalysisError('当前没有可用于重试生成卡片的字幕内容');
+        return null;
+      }
+
+      const retryTaskId = `ai-retry-card-${error.segmentId}-${Date.now()}`;
+      setRetryingSegmentIds((prev) => new Set(prev).add(error.segmentId));
+      setAnalysisError(null);
+      useTaskProgressStore.getState().startTask({
+        id: retryTaskId,
+        category: 'ai-analyze',
+        label: '失败段卡片重试',
+        mode: 'indeterminate',
+        progress: 0,
+        phase: `生成「${segment.title || error.segmentTitle || error.segmentId}」`,
+        level: 2,
+        canCancel: false,
+      });
+
+      try {
+        const projectDir = getProjectDir();
+        const card = await window.electronAPI.generateAICardForSegment({
+          projectDir: projectDir ?? undefined,
+          entries: srtEntries,
+          segment,
+          settings,
+          globalPrompt: currentResult.globalPrompt,
+          programSummary: currentResult.summary,
+          keywords: currentResult.keywords,
+          projectBindings: useAIStore.getState().projectBindings,
+          segmentIndex,
+          totalSegments: currentResult.segments.length,
+          prevSegment: segmentIndex > 0 ? currentResult.segments[segmentIndex - 1] : undefined,
+          nextSegment:
+            segmentIndex + 1 < currentResult.segments.length
+              ? currentResult.segments[segmentIndex + 1]
+              : undefined,
+          visualType: (() => {
+            const value = (segment as { visualType?: unknown }).visualType;
+            return value === 'image' || value === 'motion' ? value : undefined;
+          })(),
+        });
+        const latestResult = useAIStore.getState().analysisResult ?? currentResult;
+        const nextResult = buildRetriedResult(latestResult, error, card);
+        setAnalysisResult(nextResult);
+        const persistedState = await persistAIState(nextResult, coverCandidates);
+        const persistedResult = persistedState.analysisResult ?? nextResult;
+        setAnalysisResult(persistedResult);
+        setCoverCandidates(persistedState.coverCandidates);
+        useTaskProgressStore.getState().completeTask(retryTaskId);
+        return persistedResult;
+      } catch (retryError) {
+        const message =
+          retryError instanceof Error ? retryError.message : '失败段卡片重试失败';
+        const latestResult = useAIStore.getState().analysisResult ?? currentResult;
+        const nextCardErrors = (latestResult.cardErrors ?? []).map((item) =>
+          item.segmentId === error.segmentId ? { ...item, message } : item,
+        );
+        const nextResult = {
+          ...latestResult,
+          cardErrors: nextCardErrors.length > 0 ? nextCardErrors : undefined,
+        };
+        setAnalysisResult(nextResult);
+        void persistAIState(nextResult, coverCandidates).then((persistedState) => {
+          if (persistedState.analysisResult) {
+            setAnalysisResult(persistedState.analysisResult);
+          }
+          setCoverCandidates(persistedState.coverCandidates);
+        });
+        setAnalysisError(
+          `第 ${(error.segmentIndex ?? segmentIndex) + 1} 段「${
+            error.segmentTitle ?? segment.title
+          }」重试失败：${message}`,
+        );
+        useTaskProgressStore.getState().failTask(retryTaskId, message);
+        return null;
+      } finally {
+        setRetryingSegmentIds((prev) => {
+          const next = new Set(prev);
+          next.delete(error.segmentId);
+          return next;
+        });
+      }
+    },
+    [
+      analysisResult,
+      buildRetriedResult,
+      coverCandidates,
+      onOpenSettings,
+      persistAIState,
+      setAnalysisError,
+      setAnalysisResult,
+      setCoverCandidates,
+      srtEntries,
+    ],
+  );
+
+  const handleRetryAllFailedSegments = useCallback(async () => {
+    const currentErrors = useAIStore.getState().analysisResult?.cardErrors ?? failedCardErrors;
+    if (currentErrors.length === 0) {
+      return;
+    }
+
+    setIsRetryingAllFailedCards(true);
+    try {
+      for (const error of currentErrors) {
+        const latestErrors = useAIStore.getState().analysisResult?.cardErrors ?? [];
+        if (!latestErrors.some((item) => item.segmentId === error.segmentId)) {
+          continue;
+        }
+        await handleRetryFailedSegment(error);
+      }
+    } finally {
+      setIsRetryingAllFailedCards(false);
+    }
+  }, [failedCardErrors, handleRetryFailedSegment]);
 
   const handleApplyToTimeline = useCallback(() => {
     if (!analysisResult) {
@@ -725,6 +910,73 @@ export function AIPanel({
               <div className={styles.errorWrap}>
                 <Alert variant="destructive">{analysisError}</Alert>
               </div>
+            ) : null}
+
+            {failedCardErrors.length > 0 ? (
+              <section className={styles.failedCardPanel} data-ai-card-errors="true">
+                <div className={styles.failedCardHeader}>
+                  <div className={styles.failedCardTitleGroup}>
+                    <Badge variant="secondary" size="xs" className={styles.failedCardBadge}>
+                      失败段 {failedCardErrors.length}
+                    </Badge>
+                    <div className={styles.failedCardTitle}>卡片生成失败，可单独重试</div>
+                  </div>
+                  <Button
+                    variant="accent"
+                    size="xs"
+                    className={styles.failedCardRetryAllButton}
+                    onClick={() => void handleRetryAllFailedSegments()}
+                    disabled={isAnalyzing || isRetryingAnyFailedCard}
+                    loading={isRetryingAllFailedCards}
+                    loadingText="重试中"
+                    data-ai-retry-card-errors-all="true"
+                  >
+                    重试全部
+                  </Button>
+                </div>
+                <div className={styles.failedCardList}>
+                  {failedCardErrors.map((error) => {
+                    const segment = analysisResult?.segments.find(
+                      (item) => item.id === error.segmentId,
+                    );
+                    const index = error.segmentIndex ?? (
+                      segment
+                        ? analysisResult?.segments.findIndex((item) => item.id === error.segmentId)
+                        : -1
+                    );
+                    const displayIndex = typeof index === 'number' && index >= 0 ? index + 1 : null;
+                    const title = error.segmentTitle ?? segment?.title ?? error.segmentId;
+                    const isRetrying = retryingSegmentIds.has(error.segmentId);
+                    return (
+                      <article
+                        key={error.segmentId}
+                        className={styles.failedCardItem}
+                        data-ai-card-error-item={error.segmentId}
+                      >
+                        <div className={styles.failedCardMeta}>
+                          <div className={styles.failedCardName}>
+                            {`${displayIndex ? `第 ${displayIndex} 段` : '失败段'}「${title}」`}
+                          </div>
+                          <div className={styles.failedCardMessage}>{error.message}</div>
+                        </div>
+                        <Button
+                          variant="secondary"
+                          size="xs"
+                          className={styles.failedCardRetryButton}
+                          onClick={() => void handleRetryFailedSegment(error)}
+                          disabled={isAnalyzing || isRetryingAllFailedCards || isRetrying}
+                          loading={isRetrying}
+                          loadingText="生成中"
+                          data-ai-retry-card-error={error.segmentId}
+                        >
+                          <AppIcon name="refresh-cw" size={12} />
+                          重试
+                        </Button>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
             ) : null}
 
             {showCardGenerationState ? (

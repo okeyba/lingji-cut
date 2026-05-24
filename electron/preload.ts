@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { AppLogEntry } from '../src/lib/app-log';
 import type {
   FileEntry,
+  GenerateAICardForSegmentArgs,
   MenuContext,
   MenuEvent,
   ProjectMetadata,
@@ -39,6 +40,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     projectDir?: string;
     projectBindings?: PromptBindingMap | null;
   }) => ipcRenderer.invoke('regenerate-ai-card', args),
+  generateAICardForSegment: (args: GenerateAICardForSegmentArgs) =>
+    ipcRenderer.invoke('generate-ai-card-for-segment', args),
   generateCardFromSubtitles: (args: {
     entries: SrtEntry[];
     draft: import('../src/lib/ai-analysis').SubtitleCardDraftInput;
@@ -268,6 +271,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ) => callback(payload);
     ipcRenderer.on('card-media-progress', handler);
     return () => ipcRenderer.removeListener('card-media-progress', handler);
+  },
+  runClaudeCodeAcpLLM: (args: import('../src/lib/electron-api').ClaudeCodeAcpLLMRunRequest) =>
+    ipcRenderer.invoke('llm:claude-code-acp-run', args),
+  cancelClaudeCodeAcpLLM: (requestId: string) =>
+    ipcRenderer.invoke('llm:claude-code-acp-cancel', requestId),
+  listClaudeCodeAcpModels: () =>
+    ipcRenderer.invoke('llm:claude-code-acp-list-models') as Promise<
+      import('../src/lib/electron-api').ClaudeCodeAcpModelInfo[]
+    >,
+  onClaudeCodeAcpLLMEvent: (
+    callback: (payload: {
+      requestId: string;
+      event: import('../src/lib/electron-api').ClaudeCodeAcpLLMEvent;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: unknown,
+      payload: {
+        requestId: string;
+        event: import('../src/lib/electron-api').ClaudeCodeAcpLLMEvent;
+      },
+    ) => callback(payload);
+    ipcRenderer.on('llm:claude-code-acp-event', handler);
+    return () => ipcRenderer.removeListener('llm:claude-code-acp-event', handler);
   },
   cancelTTS: (requestId: string) => ipcRenderer.invoke('cancel-tts', requestId),
   selectOutputPath: (defaultPath?: string) =>
