@@ -1061,14 +1061,15 @@ export function AIPanel({
                     <div className={styles.actionBarEnd}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
+                          <Button
+                            variant="secondary"
+                            size="xs"
                             className={styles.addCardButton}
                             disabled={isAnalyzing}
                           >
                             <AppIcon name="plus" size={12} />
                             新增
-                          </button>
+                          </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" sideOffset={4}>
                           <DropdownMenuItem

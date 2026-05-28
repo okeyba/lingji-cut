@@ -1,4 +1,3 @@
-import { interpolate } from 'remotion';
 import type { TextAnimation } from '../types';
 
 interface AnimationParams {
@@ -21,12 +20,24 @@ function msToFrames(ms: number, fps: number): number {
   return Math.ceil((ms / 1000) * fps);
 }
 
+function interpolate(
+  input: number,
+  inputRange: [number, number],
+  outputRange: [number, number],
+): number {
+  const [inMin, inMax] = inputRange;
+  const [outMin, outMax] = outputRange;
+  if (inMax === inMin) return outMax;
+  const t = Math.max(0, Math.min(1, (input - inMin) / (inMax - inMin)));
+  return outMin + (outMax - outMin) * t;
+}
+
 function getEnterStyle(
   enter: TextAnimation['enter'],
   progress: number,
 ): { opacity: number; transform?: string } {
   if (enter === 'none') return { opacity: 1 };
-  const opacity = interpolate(progress, [0, 1], [0, 1], { extrapolateRight: 'clamp' });
+  const opacity = interpolate(progress, [0, 1], [0, 1]);
   switch (enter) {
     case 'fadeIn':
       return { opacity };
@@ -52,7 +63,7 @@ function getExitStyle(
   progress: number,
 ): { opacity: number; transform?: string } {
   if (exit === 'none') return { opacity: 1 };
-  const opacity = interpolate(progress, [0, 1], [1, 0], { extrapolateRight: 'clamp' });
+  const opacity = interpolate(progress, [0, 1], [1, 0]);
   switch (exit) {
     case 'fadeOut':
       return { opacity };

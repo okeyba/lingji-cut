@@ -1,4 +1,3 @@
-import { interpolate } from 'remotion';
 import type { OverlayItem, OverlayMotion, TextAnimation } from '../types';
 
 export function createDefaultOverlayMotion(): OverlayMotion {
@@ -76,6 +75,18 @@ function msToFrames(ms: number, fps: number): number {
   return Math.ceil((ms / 1000) * fps);
 }
 
+function interpolate(
+  input: number,
+  inputRange: [number, number],
+  outputRange: [number, number],
+): number {
+  const [inMin, inMax] = inputRange;
+  const [outMin, outMax] = outputRange;
+  if (inMax === inMin) return outMax;
+  const t = Math.max(0, Math.min(1, (input - inMin) / (inMax - inMin)));
+  return outMin + (outMax - outMin) * t;
+}
+
 function getEnterStyle(
   enter: OverlayMotion['enter'],
   progress: number,
@@ -84,7 +95,7 @@ function getEnterStyle(
     return { opacity: 1 };
   }
 
-  const opacity = interpolate(progress, [0, 1], [0, 1], { extrapolateRight: 'clamp' });
+  const opacity = interpolate(progress, [0, 1], [0, 1]);
   switch (enter) {
     case 'fadeIn':
       return { opacity };
@@ -112,7 +123,7 @@ function getExitStyle(
     return { opacity: 1 };
   }
 
-  const opacity = interpolate(progress, [0, 1], [1, 0], { extrapolateRight: 'clamp' });
+  const opacity = interpolate(progress, [0, 1], [1, 0]);
   switch (exit) {
     case 'fadeOut':
       return { opacity };

@@ -18,7 +18,7 @@
 - **Agent / MCP 集成**：应用内可连接 Claude ACP Runtime，并提供 `lingji_*` MCP 工具给 Claude Code / Codex / Gemini 等客户端操作脚本工作台。
 - **Pipeline / 自动化**：通过 MCP `pipeline.*` 工具集（create_project、open_project、get/cancel/list_task、get_settings 等）把项目创建、状态查询、流程编排开放给外部 Agent。
 - **手动 image/video 卡**：除 AI 生成卡外，可直接通过表单创建 image/video 卡，或导入本地视频 / 音频素材。
-- **Remotion 导出**：通过 Remotion 渲染 `PodcastComposition`，支持 H.264 MP4、分辨率与质量配置、导出进度展示。
+- **HyperFrames 导出**：通过 HyperFrames HTML + GSAP composition 渲染 H.264 MP4，支持编辑器预览、时间线 seek 与导出进度展示。
 - **本地优先**：项目文件保存在用户选择的本地目录，仓库不需要保存任何真实 API Key。
 
 ## Screenshots
@@ -29,7 +29,7 @@
 
 - Electron 41 + electron-vite
 - React 19 + TypeScript 6
-- Remotion 4
+- HyperFrames 0.6
 - Zustand
 - CodeMirror 6
 - Framer Motion
@@ -185,7 +185,7 @@ electron/
   pipeline/              Pipeline 任务编排、TaskRegistry、HeadlessProjectContext
   script-history/        脚本文稿版本历史
   video-import/          视频导入、抽音频、ASR、转录落盘
-  main.ts                Electron 主进程、IPC、Remotion 渲染
+  main.ts                Electron 主进程、IPC、HyperFrames 渲染
   preload.ts             Renderer 安全桥接
   project-file.ts        project.json 读写与旧工程迁移
 
@@ -196,7 +196,7 @@ src/
   hooks/                 AI 视频流水线、连接状态、缩略图等 hooks
   lib/                   AI、提示词、Motion、字幕、导出、持久化、IPC 客户端
   pages/                 Setup、Editor、ScriptWorkbench、Settings
-  remotion/              Remotion Composition 与 overlay 渲染
+  hyperframes/           HyperFrames composition 生成、素材映射与导出输入
   store/                 timeline、ai、script、agent、task-progress
   ui/                    macOS 风格基础组件、patterns、tokens、motion
   types.ts               时间线核心类型
@@ -212,8 +212,8 @@ docs/superpowers/        设计规格与实施计划沉淀
 - Renderer 不直接使用 Node API。主进程能力通过 `electron/preload.ts` 暴露，并在 `src/lib/electron-api.ts` 声明类型。
 - 新增或修改 IPC 时，通常需要同步 `electron/main.ts`、`electron/preload.ts`、`src/lib/electron-api.ts` 和对应测试。
 - 工程主存储是 `project.json`。新增工程段落前需要评估迁移、并发写锁和旧数据兼容。
-- Remotion 导出入口固定为 `src/remotion/index.ts`，Composition ID 固定为 `PodcastComposition`。
-- 导出前会把绝对路径素材映射到临时 public 目录，避免 Remotion 打包时无法访问本地文件。
+- HyperFrames 导出由 `src/hyperframes/composition.ts` 生成 `index.html`，并由主进程调用 `hyperframes render` 输出 MP4。
+- 导出前会把绝对路径素材映射到临时项目目录，避免 Electron 打包后无法访问本地文件。
 - AI 网页卡片的 `srcDoc` 会落盘到 `ai-cards/`，持久化后优先保存 `src` 路径。
 - 所有耗时操作应接入 `src/store/task-progress.ts` 和底部 `AppStatusBar` 统一进度系统。
 - UI 新实现应遵循 `DESIGN.md` 的 macOS 专业创作工具规范。
@@ -222,12 +222,12 @@ docs/superpowers/        设计规格与实施计划沉淀
 ## 开发建议
 
 - 修改时间线结构前，先看 `src/types.ts`、`src/store/timeline.ts`、`src/lib/timeline-tracks.ts`、`src/lib/timeline-placement.ts`。
-- 修改 AI 卡片结构前，先看 `src/types/ai.ts`、`src/lib/ai-persistence.ts`、`src/store/ai.ts`、`src/remotion/cards/`。
+- 修改 AI 卡片结构前，先看 `src/types/ai.ts`、`src/types/motion.ts`、`src/lib/ai-persistence.ts`、`src/store/ai.ts`、`src/hyperframes/`。
 - 修改脚本工作台前，先看 `src/pages/ScriptWorkbench.tsx`、`src/store/script.ts`、`src/lib/script-persistence.ts`。
 - 修改提示词前，先看 `src/lib/prompts/`、`electron/prompts-io.ts`、`electron/prompt-bindings-io.ts`。
 - 修改 Agent / MCP 前，先看 `electron/acp/`、`electron/mcp/`、`src/components/agent/`。
 - 修改 Pipeline 前，先看 `electron/pipeline/` 与 `electron/mcp/tools.ts` 中的 `pipeline.*` 注册。
-- 修改导出链路前，先看 `electron/main.ts`、`src/lib/remotion-assets.ts`、`src/remotion/Root.tsx`。
+- 修改导出链路前，先看 `electron/main.ts`、`src/hyperframes/assets.ts`、`src/hyperframes/composition.ts`。
 
 ## Security
 
@@ -245,7 +245,7 @@ docs/superpowers/        设计规格与实施计划沉淀
 
 ## Contributing
 
-欢迎提交 issue、建议和 PR。建议在较大改动前先说明你想修改的模块和目标，尤其是时间线、工程存储、IPC、Remotion 导出和 AI Provider 相关改动。
+欢迎提交 issue、建议和 PR。建议在较大改动前先说明你想修改的模块和目标，尤其是时间线、工程存储、IPC、HyperFrames 导出和 AI Provider 相关改动。
 
 ## 友情链接
 

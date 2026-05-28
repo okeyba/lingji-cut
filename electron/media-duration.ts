@@ -1,12 +1,12 @@
 import path from 'node:path';
 import { execFile as execFileCallback } from 'node:child_process';
 import { promisify } from 'node:util';
-import { getVideoMetadata } from '@remotion/renderer';
 
 const execFileAsync = promisify(execFileCallback);
 
 export interface ReadMediaDurationOptions {
-  binariesDirectory: string | null;
+  binariesDirectory?: string | null;
+  ffprobePath?: string | null;
   execFile?: (
     file: string,
     args: string[],
@@ -19,6 +19,11 @@ function getFfprobeExecutablePath(
 ): string {
   const executableName = platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
   return binariesDirectory ? path.join(binariesDirectory, executableName) : executableName;
+}
+
+function resolveFfprobeExecutablePath(options: ReadMediaDurationOptions): string {
+  if (options.ffprobePath) return options.ffprobePath;
+  return getFfprobeExecutablePath(options.binariesDirectory ?? null);
 }
 
 function parseDurationMs(stdout: string): number {
@@ -35,7 +40,7 @@ export async function readAudioDurationMs(
   options: ReadMediaDurationOptions,
 ): Promise<number> {
   const execFile = options.execFile ?? execFileAsync;
-  const { stdout } = await execFile(getFfprobeExecutablePath(options.binariesDirectory), [
+  const { stdout } = await execFile(resolveFfprobeExecutablePath(options), [
     '-v',
     'error',
     '-show_entries',
@@ -50,17 +55,20 @@ export async function readAudioDurationMs(
 
 export async function readVideoDurationMs(
   filePath: string,
-  options: Pick<ReadMediaDurationOptions, 'binariesDirectory'>,
+  options: Pick<ReadMediaDurationOptions, 'binariesDirectory' | 'ffprobePath' | 'execFile'> = {},
 ): Promise<number> {
-  const metadata = await getVideoMetadata(filePath, {
-    binariesDirectory: options.binariesDirectory,
-  });
-  const seconds = metadata.durationInSeconds;
-  if (typeof seconds !== 'number' || seconds <= 0) {
-    throw new Error(`Unable to read media duration from video metadata: ${filePath}`);
-  }
+  const execFile = options.execFile ?? execFileAsync;
+  const { stdout } = await execFile(resolveFfprobeExecutablePath(options), [
+    '-v',
+    'error',
+    '-show_entries',
+    'format=duration',
+    '-of',
+    'default=noprint_wrappers=1:nokey=1',
+    filePath,
+  ]);
 
-  return Math.max(500, Math.round(seconds * 1000));
+  return parseDurationMs(stdout);
 }
 
 export function isAudioExtension(extension: string, audioExtensions: string[]): boolean {

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { runPreflight } from '../electron/acp/preflight';
+import type { BinaryManager } from '../electron/acp/binary-manager';
+import type { AgentConfig } from '../electron/acp/config';
 
 vi.mock('electron', () => ({
   safeStorage: {
@@ -11,10 +13,16 @@ vi.mock('electron', () => ({
 
 describe('Preflight', () => {
   it('returns checks array with expected labels', async () => {
-    const { BinaryManager } = await import('../electron/acp/binary-manager');
-    const { AgentConfig } = await import('../electron/acp/config');
-    const bm = new BinaryManager('/tmp/test-cache');
-    const config = new AgentConfig('/tmp/test-agent-config.json');
+    const bm = {
+      getNodeVersion: vi.fn(async () => 'v22.0.0'),
+      findNpxPath: vi.fn(async () => '/usr/local/bin/npx'),
+      getInstalledVersion: vi.fn(async () => '1.0.0'),
+      getLatestVersion: vi.fn(async () => '1.0.0'),
+    } as unknown as BinaryManager;
+    const config = {
+      load: vi.fn(async () => ({ agents: {} })),
+      getApiKey: vi.fn(async () => null),
+    } as unknown as AgentConfig;
 
     const checks = await runPreflight(bm, config, 'claude-acp');
 

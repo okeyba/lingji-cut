@@ -74,8 +74,13 @@ const baseCard: AICard = {
   cardPrompt: '做成更像商业海报',
 };
 
-/** 一段能被 @babel/standalone 正常编译的 Motion Card 源码 */
-const VALID_MOTION_SOURCE = 'const MotionComponent = (props) => null;';
+/** 一段能被 HyperFrames 直接插入并同步注册 GSAP timeline 的 Motion Card HTML */
+const VALID_MOTION_HTML = `<div class="motion-card"><span>摘要卡</span><script>
+  const local = gsap.timeline({ paused: true });
+  local.from(document.currentScript.parentElement, { opacity: 0, duration: 0.4 }, 0);
+  window.__lingjiMotionTimelines = window.__lingjiMotionTimelines || [];
+  window.__lingjiMotionTimelines.push(local);
+</script></div>`;
 
 const makeLongEntries = () =>
   Array.from({ length: 18 }, (_, index) =>
@@ -127,7 +132,7 @@ describe('buildSegmentPlanningPrompt', () => {
 });
 
 describe('buildSegmentCardPrompt', () => {
-  it('requires Motion Card JSX output and exposes the sandbox API reference', () => {
+  it('requires HyperFrames HTML output and exposes the GSAP timeline contract', () => {
     const programContext = '节目摘要：节目总结\n节目关键词：AI、工作流\n当前段标题：AI 视频生产背景';
     const prompt = buildSegmentCardPrompt({
       programContext,
@@ -145,8 +150,9 @@ describe('buildSegmentCardPrompt', () => {
     expect(prompt).toContain('概括节目开场对 AI 视频生产现状的说明');
     expect(prompt).toContain('整体偏商业分析风');
     expect(prompt).toContain('这一张做成粒子聚合');
-    expect(prompt).toContain('motionCard.sourceCode');
-    expect(prompt).toContain('MotionComponent');
+    expect(prompt).toContain('motionCard.html');
+    expect(prompt).toContain('gsap.timeline');
+    expect(prompt).toContain('window.__lingjiMotionTimelines');
     // Web Card 痕迹不得残留
     expect(prompt).not.toContain('webCard.srcDoc');
     expect(prompt).not.toContain('web-card');
@@ -160,7 +166,7 @@ describe('buildCoverPromptRegenerationPrompt', () => {
       currentPrompt: '旧提示词',
     });
 
-    expect(prompt).toContain('1 条可直接用于 AI 生图');
+    expect(prompt).toContain('1 条可直接喂给 AI 生图');
     expect(prompt).toContain('必须使用简体中文');
     expect(prompt).toContain('旧提示词');
     expect(prompt).toContain('整体偏财经媒体封面');
@@ -225,7 +231,7 @@ describe('planTranscriptSegments', () => {
 });
 
 describe('generateCardForSegment', () => {
-  it('returns a motion-card with compiled code when LLM response is well-formed', async () => {
+  it('returns a motion-card with HyperFrames HTML when LLM response is well-formed', async () => {
     const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
       id: 'generated-card-1',
       type: 'summary',
@@ -239,7 +245,7 @@ describe('generateCardForSegment', () => {
       enabled: true,
       renderMode: 'motion-card',
       motionCard: {
-        sourceCode: VALID_MOTION_SOURCE,
+        html: VALID_MOTION_HTML,
       },
       style: {
         primaryColor: '#79c4ff',
@@ -270,14 +276,14 @@ describe('generateCardForSegment', () => {
     expect(result.segmentId).toBe('seg-1');
     expect(result.title).toBe('新标题');
     expect(result.renderMode).toBe('motion-card');
-    expect(result.motionCard?.sourceCode).toContain('MotionComponent');
-    expect(result.motionCard?.compiledCode.length).toBeGreaterThan(0);
+    expect(result.motionCard?.html).toContain('gsap.timeline');
+    expect(result.motionCard?.html).toContain('__lingjiMotionTimelines.push(local)');
     expect(modelCaller).toHaveBeenCalledTimes(1);
     expect(modelCaller.mock.calls[0]?.[2]).toBe(fullTranscript);
     expect(modelCaller.mock.calls[0]?.[1]).toContain('AI 视频生产背景');
   });
 
-  it('throws a regenerate-hinted error when motion sourceCode cannot compile', async () => {
+  it('throws a regenerate-hinted error when motion html cannot compile', async () => {
     const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
       id: 'generated-card-bad',
       type: 'summary',
@@ -291,7 +297,7 @@ describe('generateCardForSegment', () => {
       enabled: true,
       renderMode: 'motion-card',
       motionCard: {
-        sourceCode: 'this is not a valid jsx source',
+        html: 'this is not a valid html motion source',
       },
       style: { primaryColor: '#79c4ff', backgroundColor: '#151922', fontSize: 48 },
     });
@@ -312,11 +318,11 @@ describe('generateCardForSegment', () => {
     ).rejects.toThrow(/请重新生成/);
   });
 
-  it('falls back to a compiled motion-card when LLM omits motionCard sourceCode', async () => {
+  it('rejects missing motionCard html instead of generating a fallback card', async () => {
     const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
-      id: 'generated-card-fallback',
+      id: 'generated-card-without-html',
       type: 'summary',
-      title: '兜底卡片',
+      title: '缺失源码卡片',
       content: '模型只返回了结构化文案，没有返回 Motion 源码。',
       startMs: 0,
       endMs: 3_000,
@@ -328,23 +334,20 @@ describe('generateCardForSegment', () => {
       style: { primaryColor: '#79c4ff', backgroundColor: '#151922', fontSize: 48 },
     });
 
-    const result = await generateCardForSegment(
-      baseEntries,
-      {
-        segments: [baseSegment],
-        coverPrompts: [],
-        summary: '',
-        keywords: [],
-      },
-      baseSegment,
-      settings,
-      { generateStructuredData: modelCaller },
-    );
-
-    expect(result.renderMode).toBe('motion-card');
-    expect(result.motionCard?.sourceCode).toContain('const MotionComponent');
-    expect(result.motionCard?.compiledCode).toContain('React.createElement');
-    expect(result.title).toBe('兜底卡片');
+    await expect(
+      generateCardForSegment(
+        baseEntries,
+        {
+          segments: [baseSegment],
+          coverPrompts: [],
+          summary: '',
+          keywords: [],
+        },
+        baseSegment,
+        settings,
+        { generateStructuredData: modelCaller },
+      ),
+    ).rejects.toThrow(/motionCard/);
   });
 });
 
@@ -370,7 +373,7 @@ describe('analyzeSrt', () => {
         template: 'summary-default',
         enabled: true,
         renderMode: 'motion-card',
-        motionCard: { sourceCode: VALID_MOTION_SOURCE },
+        motionCard: { html: VALID_MOTION_HTML },
         style: {
           primaryColor: '#79c4ff',
           backgroundColor: '#151922',
@@ -390,7 +393,7 @@ describe('analyzeSrt', () => {
         enabled: true,
         renderMode: 'motion-card',
         cardPrompt: '做一个粒子聚合动画',
-        motionCard: { sourceCode: VALID_MOTION_SOURCE },
+        motionCard: { html: VALID_MOTION_HTML },
         style: {
           primaryColor: '#7df9ff',
           backgroundColor: '#151922',
@@ -412,8 +415,8 @@ describe('analyzeSrt', () => {
     expect(result.cards).toHaveLength(2);
     expect(result.cards.map((card) => card.segmentId)).toEqual(['seg-1', 'seg-2']);
     expect(result.cards[0]?.renderMode).toBe('motion-card');
-    expect(result.cards[0]?.motionCard?.compiledCode.length).toBeGreaterThan(0);
-    expect(result.cards[1]?.motionCard?.compiledCode.length).toBeGreaterThan(0);
+    expect(result.cards[0]?.motionCard?.html).toContain('gsap.timeline');
+    expect(result.cards[1]?.motionCard?.html).toContain('gsap.timeline');
     expect(result.coverPrompts).toEqual(['封面提示词']);
   });
 
@@ -445,7 +448,7 @@ describe('analyzeSrt', () => {
         template: 'summary-default',
         enabled: true,
         renderMode: 'motion-card',
-        motionCard: { sourceCode: VALID_MOTION_SOURCE },
+        motionCard: { html: VALID_MOTION_HTML },
         style: { primaryColor: '#79c4ff', backgroundColor: '#151922', fontSize: 48 },
       };
     });
@@ -492,7 +495,7 @@ describe('analyzeSrt', () => {
         template: 'summary-default',
         enabled: true,
         renderMode: 'motion-card',
-        motionCard: { sourceCode: VALID_MOTION_SOURCE },
+        motionCard: { html: VALID_MOTION_HTML },
         style: { primaryColor: '#79c4ff', backgroundColor: '#151922', fontSize: 48 },
       };
     });
@@ -548,7 +551,7 @@ describe('regenerateAICard', () => {
       enabled: true,
       renderMode: 'motion-card',
       cardPrompt: '做成粒子聚合',
-      motionCard: { sourceCode: VALID_MOTION_SOURCE },
+      motionCard: { html: VALID_MOTION_HTML },
       style: {
         primaryColor: '#79c4ff',
         backgroundColor: '#151922',
@@ -572,7 +575,7 @@ describe('regenerateAICard', () => {
     expect(result.title).toBe('新标题');
     expect(result.displayDurationMs).toBe(6_000);
     expect(result.renderMode).toBe('motion-card');
-    expect(result.motionCard?.compiledCode.length).toBeGreaterThan(0);
+    expect(result.motionCard?.html).toContain('gsap.timeline');
   });
 
   it('fails fast when segment is missing', async () => {

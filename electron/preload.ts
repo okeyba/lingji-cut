@@ -19,6 +19,10 @@ import type { VideoImportTaskSnapshot } from './video-import/types';
 contextBridge.exposeInMainWorld('electronAPI', {
   parseSrtFile: (filePath: string) => ipcRenderer.invoke('parse-srt-file', filePath),
   getAudioDuration: (filePath: string) => ipcRenderer.invoke('get-audio-duration', filePath),
+  getHyperframesRuntimePreflight: () =>
+    ipcRenderer.invoke('hyperframes-runtime-preflight') as Promise<
+      import('../src/lib/electron-api').HyperframesRuntimePreflightResult
+    >,
   analyzeSrt: (args: {
     entries?: SrtEntry[];
     srtContent?: string;

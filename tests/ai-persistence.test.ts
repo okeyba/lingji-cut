@@ -92,8 +92,7 @@ describe('AI persistence helpers', () => {
         renderMode: 'motion-card',
         motionCard: {
           prompt: '做一个标题放大动画',
-          sourceCode: 'const MotionComponent = () => null;',
-          compiledCode: 'const MotionComponent = () => null;',
+          html: '<div><script>window.__lingjiMotionTimelines = window.__lingjiMotionTimelines || []; window.__lingjiMotionTimelines.push(gsap.timeline({ paused: true }));</script></div>',
           compiledAt: 1,
           retryCount: 0,
         },

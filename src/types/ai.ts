@@ -79,7 +79,7 @@ export type AISegmentPacingNeed = 'steady' | 'accent' | 'transition';
 
 /**
  * 段落最适合的卡片可视化形式：
- * - motion：抽象 / 摘要 / 数据演示 / 时间线 / 概念对比 → 适合 Remotion 动画卡片
+ * - motion：抽象 / 摘要 / 数据演示 / 时间线 / 概念对比 → 适合 HyperFrames 动画卡片
  * - image：产品 / 参数 / 界面 / 物件 / 复杂场景 → 适合 AI 生成的实拍/插画图片
  *
  * planning.segment LLM 自行判定；缺省回退 motion。

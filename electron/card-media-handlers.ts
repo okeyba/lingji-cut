@@ -25,6 +25,7 @@ import type {
   VideoGenerationContext,
   VideoGenerationProgressUpdate,
 } from '../src/lib/video-gen/types';
+import { resolveFfmpegPath } from './runtime-binaries';
 
 export interface GenerateCardImageArgs {
   projectDir: string;
@@ -274,17 +275,12 @@ async function extractPosterWithFfmpeg(
 ): Promise<string | undefined> {
   try {
     const { spawn } = await import('node:child_process');
-    let ffmpegPath: string | undefined;
-    try {
-      const renderer = (await import('@remotion/renderer')) as {
-        getFfmpegPath?: () => Promise<string> | string;
-      };
-      const resolved = renderer.getFfmpegPath ? await renderer.getFfmpegPath() : undefined;
-      ffmpegPath = typeof resolved === 'string' ? resolved : undefined;
-    } catch {
-      ffmpegPath = undefined;
-    }
-    if (!ffmpegPath) return undefined;
+    const ffmpegPath = resolveFfmpegPath({
+      appPath: process.defaultApp ? process.cwd() : path.resolve(__dirname, '..'),
+      resourcesPath: process.resourcesPath ?? '',
+      cwd: process.cwd(),
+      moduleDir: __dirname,
+    }) ?? 'ffmpeg';
     const inFile = path.join(projectDir, 'ai-cards', cardId, 'video.mp4');
     const outFile = path.join(projectDir, 'ai-cards', cardId, 'poster.jpg');
     await new Promise<void>((resolve, reject) => {

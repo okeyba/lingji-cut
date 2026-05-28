@@ -3,7 +3,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { packager } = require('@electron/packager');
 const {
-  REMOTION_ASAR_UNPACK_DIRS,
+  HYPERFRAMES_ASAR_UNPACK_DIRS,
   RUNTIME_ROOT_PACKAGES,
   buildReleaseManifest,
   shouldStageProjectPath,
@@ -21,7 +21,6 @@ const buildOutputs = [
   path.join(rootDir, 'dist', 'index.html'),
   path.join(rootDir, 'dist-electron', 'main.js'),
   path.join(rootDir, 'dist-electron', 'preload.js'),
-  path.join(rootDir, 'dist-remotion', 'index.html'),
 ];
 
 const supportedArch = new Set(['arm64', 'x64']);
@@ -163,11 +162,8 @@ async function main() {
       overwrite: true,
       platform: 'darwin',
       prune: false,
-      // 把预构建的 Remotion bundle 以及 compositor 原生二进制都解包到
-      // app.asar.unpacked，避免运行时 chmod/chdir 命中 asar 虚拟路径时报
-      // ENOTDIR。
       asar: {
-        unpackDir: REMOTION_ASAR_UNPACK_DIRS,
+        unpackDir: HYPERFRAMES_ASAR_UNPACK_DIRS,
       },
     });
 

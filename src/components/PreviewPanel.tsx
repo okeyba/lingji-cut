@@ -1,19 +1,17 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
-import { Player, type PlayerRef } from '@remotion/player';
 import { fitPreviewStage } from '../lib/preview';
-import { formatTime, getEffectiveTimelineDurationMs, msToFrame } from '../lib/utils';
-import { PodcastComposition } from '../remotion/PodcastComposition';
-import { hydrateAICardAssetPaths } from '../lib/remotion-assets';
+import { formatTime } from '../lib/utils';
 import { useTimelineStore } from '../store/timeline';
 import { useAIStore } from '../store/ai';
 import { Button, Card, Tooltip, TooltipContent, TooltipTrigger } from '../ui';
 import { AppIcon } from './AppIcon';
 import { CanvasInteractionLayer } from './CanvasInteractionLayer';
+import { HyperframesPreviewPlayer, type HyperframesPreviewHandle } from './HyperframesPreviewPlayer';
 import type { OverlayPosition } from '../types';
 import styles from './PreviewPanel.module.css';
 
 interface PreviewPanelProps {
-  playerRef: RefObject<PlayerRef | null>;
+  playerRef: RefObject<HyperframesPreviewHandle | null>;
   isPlaying: boolean;
   onTogglePlay: () => void;
   onSeek?: (ms: number) => void;
@@ -24,6 +22,10 @@ interface PreviewPanelProps {
   selectedOverlayId?: string | null;
   onSelectOverlay?: (overlayId: string | null) => void;
   onUpdateOverlayPosition?: (overlayId: string, position: OverlayPosition) => void;
+  onPreviewTimeUpdate: (timeMs: number) => void;
+  onPreviewPlay: () => void;
+  onPreviewPause: () => void;
+  onPreviewEnded: () => void;
 }
 
 function PreviewPanelComponent({
@@ -37,27 +39,14 @@ function PreviewPanelComponent({
   selectedOverlayId,
   onSelectOverlay,
   onUpdateOverlayPosition,
+  onPreviewTimeUpdate,
+  onPreviewPlay,
+  onPreviewPause,
+  onPreviewEnded,
 }: PreviewPanelProps) {
   const { timeline, srtEntries } = useTimelineStore();
   const projectDir = useAIStore((s) => s.currentProjectDir);
   const fps = timeline.fps || 30;
-  // 把所有 overlay（含动画卡片、媒体）的最远结束时间纳入计算，避免没素材时
-  // Player 默认只有 1 秒导致动画播一秒就结束。
-  const effectiveDurationMs = useMemo(() => getEffectiveTimelineDurationMs(timeline), [timeline]);
-  const durationInFrames = useMemo(
-    () => Math.max(1, msToFrame(effectiveDurationMs, fps)),
-    [effectiveDurationMs, fps],
-  );
-  // 把 ai-card 里相对的 ai-cards/<id>/image.png 拼成绝对，否则 resolveRemotionAssetSrc
-  // 会把它当 staticFile 走，而 ai-cards 不在 Remotion public 目录里，导致破图
-  const hydratedTimeline = useMemo(
-    () => hydrateAICardAssetPaths(timeline, projectDir),
-    [timeline, projectDir],
-  );
-  const playerInputProps = useMemo(
-    () => ({ timeline: hydratedTimeline, srtEntries }),
-    [srtEntries, hydratedTimeline],
-  );
   const cardRef = useRef<HTMLDivElement>(null);
   const previewAreaRef = useRef<HTMLDivElement | null>(null);
   const stageFrameRef = useRef<HTMLDivElement>(null);
@@ -333,22 +322,17 @@ function PreviewPanelComponent({
             height: Math.max(0, stageSize.height),
           }}
         >
-          <Player
+          <HyperframesPreviewPlayer
             key={timeline.podcast.audioPath || 'empty'}
             ref={playerRef}
-            component={PodcastComposition}
-            inputProps={playerInputProps}
-            durationInFrames={durationInFrames}
-            fps={fps}
-            compositionWidth={timeline.width}
-            compositionHeight={timeline.height}
-            controls={false}
-            style={{
-              width: '100%',
-              height: '100%',
-              display: 'block',
-              background: 'var(--color-preview-bg)',
-            }}
+            timeline={timeline}
+            srtEntries={srtEntries}
+            projectDir={projectDir}
+            currentTimeMs={currentTimeMs}
+            onTimeUpdate={onPreviewTimeUpdate}
+            onPlay={onPreviewPlay}
+            onPause={onPreviewPause}
+            onEnded={onPreviewEnded}
           />
           {onSelectOverlay && (
             <CanvasInteractionLayer

@@ -1,8 +1,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const STAGED_PROJECT_ROOTS = new Set(['dist', 'dist-electron', 'dist-remotion', 'src']);
-const REMOTION_ASAR_UNPACK_DIRS = '{dist-remotion,node_modules/@remotion/compositor-*}';
+const STAGED_PROJECT_ROOTS = new Set(['dist', 'dist-electron', 'src']);
+const HYPERFRAMES_ASAR_UNPACK_DIRS = '{vendor/ffmpeg,node_modules/hyperframes,node_modules/@hyperframes,node_modules/@puppeteer,node_modules/puppeteer-core,node_modules/sharp,node_modules/onnxruntime-node,node_modules/gsap,node_modules/ffmpeg-static,node_modules/ffprobe-static}';
 
 // 仅在 renderer（Vite bundle）中使用、主进程从不 require 的包可在此排除，
 // 以减小 .app 体积。漏排不会导致启动崩溃，只会让 app 变大。
@@ -89,8 +89,6 @@ function shouldStageNodeModulePath(relativePath) {
     normalizedPath.startsWith('.bin/') ||
     normalizedPath === '.cache' ||
     normalizedPath.startsWith('.cache/') ||
-    normalizedPath === '.remotion' ||
-    normalizedPath.startsWith('.remotion/') ||
     normalizedPath === '.package-lock.json'
   ) {
     return false;
@@ -101,7 +99,7 @@ function shouldStageNodeModulePath(relativePath) {
 }
 
 module.exports = {
-  REMOTION_ASAR_UNPACK_DIRS,
+  HYPERFRAMES_ASAR_UNPACK_DIRS,
   RUNTIME_ROOT_PACKAGES,
   buildReleaseManifest,
   getNodeModuleRootPackage,

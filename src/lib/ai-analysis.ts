@@ -36,7 +36,6 @@ import {
   projectStylePromptValue,
 } from './project-style-prompt';
 import { compileMotionSource } from './motion-compiler';
-import { MOTION_SANDBOX_REFERENCE } from './motion-runtime';
 
 export interface AnalyzeSrtProgress {
   phase: 'planning' | 'cards' | 'done';
@@ -172,121 +171,6 @@ function stripSourceCodeFences(raw: string): string {
   return fenceMatch ? fenceMatch[1].trim() : trimmed;
 }
 
-function normalizeMotionContentText(content: unknown, fallback: string): string {
-  if (typeof content === 'string' && content.trim()) {
-    return content.trim();
-  }
-  if (isDataContent(content) && content.items.length > 0) {
-    return content.items
-      .slice(0, 4)
-      .map((item) => `${item.label}：${item.value}`)
-      .join(' / ');
-  }
-  return fallback;
-}
-
-function escapeMotionString(value: string): string {
-  return JSON.stringify(value);
-}
-
-function buildFallbackMotionSource(params: {
-  title: string;
-  content: string;
-  primaryColor: string;
-  backgroundColor: string;
-  fontSize: number;
-}): string {
-  const { title, content, primaryColor, backgroundColor, fontSize } = params;
-
-  return `const MotionComponent = ({ frame, fps, durationInFrames, width, height }) => {
-  const safeDuration = Math.max(1, durationInFrames || 1);
-  const progress = Math.min(1, Math.max(0, frame / safeDuration));
-  const enter = interpolate(progress, [0, 0.18, 1], [0, 1, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
-  const y = interpolate(progress, [0, 0.18, 1], [28, 0, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
-  const title = ${escapeMotionString(title)};
-  const content = ${escapeMotionString(content)};
-  const accent = ${escapeMotionString(primaryColor)};
-  const background = ${escapeMotionString(backgroundColor)};
-  const baseFontSize = Math.max(28, Math.min(${Number.isFinite(fontSize) ? fontSize : 48}, height * 0.08));
-
-  return (
-    <AbsoluteFill
-      style={{
-        width,
-        height,
-        background,
-        color: '#f7f9ff',
-        fontFamily: 'Inter, PingFang SC, Microsoft YaHei, sans-serif',
-        overflow: 'hidden',
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background: 'radial-gradient(circle at 18% 18%, rgba(255,255,255,0.16), transparent 34%), linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0))',
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          left: width * 0.08,
-          right: width * 0.08,
-          top: height * 0.18,
-          transform: 'translateY(' + y + 'px)',
-          opacity: enter,
-        }}
-      >
-        <div
-          style={{
-            width: Math.max(64, width * 0.1),
-            height: 6,
-            borderRadius: 999,
-            background: accent,
-            boxShadow: '0 0 24px ' + accent,
-            marginBottom: height * 0.055,
-          }}
-        />
-        <div
-          style={{
-            fontSize: baseFontSize,
-            lineHeight: 1.12,
-            fontWeight: 800,
-            letterSpacing: 0,
-            maxWidth: width * 0.78,
-          }}
-        >
-          {title}
-        </div>
-        <div
-          style={{
-            marginTop: height * 0.045,
-            maxWidth: width * 0.72,
-            fontSize: Math.max(22, baseFontSize * 0.46),
-            lineHeight: 1.55,
-            color: 'rgba(247,249,255,0.78)',
-            whiteSpace: 'pre-wrap',
-          }}
-        >
-          {content}
-        </div>
-      </div>
-      <div
-        style={{
-          position: 'absolute',
-          left: width * 0.08,
-          right: width * 0.08,
-          bottom: height * 0.1,
-          height: 1,
-          background: 'linear-gradient(90deg, ' + accent + ', rgba(255,255,255,0.08))',
-          opacity: 0.58,
-        }}
-      />
-    </AbsoluteFill>
-  );
-};`;
-}
-
 /**
  * 把 LLM 返回的 motionCard 字段编译成可执行 Motion Card payload。
  * 编译失败直接抛错，由外层链路把"请重新生成"提示给用户。
@@ -299,58 +183,19 @@ function buildMotionCardPayloadStrict(
     throw new Error('LLM 未返回 motionCard；请重新生成');
   }
 
-  const candidate = value as { sourceCode?: unknown };
-  const sourceCodeRaw = typeof candidate.sourceCode === 'string' ? candidate.sourceCode : '';
-  const sourceCode = stripSourceCodeFences(sourceCodeRaw);
-  if (!sourceCode) {
-    throw new Error('LLM 未返回 motionCard.sourceCode；请重新生成');
+  const candidate = value as { html?: unknown };
+  const htmlSource = stripSourceCodeFences(typeof candidate.html === 'string' ? candidate.html : '');
+  if (!htmlSource) {
+    throw new Error('LLM 未返回 motionCard.html；请重新生成');
   }
 
-  const compiled = compileMotionSource(sourceCode);
+  const compiled = compileMotionSource(htmlSource);
   if (!compiled.success) {
     throw new Error(`Motion Card 源码编译失败：${compiled.error}；请重新生成`);
   }
 
   return {
-    sourceCode,
-    compiledCode: compiled.compiledCode,
-    compiledAt: Date.now(),
-    prompt: promptFallback,
-    retryCount: 0,
-  };
-}
-
-function buildMotionCardPayloadWithFallback(
-  value: unknown,
-  promptFallback: string,
-  fallback: {
-    title: string;
-    content: unknown;
-    style: CardStyle;
-  },
-): MotionCardPayload {
-  if (value && typeof value === 'object') {
-    const candidate = value as { sourceCode?: unknown };
-    if (typeof candidate.sourceCode === 'string' && candidate.sourceCode.trim()) {
-      return buildMotionCardPayloadStrict(value, promptFallback);
-    }
-  }
-
-  const sourceCode = buildFallbackMotionSource({
-    title: fallback.title,
-    content: normalizeMotionContentText(fallback.content, promptFallback || fallback.title),
-    primaryColor: fallback.style.primaryColor,
-    backgroundColor: fallback.style.backgroundColor,
-    fontSize: fallback.style.fontSize,
-  });
-  const compiled = compileMotionSource(sourceCode);
-  if (!compiled.success) {
-    throw new Error(`兜底 Motion Card 编译失败：${compiled.error}；请重新生成`);
-  }
-
-  return {
-    sourceCode,
-    compiledCode: compiled.compiledCode,
+    html: compiled.html,
     compiledAt: Date.now(),
     prompt: promptFallback,
     retryCount: 0,
@@ -573,16 +418,12 @@ function normalizeCard(
     };
   }
 
-  // motion 路径：优先使用 LLM 源码；若模型漏吐 motionCard，则用结构化文案生成兜底 Motion。
+  // motion 路径必须由 LLM 明确返回 HyperFrames HTML + GSAP。
   const content =
     typeof candidate.content === 'string' || isDataContent(candidate.content)
       ? candidate.content
       : '';
-  const motionCard = buildMotionCardPayloadWithFallback(candidate.motionCard, cardPrompt ?? '', {
-    title: baseFields.title,
-    content,
-    style,
-  });
+  const motionCard = buildMotionCardPayloadStrict(candidate.motionCard, cardPrompt ?? '');
 
   return {
     ...baseFields,
@@ -933,7 +774,8 @@ export function buildSegmentCardPrompt(
     // 旧版自定义模板可能仍在使用 {{fullTranscript}}；这里给它注入与 programContext
     // 同值的浓缩上下文，避免破坏存量模板，同时不再发送整篇全文。
     fullTranscript: programContext,
-    sandboxReference: MOTION_SANDBOX_REFERENCE,
+    sandboxReference:
+      'HyperFrames HTML + CSS + GSAP；输出 motionCard.html，片段内可使用 gsap.timeline({ paused: true }) 同步构建动画，并把本片段 timeline push 到 window.__lingjiMotionTimelines；禁止 React、JSX、import/export、async/await、setTimeout、Math.random。',
   });
 }
 
@@ -1633,7 +1475,7 @@ export interface SubtitleCardDraftInput {
  * 面向"用户手选字幕 → 单张 Motion Card"的生成入口。
  *
  * 策略：复用 `cards.segment` 管线，把用户草稿组装成合成段落后喂入；
- * normalizeCard 会对返回的 motionCard.sourceCode 做 Babel 编译校验，
+ * normalizeCard 会对返回的 motionCard.html 做 HyperFrames 片段校验，
  * 编译失败直接抛错让用户重新生成。
  */
 export async function generateSingleCardFromSubtitles(
@@ -1680,7 +1522,7 @@ export async function generateSingleCardFromSubtitles(
 
   const hint = draft.promptHint?.trim();
   const cardPromptLines = [
-    `只产出 1 张卡片，renderMode 必须为 "motion-card"，并在 motionCard.sourceCode 里给出可编译的 Remotion JSX 组件。`,
+    `只产出 1 张卡片，renderMode 必须为 "motion-card"，并在 motionCard.html 里给出可直接插入 HyperFrames composition 的 HTML + CSS + GSAP 片段。`,
     `卡片类型建议为 "${draft.type}"，可根据内容微调。`,
   ];
   if (hint) {

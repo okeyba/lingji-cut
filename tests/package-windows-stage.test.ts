@@ -5,14 +5,37 @@ const {
   buildWindowsPackagerOptions,
   createIcoFromPng,
   normalizePackageArch,
+  resolvePackageArch,
+  windowsFfmpegPackages,
 } = require('../scripts/package-windows.cjs');
 
 describe('package windows helpers', () => {
   it('normalizes Node architectures to Electron packager architectures', () => {
     expect(normalizePackageArch('x64')).toBe('x64');
     expect(normalizePackageArch('ia32')).toBe('ia32');
-    expect(normalizePackageArch('arm64')).toBe('arm64');
+    expect(normalizePackageArch('arm64')).toBeNull();
     expect(normalizePackageArch('x86')).toBeNull();
+  });
+
+  it('defaults cross-platform Windows packages to x64 on non-Windows hosts', () => {
+    expect(resolvePackageArch({ hostPlatform: 'darwin', hostArch: 'arm64' })).toBe('x64');
+    expect(resolvePackageArch({ hostPlatform: 'linux', hostArch: 'arm64' })).toBe('x64');
+    expect(resolvePackageArch({ hostPlatform: 'win32', hostArch: 'ia32' })).toBe('ia32');
+    expect(resolvePackageArch({ requestedArch: 'ia32', hostPlatform: 'darwin', hostArch: 'arm64' })).toBe(
+      'ia32',
+    );
+  });
+
+  it('pins Windows FFmpeg vendor packages for supported architectures', () => {
+    expect(windowsFfmpegPackages.x64).toMatchObject({
+      name: '@ffmpeg-installer/win32-x64',
+      version: '4.1.0',
+    });
+    expect(windowsFfmpegPackages.ia32).toMatchObject({
+      name: '@ffmpeg-installer/win32-ia32',
+      version: '4.1.0',
+    });
+    expect(windowsFfmpegPackages.arm64).toBeUndefined();
   });
 
   it('builds win32 packager options with Windows icon and asar unpack rules', () => {
@@ -30,7 +53,7 @@ describe('package windows helpers', () => {
     expect(options.name).toBe('Lingji');
     expect(options.icon).toBe('F:/repo/build/icon.ico');
     expect(options.asar).toEqual({
-      unpackDir: '{dist-remotion,node_modules/@remotion/compositor-*}',
+      unpackDir: '{vendor/ffmpeg,node_modules/hyperframes,node_modules/@hyperframes,node_modules/@puppeteer,node_modules/puppeteer-core,node_modules/sharp,node_modules/onnxruntime-node,node_modules/gsap,node_modules/ffmpeg-static,node_modules/ffprobe-static}',
     });
   });
 

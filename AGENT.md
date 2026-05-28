@@ -4,7 +4,7 @@
 
 ## 1. 仓库定位
 
-这是一个 `Electron + React + Remotion` 的本地优先桌面视频创作工具，产品名为 `灵机剪影`。
+这是一个 `Electron + React + HyperFrames` 的本地优先桌面视频创作工具，产品名为 `灵机剪影`。
 
 当前核心目标不是“导入 MP3 + SRT 后导出视频”这么单一，而是覆盖完整创作链路：
 
@@ -15,7 +15,7 @@
   → MiniMax TTS + SRT
   → AI 分析 / 封面 / 信息卡 / Motion Card
   → 时间线编辑
-  → Remotion MP4 导出
+  → HyperFrames MP4 导出
 ```
 
 ## 2. 默认工作方式
@@ -133,23 +133,26 @@ Renderer 不能直接使用 Node API。
 - `src/lib/srt-resegment.ts`
 - `src/components/Timeline.tsx`
 - `src/components/EditorInspector.tsx`
-- `src/remotion/PodcastComposition.tsx`
+- `src/hyperframes/composition.ts`
+- `src/components/HyperframesPreviewPlayer.tsx`
 
-## 7. Remotion 导出契约
+## 7. HyperFrames 导出契约
 
 导出入口固定：
 
-- `src/remotion/index.ts`
-- `src/remotion/Root.tsx`
-- `src/remotion/PodcastComposition.tsx`
+- `src/hyperframes/composition.ts`
+- `src/hyperframes/assets.ts`
+- `electron/main.ts`
 
-Composition ID 固定为 `PodcastComposition`。
+Composition ID 固定为 `lingji-composition`。
 
-主进程导出逻辑在 `electron/main.ts`，素材映射在 `src/lib/remotion-assets.ts`。修改导出前要确认：
+主进程导出逻辑在 `electron/main.ts`，素材映射在 `src/hyperframes/assets.ts`。修改导出前要确认：
 
 - 本地绝对路径素材是否可被映射到临时 public 目录。
-- `renderConfig` 是否正确影响宽高、码率、preset。
-- 音频、字幕、Web Card、Motion Card 是否在预览和导出中一致。
+- `exportConfig` 是否正确影响 fps、quality、workers 与输出格式。
+- 音频、字幕、图片 / 视频 / 文字 overlay、AI Card、Motion Card 是否在预览和导出中一致。
+- 打包后 `node_modules/hyperframes/dist/cli.js`、Chrome / Puppeteer 运行时、FFmpeg / FFprobe 相关二进制必须可被主进程定位。
+- 不允许重新引入 Remotion 作为 fallback。
 
 ## 8. AI 与提示词契约
 
@@ -292,7 +295,7 @@ AI 操作视觉反馈必须复用：
 - 修改 `TimelineData`、`OverlayItem`、`AICard`、`AISettings`、`ProjectData`。
 - 修改项目目录落盘格式。
 - 修改 IPC 名称、参数结构或返回值。
-- 修改 Remotion composition ID 或输入结构。
+- 修改 HyperFrames composition ID 或输入结构。
 - 修改 AI Provider、图片 Provider、Prompt Binding。
 - 修改 Agent 权限策略、密钥存储、MCP 注册逻辑。
 - 修改 Electron 安全边界、preload 暴露范围。
@@ -308,7 +311,7 @@ AI 操作视觉反馈必须复用：
 - 脚本工作台：跑 script、conversation、history、MCP 相关测试。
 - AI：跑 ai、prompts、provider、image-gen、motion 相关测试。
 - IPC：跑对应 Electron API / main 测试，并检查 main / preload / renderer 类型同步。
-- 导出：跑 Remotion / export 相关测试，必要时跑 `npm run build`。
+- 导出：跑 HyperFrames / export 相关测试，必要时跑 `npm run build`。
 
 常用命令：
 

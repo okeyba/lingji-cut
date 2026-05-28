@@ -1,5 +1,3 @@
-import { bundle } from '@remotion/bundler';
-import { getVideoMetadata, renderMedia, selectComposition } from '@remotion/renderer';
 import chokidar from 'chokidar';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'electron';
 import { createWriteStream, existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -20,7 +18,7 @@ import {
   regenerateCoverPrompt,
   type SubtitleCardDraftInput,
 } from '../src/lib/ai-analysis';
-import { buildExportRenderConfig, type ExportConfig } from '../src/lib/export-settings';
+import type { ExportConfig } from '../src/lib/export-settings';
 import { generateCoverCandidates } from '../src/lib/cover-generation';
 import {
   appendProjectStylePrompt,
@@ -33,7 +31,8 @@ import {
   type GenerateCardImageArgs,
   type GenerateCardVideoArgs,
 } from './card-media-handlers';
-import { prepareTimelineForRemotionRender, type RenderAssetDescriptor } from '../src/lib/remotion-assets';
+import { createHyperframesComposition } from '../src/hyperframes/composition';
+import { prepareTimelineForHyperframes, type HyperframesAssetDescriptor } from '../src/hyperframes/assets';
 import {
   buildMinimaxTtsRequestBody,
   decodeMinimaxAudioData,
@@ -66,6 +65,14 @@ import {
   readAudioDurationMs,
   readVideoDurationMs,
 } from './media-duration';
+import { resolveHyperframesCliPath } from './hyperframes-cli';
+import { runCurrentHyperframesRuntimePreflight } from './hyperframes-runtime-preflight';
+import {
+  buildPathWithRuntimeBinaries,
+  resolveFfmpegPath,
+  resolveFfprobePath,
+  resolveGsapPath,
+} from './runtime-binaries';
 import { registerAgentIpc } from './acp/ipc';
 import { HeadlessAcpProvider, type HeadlessAcpProviderEvent } from './acp/headless-provider';
 import { registerConversationIpc } from './conversations/ipc';
@@ -145,10 +152,6 @@ import { getVideoImportService } from './video-import/import-service';
 import { resolveDouyinVideoSource } from './video-import/douyin-downloader';
 import type { VideoImportRequest } from '../src/lib/video-import-types';
 import { createWorkbenchTabContextMenuTemplate } from './workbench-tab-context-menu';
-import {
-  ensureRemotionDownloadsCwd,
-  resolveRemotionBinariesDirectory,
-} from './remotion-paths';
 import { getWindowChromeOptions } from './window-chrome';
 import { getPipelineService, attachTaskProgressBridge } from './pipeline';
 import { setActiveProjectPath } from './pipeline/context';
@@ -203,7 +206,6 @@ const activeTtsRequests = new Map<string, AbortController>();
 let isAppQuitting = false;
 const videoImportService = getVideoImportService();
 let appConfig: ResolvedAppConfig | null = null;
-const remotionBinariesDirectory = resolveRemotionRendererBinariesDir();
 
 function sendMenuEvent(event: MenuEvent) {
   mainWindow?.webContents.send('menu-action', event);
@@ -375,6 +377,21 @@ function refreshApplicationMenu() {
   Menu.setApplicationMenu(createApplicationMenu());
 }
 
+function resolveRuntimeBinaries() {
+  const options = {
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    cwd: process.cwd(),
+    moduleDir: __dirname,
+    existsSync,
+  };
+  return {
+    ffmpegPath: resolveFfmpegPath(options),
+    ffprobePath: resolveFfprobePath(options),
+    gsapPath: resolveGsapPath(options),
+  };
+}
+
 function createWindow() {
   const currentConfig = getCurrentAppConfig();
   const runtimeState = resolveDebugRuntimeState({
@@ -447,57 +464,9 @@ function createWindow() {
   writeAppLog('info', 'app', '主窗口已创建');
 }
 
-function resolveCompositionEntryPath(): string {
-  const candidates = [
-    path.resolve(app.getAppPath(), 'src/remotion/index.ts'),
-    path.resolve(process.cwd(), 'src/remotion/index.ts'),
-    path.resolve(__dirname, '../src/remotion/index.ts'),
-  ];
-
-  const entryPath = candidates.find((candidate) => existsSync(candidate));
-  if (!entryPath) {
-    throw new Error('未找到 Remotion composition 入口文件 src/remotion/index.ts');
-  }
-
-  return entryPath;
-}
-
-function resolvePrebuiltRemotionBundleDir(): string | null {
-  // 打包态优先使用 app.asar.unpacked 下的真实路径，避免 fs.cp 等 API 在
-  // asar 虚拟路径上行为不一致（Electron 对 fs.cp 的 asar 兼容性较弱）。
-  const appPath = app.getAppPath();
-  const asarUnpackedPath = appPath.endsWith('.asar')
-    ? `${appPath}.unpacked`
-    : null;
-
-  const candidates = [
-    asarUnpackedPath ? path.resolve(asarUnpackedPath, 'dist-remotion') : null,
-    path.resolve(appPath, 'dist-remotion'),
-    path.resolve(__dirname, '../dist-remotion'),
-    path.resolve(process.cwd(), 'dist-remotion'),
-  ].filter((candidate): candidate is string => typeof candidate === 'string');
-
-  return (
-    candidates.find(
-      (candidate) => existsSync(candidate) && existsSync(path.join(candidate, 'index.html')),
-    ) ?? null
-  );
-}
-
-function resolveRemotionRendererBinariesDir(): string | null {
-  return resolveRemotionBinariesDirectory({
-    appPath: app.getAppPath(),
-    cwd: process.cwd(),
-    moduleDir: __dirname,
-    platform: process.platform,
-    arch: process.arch,
-    existsSync,
-  });
-}
-
 async function materializeRenderAssets(
   publicDir: string,
-  assets: RenderAssetDescriptor[],
+  assets: HyperframesAssetDescriptor[],
 ): Promise<void> {
   await Promise.all(
     assets.map(async (asset) => {
@@ -508,22 +477,6 @@ async function materializeRenderAssets(
         await fs.link(asset.sourcePath, targetPath);
       } catch {
         await fs.copyFile(asset.sourcePath, targetPath);
-      }
-    }),
-  );
-}
-
-async function copyDirectoryRecursive(sourceDir: string, targetDir: string): Promise<void> {
-  await fs.mkdir(targetDir, { recursive: true });
-  const entries = await fs.readdir(sourceDir, { withFileTypes: true });
-  await Promise.all(
-    entries.map(async (entry) => {
-      const sourcePath = path.join(sourceDir, entry.name);
-      const targetPath = path.join(targetDir, entry.name);
-      if (entry.isDirectory()) {
-        await copyDirectoryRecursive(sourcePath, targetPath);
-      } else if (entry.isFile()) {
-        await fs.copyFile(sourcePath, targetPath);
       }
     }),
   );
@@ -546,7 +499,7 @@ async function createRenderPublicDir(
   timeline: TimelineData,
 ): Promise<{ timeline: TimelineData; publicDir: string }> {
   const projectDir = inferProjectDirFromTimeline(timeline);
-  const { timeline: renderTimeline, assets } = prepareTimelineForRemotionRender(
+  const { timeline: renderTimeline, assets } = prepareTimelineForHyperframes(
     timeline,
     projectDir,
   );
@@ -559,60 +512,36 @@ async function createRenderPublicDir(
   };
 }
 
-interface PreparedRenderBundle {
+interface PreparedHyperframesProject {
   timeline: TimelineData;
-  serveUrl: string;
+  projectDir: string;
   cleanup: () => Promise<void>;
-  isPrebuilt: boolean;
 }
 
-async function prepareRenderBundle(
+async function prepareHyperframesProject(
   timeline: TimelineData,
-): Promise<PreparedRenderBundle> {
-  const prebuiltDir = resolvePrebuiltRemotionBundleDir();
-
-  if (prebuiltDir) {
-    // 打包环境下：把预构建的 bundle 复制到 tmp 目录，再把素材写入 public/。
-    // 这样既避开了 app.asar 不能 chdir 的问题，也能让 serve-handler 正常读取素材。
-    const tmpBundleDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), 'lingjijianying-bundle-'),
-    );
-    await copyDirectoryRecursive(prebuiltDir, tmpBundleDir);
-
-    const publicDir = path.join(tmpBundleDir, 'public');
-    await fs.mkdir(publicDir, { recursive: true });
-
-    const projectDir = inferProjectDirFromTimeline(timeline);
-    const { timeline: renderTimeline, assets } = prepareTimelineForRemotionRender(
-      timeline,
-      projectDir,
-    );
-    await materializeRenderAssets(publicDir, assets);
-
-    return {
-      timeline: renderTimeline,
-      serveUrl: tmpBundleDir,
-      cleanup: async () => {
-        await fs.rm(tmpBundleDir, { recursive: true, force: true });
-      },
-      isPrebuilt: true,
-    };
-  }
-
-  // 开发环境：沿用运行时 bundle()。
+  srtEntries: SrtEntry[],
+): Promise<PreparedHyperframesProject> {
   const { timeline: renderTimeline, publicDir } = await createRenderPublicDir(timeline);
-  const serveUrl = await bundle({
-    entryPoint: resolveCompositionEntryPath(),
-    publicDir,
+  const gsapSourcePath = resolveRuntimeBinaries().gsapPath;
+  if (!gsapSourcePath) {
+    throw new Error('未找到 GSAP runtime，请确认 gsap 已安装并随应用打包');
+  }
+  await fs.copyFile(gsapSourcePath, path.join(publicDir, 'gsap.min.js'));
+  const composition = createHyperframesComposition({
+    timeline: renderTimeline,
+    srtEntries,
+    projectDir: inferProjectDirFromTimeline(timeline),
+    gsapSrc: './gsap.min.js',
   });
+  await fs.writeFile(path.join(publicDir, 'index.html'), composition.html, 'utf-8');
 
   return {
     timeline: renderTimeline,
-    serveUrl,
+    projectDir: publicDir,
     cleanup: async () => {
       await fs.rm(publicDir, { recursive: true, force: true });
     },
-    isPrebuilt: false,
   };
 }
 
@@ -663,10 +592,17 @@ ipcMain.handle('parse-srt-file', async (_event, filePath: string) => {
 });
 
 ipcMain.handle('get-audio-duration', async (_event, filePath: string) => {
-  return readAudioDurationMs(filePath, {
-    binariesDirectory: remotionBinariesDirectory,
-  });
+  return readAudioDurationMs(filePath, { ffprobePath: resolveRuntimeBinaries().ffprobePath });
 });
+
+ipcMain.handle('hyperframes-runtime-preflight', async () =>
+  runCurrentHyperframesRuntimePreflight({
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    cwd: process.cwd(),
+    moduleDir: __dirname,
+  }),
+);
 
 ipcMain.handle('get-file-mtime', async (_event, filePath: string) => {
   if (!filePath) return null;
@@ -1871,11 +1807,10 @@ ipcMain.handle('add-asset', async () => {
   const isAudio = AUDIO_EXTENSIONS_FILTER.includes(extension);
   let durationMs = isAudio || isVideo ? 10000 : 5000;
 
+  const { ffprobePath } = resolveRuntimeBinaries();
   if (isAudio) {
     try {
-      durationMs = await readAudioDurationMs(assetPath, {
-        binariesDirectory: remotionBinariesDirectory,
-      });
+      durationMs = await readAudioDurationMs(assetPath, { ffprobePath });
     } catch {
       durationMs = 10000;
     }
@@ -1883,20 +1818,7 @@ ipcMain.handle('add-asset', async () => {
 
   if (isVideo) {
     try {
-      const metadata = await getVideoMetadata(assetPath, {
-        binariesDirectory: remotionBinariesDirectory,
-      });
-      const seconds = metadata.durationInSeconds;
-      if (typeof seconds === 'number' && seconds > 0) {
-        durationMs = Math.max(500, Math.round(seconds * 1000));
-      } else {
-        writeAppLog(
-          'warn',
-          'add-asset',
-          `媒体时长为空: ${assetPath}`,
-          JSON.stringify(metadata),
-        );
-      }
+      durationMs = await readVideoDurationMs(assetPath, { ffprobePath });
     } catch (error) {
       writeAppLog(
         'warn',
@@ -1935,6 +1857,7 @@ function classifyExtension(ext: string): ScannedAssetType | null {
 
 ipcMain.handle('scan-project-assets', async (_event, projectDir: string) => {
   const results: { path: string; type: ScannedAssetType; durationMs: number }[] = [];
+  const { ffprobePath } = resolveRuntimeBinaries();
 
   async function scanDir(dir: string, depth: number) {
     let entries: import('node:fs').Dirent[];
@@ -1964,9 +1887,7 @@ ipcMain.handle('scan-project-assets', async (_event, projectDir: string) => {
 
       if (assetType === 'audio') {
         try {
-          durationMs = await readAudioDurationMs(fullPath, {
-            binariesDirectory: remotionBinariesDirectory,
-          });
+          durationMs = await readAudioDurationMs(fullPath, { ffprobePath });
         } catch {
           durationMs = 10000;
         }
@@ -1974,13 +1895,7 @@ ipcMain.handle('scan-project-assets', async (_event, projectDir: string) => {
 
       if (assetType === 'video') {
         try {
-          const metadata = await getVideoMetadata(fullPath, {
-            binariesDirectory: remotionBinariesDirectory,
-          });
-          const seconds = metadata.durationInSeconds;
-          if (typeof seconds === 'number' && seconds > 0) {
-            durationMs = Math.max(500, Math.round(seconds * 1000));
-          }
+          durationMs = await readVideoDurationMs(fullPath, { ffprobePath });
         } catch (error) {
           writeAppLog(
             'warn',
@@ -2365,7 +2280,7 @@ ipcMain.handle(
       if (durationMs <= 0) {
         try {
           durationMs = await readAudioDurationMs(audioPath, {
-            binariesDirectory: remotionBinariesDirectory,
+            ffprobePath: resolveRuntimeBinaries().ffprobePath,
           });
         } catch (error) {
           writeAppLog(
@@ -2521,17 +2436,11 @@ ipcMain.handle(
     const srtEntries =
       args.srtEntries && args.srtEntries.length > 0
         ? args.srtEntries
-        : parseSrt(await fs.readFile(timelineData.podcast.srtPath, 'utf-8'));
-    const renderConfig = buildExportRenderConfig({
-      timelineWidth: timelineData.width,
-      timelineHeight: timelineData.height,
-      resolution: args.exportConfig.resolution,
-      quality: args.exportConfig.quality,
-    });
+        : timelineData.podcast.srtPath
+          ? parseSrt(await fs.readFile(timelineData.podcast.srtPath, 'utf-8'))
+          : [];
 
     const cpuCount = os.cpus().length;
-    // Web Card iframe 每帧要做 postMessage / delayRender 握手，过高并发会让
-    // 多个 Chromium 实例抢 CPU，加剧 iframe 内部动画 seek 的抖动。折中取 cpuCount/2。
     const explicitConcurrency = Math.max(1, Math.floor(cpuCount / 2));
 
     if (isDev) {
@@ -2539,11 +2448,6 @@ ipcMain.handle(
         outputPath: args.outputPath,
         resolution: args.exportConfig.resolution,
         quality: args.exportConfig.quality,
-        renderWidth: renderConfig.renderWidth,
-        renderHeight: renderConfig.renderHeight,
-        x264Preset: renderConfig.x264Preset,
-        videoBitrate: renderConfig.videoBitrate,
-        audioBitrate: renderConfig.audioBitrate,
         cpuCount,
         explicitConcurrency,
         platform: process.platform,
@@ -2551,128 +2455,83 @@ ipcMain.handle(
       });
     }
 
-    const bundlePrepStart = Date.now();
-    const preparedBundle = await prepareRenderBundle(timelineData);
-    const {
-      timeline: renderTimeline,
-      serveUrl,
-      cleanup: cleanupBundle,
-      isPrebuilt,
-    } = preparedBundle;
+    const projectPrepStart = Date.now();
+    const preparedProject = await prepareHyperframesProject(timelineData, srtEntries);
 
     if (isDev) {
       console.log(
-        `${renderLogPrefix} bundle 准备完成 mode=${isPrebuilt ? 'prebuilt' : 'runtime'} 耗时=${(
-          (Date.now() - bundlePrepStart) / 1000
+        `${renderLogPrefix} HyperFrames 项目准备完成 耗时=${(
+          (Date.now() - projectPrepStart) / 1000
         ).toFixed(2)}s @${timestamp()}`,
       );
     }
 
     try {
-      const inputProps = {
-        timeline: renderTimeline,
-        srtEntries,
-        renderConfig,
-      };
-      const selectStart = Date.now();
-      const composition = await selectComposition({
-        serveUrl,
-        id: 'PodcastComposition',
-        inputProps,
-        binariesDirectory: remotionBinariesDirectory,
-      });
-      if (isDev) {
-        console.log(
-          `${renderLogPrefix} selectComposition 完成 耗时=${((Date.now() - selectStart) / 1000).toFixed(2)}s durationInFrames=${composition.durationInFrames} fps=${composition.fps} ${composition.width}x${composition.height} @${timestamp()}`,
-        );
-      }
-
+      const { ffmpegPath, ffprobePath } = resolveRuntimeBinaries();
       const renderStart = Date.now();
-      let lastProgressLog = 0;
-      let firstFrameAt: number | null = null;
-      let lastFrameRenderAt: number | null = null;
-      let lastRenderedFrames = 0;
-      await renderMedia({
-        serveUrl,
-        composition,
-        codec: 'h264',
-        outputLocation: args.outputPath,
-        inputProps,
-        binariesDirectory: remotionBinariesDirectory,
-        concurrency: explicitConcurrency,
-        x264Preset: renderConfig.x264Preset,
-        videoBitrate: renderConfig.videoBitrate,
-        audioBitrate: renderConfig.audioBitrate as `${number}k` | `${number}K` | `${number}M`,
-        // Web Card iframe 首屏 + 每帧握手可能要等字体/脚本加载，放宽 delayRender 超时。
-        timeoutInMilliseconds: 60_000,
-        chromiumOptions: {
-          gl: 'angle',
-          // Web Card 有 file:// 资源或跨域字体时避免因同源策略黑屏。
-          disableWebSecurity: true,
-        },
-        ...(isDev
-          ? {
-              logLevel: 'verbose' as const,
-              onBrowserLog: (log) => {
-                // 跳过 OffthreadVideo / delayRender 的噪声 log，只保留 warning/error
-                if (log.type === 'warning' || log.type === 'error') {
-                  console.log(`${renderLogPrefix}[chromium:${log.type}]`, log.text);
-                }
-              },
-            }
-          : {}),
-        onProgress: ({ progress, renderedFrames, encodedFrames, stitchStage }) => {
-          mainWindow?.webContents.send('render-progress', progress);
-          if (isDev) {
-            const now = Date.now();
-            if (firstFrameAt === null && renderedFrames > 0) {
-              firstFrameAt = now;
-            }
-            // 记录帧渲染阶段的结束时刻（最后一帧被渲染完）
-            if (
-              renderedFrames > lastRenderedFrames &&
-              renderedFrames >= composition.durationInFrames
-            ) {
-              lastFrameRenderAt = now;
-            }
-            lastRenderedFrames = renderedFrames;
+      mainWindow?.webContents.send('render-progress', 0.05);
+      const hyperframesCliPath = resolveHyperframesCliPath({
+        appPath: app.getAppPath(),
+        resourcesPath: process.resourcesPath,
+        cwd: process.cwd(),
+        moduleDir: __dirname,
+        existsSync,
+      });
+      const argsList = [
+        hyperframesCliPath,
+        'render',
+        preparedProject.projectDir,
+        '--output',
+        args.outputPath,
+        '--fps',
+        String(timelineData.fps || 30),
+        '--format',
+        'mp4',
+        '--quality',
+        args.exportConfig.quality === 'high' ? 'high' : 'standard',
+        '--workers',
+        String(explicitConcurrency),
+      ];
 
-            if (now - lastProgressLog > 2000 || progress >= 1) {
-              lastProgressLog = now;
-              const elapsedTotal = (now - renderStart) / 1000;
-              // 纯帧渲染阶段的 fps（排除初始化时间）
-              const renderPhaseMs = firstFrameAt ? now - firstFrameAt : 0;
-              const pureRenderFps =
-                renderedFrames && renderPhaseMs > 0
-                  ? (renderedFrames / (renderPhaseMs / 1000)).toFixed(1)
-                  : '0.0';
-              console.log(
-                `${renderLogPrefix} progress=${(progress * 100).toFixed(1)}% rendered=${renderedFrames}/${composition.durationInFrames} encoded=${encodedFrames} stage=${stitchStage} renderFps=${pureRenderFps} elapsed=${elapsedTotal.toFixed(2)}s`,
-              );
+      await new Promise<void>((resolve, reject) => {
+        const child = execFile(
+          process.execPath,
+          argsList,
+          {
+            cwd: preparedProject.projectDir,
+            env: {
+              ...process.env,
+              ELECTRON_RUN_AS_NODE: '1',
+              PATH: buildPathWithRuntimeBinaries(process.env.PATH, [ffmpegPath, ffprobePath]),
+              Path: buildPathWithRuntimeBinaries(process.env.Path, [ffmpegPath, ffprobePath]),
+            },
+          },
+          (error) => {
+            if (error) reject(error);
+            else resolve();
+          },
+        );
+        child.stdout?.on('data', (chunk: Buffer) => {
+          const text = chunk.toString();
+          if (isDev) process.stdout.write(text);
+          const frameMatch = text.match(/(\d+(?:\.\d+)?)%/);
+          if (frameMatch) {
+            const value = Number.parseFloat(frameMatch[1]);
+            if (Number.isFinite(value)) {
+              mainWindow?.webContents.send('render-progress', Math.max(0.05, Math.min(0.98, value / 100)));
             }
           }
-        },
+        });
+        child.stderr?.on('data', (chunk: Buffer) => {
+          const text = chunk.toString();
+          if (isDev) process.stderr.write(text);
+        });
       });
+      mainWindow?.webContents.send('render-progress', 1);
 
       if (isDev) {
-        const renderMediaMs = Date.now() - renderStart;
-        const framePhaseMs =
-          firstFrameAt && lastFrameRenderAt ? lastFrameRenderAt - firstFrameAt : null;
-        const stitchingMs =
-          lastFrameRenderAt !== null ? Date.now() - lastFrameRenderAt : null;
-        const pureFps =
-          framePhaseMs && composition.durationInFrames
-            ? (composition.durationInFrames / (framePhaseMs / 1000)).toFixed(2)
-            : 'n/a';
         console.log(
-          `${renderLogPrefix} renderMedia 完成 总耗时=${(renderMediaMs / 1000).toFixed(2)}s`,
-          {
-            framePhaseS: framePhaseMs ? (framePhaseMs / 1000).toFixed(2) : 'n/a',
-            stitchingS: stitchingMs ? (stitchingMs / 1000).toFixed(2) : 'n/a',
-            pureRenderFps: pureFps,
-            concurrency: explicitConcurrency,
-            cpuCount,
-          },
+          `${renderLogPrefix} hyperframes render 完成 总耗时=${((Date.now() - renderStart) / 1000).toFixed(2)}s`,
         );
       }
 
@@ -2683,7 +2542,7 @@ ipcMain.handle(
       }
       throw err;
     } finally {
-      await cleanupBundle();
+      await preparedProject.cleanup();
     }
   },
 );
@@ -2722,35 +2581,8 @@ registerScriptHistoryIpc();
 // 设置 macOS 系统菜单栏应用名称
 app.setName('灵机剪影');
 
-function ensureRemotionCwdForPackagedApp() {
-  if (!app.isPackaged) {
-    return;
-  }
-  try {
-    const cacheDir = ensureRemotionDownloadsCwd({
-      userDataPath: app.getPath('userData'),
-      existsSync,
-      mkdirSync,
-      writeFileSync,
-      chdir: (dir) => process.chdir(dir),
-    });
-    writeAppLog('info', 'remotion', 'Remotion 下载缓存目录已就绪', cacheDir);
-  } catch (err) {
-    writeAppLog(
-      'error',
-      'remotion',
-      '无法切换 Remotion 下载缓存目录，视频导出可能失败',
-      err instanceof Error ? err.stack || err.message : String(err),
-    );
-  }
-}
-
 app.whenReady().then(async () => {
   refreshAppConfig();
-  // 在任何 Remotion API（renderMedia / selectComposition / getVideoMetadata）
-  // 调用之前把 cwd 切到 userData 下的受控目录，避免 macOS 从 Finder 启动
-  // .app 时 cwd=`/` 导致 Remotion 试图 mkdir `/.remotion` 失败。
-  ensureRemotionCwdForPackagedApp();
   // 开发模式下显式设置 Dock 图标；打包后 macOS 会使用 .app 自带的 icns
   if (process.platform === 'darwin' && !app.isPackaged) {
     const iconPath = resolveAppIconPath();

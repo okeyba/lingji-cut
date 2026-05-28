@@ -29,10 +29,8 @@ describe('AI video workflow regressions', () => {
       "options?.startFromStep ?? (options?.autoMode ? 'script_generating' : 'tts_generating')",
     );
     expect(workflowSource).toContain('void runFromStep(initialStep, text, workflowSession.projectDir);');
-    expect(editorSource).toContain('readStoredExistingMediaDecision');
-    expect(editorSource).toContain('writeStoredExistingMediaDecision');
-    expect(editorSource).toContain('记住我的选择，后续默认这样处理');
-    expect(editorSource).toContain('跳过已有并继续');
+    expect(editorSource).toContain('if (isActive && workflow.step === \'tts_done\' && projectDir)');
+    expect(editorSource).toContain('continueFromTtsDone(projectDir)');
   });
 
   it('creates a task-progress item even when AI clip generation resumes from reusable media', () => {
@@ -43,7 +41,8 @@ describe('AI video workflow regressions', () => {
 
     expect(workflowSource).toContain('function ensureWorkflowTask');
     expect(workflowSource).toContain("category: 'ai-analyze'");
-    expect(workflowSource).toContain("label: 'AI 内容分析'");
+    expect(workflowSource).toContain("label: '内容分析'");
+    expect(workflowSource).toContain('ensureWorkflowTask(workflowTaskId, phase');
   });
 
   it('keeps task-progress synchronized during the arranging phase', () => {
@@ -53,7 +52,8 @@ describe('AI video workflow regressions', () => {
     );
 
     expect(workflowSource).toContain("label: '时间轴排布'");
-    expect(workflowSource).toContain("phase: '排布中'");
+    expect(workflowSource).toContain("subMessage: '准备中'");
+    expect(workflowSource).toContain('const subMessage = `排布卡片 ${drafts.length}/${drafts.length}`');
     expect(workflowSource).toContain("category: 'ai-analyze'");
   });
 

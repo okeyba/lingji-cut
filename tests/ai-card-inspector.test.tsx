@@ -40,7 +40,7 @@ describe('AICardInspector', () => {
     expect(html).toContain('展示设置');
     expect(html).toContain('Motion 卡片状态');
     expect(html).toContain('危险操作');
-    expect(html).toContain('尚未生成 Motion 代码');
+    expect(html).toContain('尚未生成 HyperFrames 动画');
     expect(html).toContain('全屏模式');
     expect(html).toContain('重新生成');
     expect(html).toContain('保存');
@@ -124,7 +124,7 @@ describe('AICardInspector', () => {
     expect(html).not.toContain('data-ai-card-section="text-content"');
   });
 
-  it('shows "motion card ready" once compiled code is attached', () => {
+  it('shows "motion card ready" once HyperFrames HTML is attached', () => {
     const html = renderToStaticMarkup(
       <AICardInspector
         card={{
@@ -141,8 +141,7 @@ describe('AICardInspector', () => {
           enabled: true,
           renderMode: 'motion-card',
           motionCard: {
-            sourceCode: 'const MotionComponent = (props) => null;',
-            compiledCode: 'var MotionComponent = function(props){ return null; };',
+            html: '<div><script>window.__lingjiMotionTimelines = window.__lingjiMotionTimelines || []; window.__lingjiMotionTimelines.push(gsap.timeline({ paused: true }));</script></div>',
             compiledAt: 1_715_000_000_000,
             prompt: 'test',
             retryCount: 0,

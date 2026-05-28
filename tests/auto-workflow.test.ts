@@ -145,9 +145,12 @@ describe('useAIVideoWorkflow autoMode wiring (source contract)', () => {
   });
 
   it('runs subtitle highlights and cover generation in parallel after analysis', () => {
-    expect(source).toContain('await Promise.all([runHighlights(), runCoverGeneration()])');
+    expect(source).toContain('const highlightsTrack = (async (): Promise<void> => {');
+    expect(source).toContain('const coverTrack = (async (): Promise<CoverCandidate[] | null> => {');
+    expect(source).toContain('await coverPromptsReadyPromise');
+    expect(source).toContain('const [, coverCandidatesResult] = await Promise.all([highlightsTrack, coverTrack])');
     expect(source).toContain('const postEnd = PHASES.arrange.baseStart');
-    expect(source).toContain('updatePostAnalysisProgress');
+    expect(source).toContain('refreshCombinedProgress');
   });
 
   it('arranges all AI cards in one timeline store update without artificial sleep', () => {

@@ -27,8 +27,7 @@ describe('AICardEditModal', () => {
           enabled: true,
           renderMode: 'motion-card',
           motionCard: {
-            sourceCode: 'const MotionComponent = (props) => null;',
-            compiledCode: 'var MotionComponent = function(props){ return null; };',
+            html: '<div><script>window.__lingjiMotionTimelines = window.__lingjiMotionTimelines || []; window.__lingjiMotionTimelines.push(gsap.timeline({ paused: true }));</script></div>',
             compiledAt: 1_715_000_000_000,
             prompt: 'demo',
             retryCount: 0,

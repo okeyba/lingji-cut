@@ -9,7 +9,7 @@ describe('readAudioDurationMs', () => {
     }));
 
     const durationMs = await readAudioDurationMs('C:/demo/podcast-audio.mp3', {
-      binariesDirectory: 'C:/remotion-bin',
+      binariesDirectory: 'C:/ffmpeg-bin',
       execFile,
     });
 
@@ -31,5 +31,23 @@ describe('readAudioDurationMs', () => {
         execFile: async () => ({ stdout: 'N/A\n', stderr: '' }),
       }),
     ).rejects.toThrow('Unable to read media duration');
+  });
+
+  it('prefers an explicit packaged ffprobe path', async () => {
+    const execFile = vi.fn(async () => ({
+      stdout: '1.500000\n',
+      stderr: '',
+    }));
+
+    await readAudioDurationMs('/tmp/audio.mp3', {
+      binariesDirectory: '/ignored',
+      ffprobePath: '/app/resources/app.asar.unpacked/node_modules/ffprobe-static/bin/darwin/arm64/ffprobe',
+      execFile,
+    });
+
+    expect(execFile).toHaveBeenCalledWith(
+      '/app/resources/app.asar.unpacked/node_modules/ffprobe-static/bin/darwin/arm64/ffprobe',
+      expect.any(Array),
+    );
   });
 });

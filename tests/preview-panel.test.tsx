@@ -4,18 +4,73 @@ import { createDefaultTimeline } from '../src/types';
 import { useTimelineStore } from '../src/store/timeline';
 import { PreviewPanel } from '../src/components/PreviewPanel';
 
-vi.mock('@remotion/player', async () => {
+vi.mock('../src/components/HyperframesPreviewPlayer', async () => {
   const React = await import('react');
 
   return {
-    Player: ({ compositionWidth, compositionHeight }: { compositionWidth: number; compositionHeight: number }) =>
-      React.createElement(
-        'div',
+    HyperframesPreviewPlayer: React.forwardRef(
+      (
         {
-          'data-player': 'mock',
-          'data-size': `${compositionWidth}x${compositionHeight}`,
+          timeline,
+        }: {
+          timeline: { width: number; height: number };
         },
-        'Mock Player',
+        ref,
+      ) => {
+        React.useImperativeHandle(ref, () => ({
+          play: () => undefined,
+          pause: () => undefined,
+          seekToMs: () => undefined,
+          isPlaying: () => false,
+          setVolume: () => undefined,
+          mute: () => undefined,
+          unmute: () => undefined,
+        }));
+        return React.createElement(
+          'div',
+          {
+            'data-player': 'hyperframes',
+            'data-size': `${timeline.width}x${timeline.height}`,
+          },
+          'Mock HyperFrames Player',
+        );
+      },
+    ),
+  };
+});
+
+vi.mock('../src/store/ai', () => ({
+  useAIStore: (selector: (state: { currentProjectDir: string | null }) => unknown) =>
+    selector({ currentProjectDir: null }),
+}));
+
+vi.mock('../src/ui', async () => {
+  const React = await import('react');
+
+  return {
+    Button: ({ children, ...props }: { children?: React.ReactNode }) =>
+      React.createElement('button', props, children),
+    Card: React.forwardRef(
+      ({ children, ...props }: { children?: React.ReactNode }, ref) =>
+        React.createElement('div', { ...props, ref }, children),
+    ),
+    Tooltip: ({ children }: { children?: React.ReactNode }) =>
+      React.createElement(React.Fragment, null, children),
+    TooltipContent: ({ children }: { children?: React.ReactNode }) =>
+      React.createElement('div', null, children),
+    TooltipTrigger: ({ children }: { children?: React.ReactNode }) =>
+      React.createElement(React.Fragment, null, children),
+  };
+});
+
+vi.mock('../src/components/AppIcon', async () => {
+  const React = await import('react');
+  return {
+    AppIcon: ({ name }: { name: string }) =>
+      React.createElement(
+        'span',
+        { 'data-icon': name },
+        name,
       ),
   };
 });
@@ -42,6 +97,10 @@ describe('PreviewPanel', () => {
         currentTimeMs={15_000}
         durationMs={90_000}
         compact={false}
+        onPreviewTimeUpdate={() => undefined}
+        onPreviewPlay={() => undefined}
+        onPreviewPause={() => undefined}
+        onPreviewEnded={() => undefined}
       />,
     );
 

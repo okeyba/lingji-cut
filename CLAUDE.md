@@ -16,10 +16,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   → MiniMax TTS 音频 + SRT
   → AI 字幕分析 / 封面 / 信息卡 / Motion Card
   → 时间线编辑
-  → Remotion 导出 H.264 MP4
+  → HyperFrames 导出 H.264 MP4
 ```
 
-这不是纯前端页面项目。很多改动需要同时考虑 Electron 主进程、preload、Renderer 状态、项目文件、Remotion 渲染和测试。
+这不是纯前端页面项目。很多改动需要同时考虑 Electron 主进程、preload、Renderer 状态、项目文件、HyperFrames 渲染和测试。
 
 ## 常用命令
 
@@ -39,7 +39,7 @@ npm run dist:mac     # 构建并打包 macOS .app
 
 - Electron 41 / electron-vite
 - React 19 / TypeScript 6
-- Remotion 4
+- HyperFrames 0.6
 - Zustand
 - CodeMirror 6
 - Framer Motion
@@ -103,7 +103,7 @@ npm run dist:mac     # 构建并打包 macOS .app
 
 ## Electron IPC 约束
 
-Renderer 不直接使用 Node API。任何文件系统、系统菜单、Remotion 渲染、TTS、导入、Agent、MCP 能力必须通过 preload 桥接。
+Renderer 不直接使用 Node API。任何文件系统、系统菜单、HyperFrames 渲染、TTS、导入、Agent、MCP 能力必须通过 preload 桥接。
 
 新增 / 修改 IPC 时，通常必须同步：
 
@@ -116,7 +116,7 @@ Renderer 不直接使用 Node API。任何文件系统、系统菜单、Remotion
 
 另外：
 
-- `electron/main.ts` 负责 Remotion 渲染、文件 I/O、全局配置、菜单、日志、导入、TTS。
+- `electron/main.ts` 负责 HyperFrames 渲染、文件 I/O、全局配置、菜单、日志、导入、TTS。
 - `electron/preload.ts` 暴露 `electronAPI`、`agentAPI`、`mcpAPI`、`conversationAPI` 等安全桥。
 - `src/lib/electron-api.ts` 是 Renderer 侧类型契约，不要让它和 preload 漂移。
 
@@ -155,28 +155,21 @@ Renderer 不直接使用 Node API。任何文件系统、系统菜单、Remotion
 - `src/lib/timeline-placement.ts`
 - `src/lib/timeline-snap.ts`
 - `src/components/Timeline.tsx`
-- `src/remotion/PodcastComposition.tsx`
+- `src/hyperframes/composition.ts`
 
-## Remotion 导出约束
+## HyperFrames 导出约束
 
-Remotion 入口固定：
+HyperFrames 导出链路：
 
-- `src/remotion/index.ts`
-- `src/remotion/Root.tsx`
-- Composition ID：`PodcastComposition`
-
-导出链路：
-
+- `src/hyperframes/composition.ts`
+- `src/hyperframes/assets.ts`
 - `electron/main.ts`
-- `src/lib/export-settings.ts`
-- `src/lib/remotion-assets.ts`
-- `src/remotion/PodcastComposition.tsx`
 
 关键规则：
 
-- 不要改掉 `PodcastComposition` ID，除非同步主进程 `selectComposition` 逻辑和测试。
-- 导出前绝对路径素材会映射到临时 public 目录。
-- `calculateMetadata` 根据 `TimelineData` 与导出配置动态计算宽高、fps、duration。
+- 不允许重新引入 Remotion 作为 fallback。
+- `TimelineData` 仍是编辑器数据源，导出前编译为 HyperFrames `index.html`。
+- AI Motion Card 必须生成 `motionCard.html`，内容为 HTML + CSS + GSAP 片段。
 - 导出格式当前是 H.264 MP4。
 
 ## AI / Provider / 提示词架构
@@ -232,7 +225,7 @@ Prompt Kind：
 - `electron/prompt-bindings-io.ts`
 - `src/components/AIPanel.tsx`
 - `src/components/MotionPanel.tsx`
-- `src/remotion/cards/`
+- `src/hyperframes/`
 
 ## 脚本工作台约束
 
@@ -339,7 +332,7 @@ Claude ACP 连接时会向用户项目目录写入 / 更新 `CLAUDE.md` 中的 M
 - 修改 `TimelineData`、`OverlayItem`、`AICard`、`AISettings`、`ProjectData` 等共享类型。
 - 修改 `project.json` 结构或迁移逻辑。
 - 修改 IPC 名称、参数或返回值。
-- 修改 Remotion Composition ID、输入结构或导出入口。
+- 修改 HyperFrames composition 输入结构或导出入口。
 - 修改 AI Provider、提示词绑定、图片生成 Provider。
 - 修改 Agent 权限策略、API Key 存储或 MCP 注册逻辑。
 - 修改 Electron 安全边界、preload 暴露范围或 webSecurity 策略。

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const {
-  REMOTION_ASAR_UNPACK_DIRS,
+  HYPERFRAMES_ASAR_UNPACK_DIRS,
   buildReleaseManifest,
   shouldStageProjectPath,
   shouldStageNodeModulePath,
@@ -21,6 +21,7 @@ describe('package mac staging helpers', () => {
       },
       dependencies: {
         react: '^19.2.4',
+        hyperframes: '^0.6.52',
       },
       devDependencies: {
         vitest: '^2.1.9',
@@ -38,8 +39,9 @@ describe('package mac staging helpers', () => {
   it('stages only runtime project files from the repository root', () => {
     expect(shouldStageProjectPath('dist/index.html')).toBe(true);
     expect(shouldStageProjectPath('dist-electron/main.js')).toBe(true);
-    expect(shouldStageProjectPath('src/remotion/index.ts')).toBe(true);
+    expect(shouldStageProjectPath('src/hyperframes/composition.ts')).toBe(true);
 
+    expect(shouldStageProjectPath('vendor/ffmpeg/win32/x64/ffmpeg.exe')).toBe(false);
     expect(shouldStageProjectPath('.tmp/design-review/result.png')).toBe(false);
     expect(shouldStageProjectPath('docs/readme.md')).toBe(false);
     expect(shouldStageProjectPath('images/generated-1.png')).toBe(false);
@@ -49,12 +51,12 @@ describe('package mac staging helpers', () => {
   });
 
   it('drops caches and renderer-only packages from staged node_modules', () => {
-    expect(shouldStageNodeModulePath('@remotion/renderer/index.js')).toBe(true);
+    expect(shouldStageNodeModulePath('hyperframes/dist/cli.js')).toBe(true);
+    expect(shouldStageNodeModulePath('@hyperframes/player/dist/index.js')).toBe(true);
     expect(shouldStageNodeModulePath('@langchain/core/messages.js')).toBe(true);
     expect(shouldStageNodeModulePath('react/index.js')).toBe(true);
 
     expect(shouldStageNodeModulePath('.cache/webpack/index.pack')).toBe(false);
-    expect(shouldStageNodeModulePath('.remotion/chrome-headless-shell')).toBe(false);
     expect(shouldStageNodeModulePath('lucide-react/dist/lucide-react.js')).toBe(false);
     expect(shouldStageNodeModulePath('react-day-picker/dist/index.js')).toBe(false);
   });
@@ -65,9 +67,9 @@ describe('package mac staging helpers', () => {
     expect(shouldStageNodeModulePath('@langchain/google-genai/dist/index.js')).toBe(true);
   });
 
-  it('unpacks remotion runtime artifacts from app.asar for packaged exports', () => {
-    expect(REMOTION_ASAR_UNPACK_DIRS).toBe(
-      '{dist-remotion,node_modules/@remotion/compositor-*}',
+  it('unpacks HyperFrames runtime artifacts from app.asar for packaged exports', () => {
+    expect(HYPERFRAMES_ASAR_UNPACK_DIRS).toBe(
+      '{vendor/ffmpeg,node_modules/hyperframes,node_modules/@hyperframes,node_modules/@puppeteer,node_modules/puppeteer-core,node_modules/sharp,node_modules/onnxruntime-node,node_modules/gsap,node_modules/ffmpeg-static,node_modules/ffprobe-static}',
     );
   });
 });

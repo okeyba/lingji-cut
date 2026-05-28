@@ -167,14 +167,14 @@ user: |-
 
   ===== Motion Card 通用技术约束（不可违反）=====
   - type 必须从 summary / data / insight / chapter / quote / motion 中选；renderMode="motion-card"。
-  - motionCard.sourceCode 必须定义 const MotionComponent = (props) => { ... } 并 return JSX。
-  - props 现在是 { frame, fps, durationInFrames, width, height, subtitles }；布局必须基于 width / height 自适应，**禁止硬编码 1920 / 1080**。
-  - subtitles 是一个数组（可能为空），每项形如 { startMs, endMs, text, relativeStartFrame, relativeEndFrame }，已按时间升序、relative*Frame 已对齐卡片起点为 0；**所有分步动画必须按 subtitles 顺序触发**，没有 subtitles 时退化为 beats 等分节奏。
-  - 禁止 import / export / async / await / useCurrentFrame / useVideoConfig / window / globalThis / require / fetch / setTimeout / setInterval / new Date 这类副作用 API。
-  - 纯内联 style；不引入外部字体 / 网络资源；不输出 markdown 代码块；不写注释解释画面。
+  - motionCard.html 必须是可直接插入卡片容器的 HTML 片段，包含内联 <style> 和同步 <script>，并用 gsap.timeline({ paused: true }) 构建动画。
+  - 布局必须使用百分比、CSS clamp、flex 或容器尺寸自适应，禁止硬编码只适配 1920×1080。
+  - 如需分步动画，使用 GSAP timeline 的 position 参数顺序编排；不要依赖运行时随机或异步逻辑。
+  - 禁止 import / export / async / await / useCurrentFrame / useVideoConfig / globalThis / require / fetch / setTimeout / setInterval / new Date 这类副作用 API；唯一允许的 window 用法是 window.__lingjiMotionTimelines = window.__lingjiMotionTimelines || []; window.__lingjiMotionTimelines.push(localTimeline)。
+  - 可用内联 <style>；不引入外部字体 / 网络资源；不输出 markdown 代码块；不写注释解释画面。
   - 内容忠于字幕，不编造数字与人名；画面里不要出现 Source / AI Generated / 节目水印之类小字。
   - 性能：最多 1 标题 + 1 副标题 / 注释 + 1 个数据可视化主元素 + 至多 6 个数据/列表项 + 1 层 hairline 装饰；禁止粒子雨 / blur 氛围光 / 大量 path / 逐帧随机 / CameraMotionBlur。
-  - 可用 API：{{sandboxReference}}
+  - 可用运行时：{{sandboxReference}}
 
   ===== 字幕驱动动画契约（六类卡片通用，必须严格执行）=====
   入场窗（永远存在）：
@@ -195,8 +195,8 @@ user: |-
 
   动画反禁忌（**违反任意一条都视为生成失败，必须重做**）：
   1. 禁止任何 opacity 在同一元素上出现 0→1→0 / 1→0→1 类反复；揭示后就保持。
-  2. 禁止使用 Math.sin / Math.cos / random / noise2D / noise3D 调制 opacity / scale / translate；只能用 interpolate(frame, [from,to], [a,b], { extrapolateRight:'clamp', extrapolateLeft:'clamp', easing: Easing.out(Easing.cubic) })。
-  3. 禁止 spring overshoot > 1.05；调用 spring 时必须给 { config: { damping: 200, stiffness: 120, mass: 0.6 } } 或等价稳态参数。
+  2. 禁止使用 Math.sin / Math.cos / random / noise2D / noise3D 调制 opacity / scale / translate；只能用 gsap.from 或 gsap.to 的固定时段 tween。
+  3. 禁止 spring 类无限物理动画；用 GSAP power2.out、power3.out、expo.out 等确定性 easing。
   4. 禁止任何元素在不同帧间发生位置 / 尺寸的"瞬移"（即 interpolate 区间外不留出 clamp）。
   5. 禁止整卡级 scale / rotate / 摄影机抖动 / 翻页效果。
   6. 禁止循环抖动 / 持续呼吸缩放；唯一允许的"微动"是 hairline 长度从 0→100% 的一次性单调揭示。
@@ -306,7 +306,7 @@ user: |-
       (d) 进度环 / 饼图（donut）：主版式 = SINGLE-FOCUS，tile 居中放 SVG <circle>（stroke-dasharray 揭示一段角度，progress-ring 方式），中央 serif 大百分比；tile 顶部 mono kicker，底部 body 解释。禁止真正的多片 pie。
       (e) 折线图（line）：主版式 = HERO-FOOTER。hero tile = 单条 <polyline>（strokeDasharray + strokeDashoffset 从 100%→0% 揭示，accent 描边、不填充）+ 两端各一个 SVG <circle> 标点 + 两端 mono 数值标签；footer tile = mono kicker + body 解释（横向并列）。
       (f) 表格（table）：主版式 = SINGLE-FOCUS。tile 内 div + flex 网格（不要用 <table>），最多 4 行 × 3 列；首行 mono 表头（ink-mute、letterSpacing 0.14em），数据行 serif 数字 + sans 标签；行与行之间 1px hairline 分隔；揭示按行进行，每行可作为 tile 内部的子 step（不另开 grid tile）。
-    技术栈硬约束：所有图表必须用**纯 SVG + Remotion 原语**（@remotion/shapes 的 Rect / Circle / Polygon、原生 <svg> + <rect>/<circle>/<path>/<polyline>），禁止 recharts、d3、chart.js 等第三方图表库；禁止 canvas / WebGL。
+    技术栈硬约束：所有图表必须用**纯 HTML + SVG + GSAP**（原生 <svg> + <rect>/<circle>/<path>/<polyline>），禁止引入 recharts、d3、chart.js、任何第三方图表库；禁止 canvas / WebGL。
     分步单元 step：(a) 主 = [hero-tile, footer-tile]；(b) 主 = [kicker-tile, value-A-tile, vs-tile, value-B-tile, footer-tile]（VS 与 footer 可并入相邻 tile）；(c) 主 = [kicker-tile, chart-tile, legend-tile]，chart tile 内柱子按 beats 错峰；(d) (e) (f) 主 = [tile]，tile 内部子元素按 beats 错峰。
     数字增长动画（适用于 (a)(b)(c)(d) 主数字）：每个数字在所属 tile 的揭示窗内，从 0 / 起始值 interpolate 到目标值（Easing.out(Easing.cubic)、clamp 两端），用 Math.round 处理整数、用 toFixed(1) 处理一位小数；**绝对不要每帧 Math.random / noise**。
     图表入场动画：

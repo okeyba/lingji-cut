@@ -3,7 +3,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { packager } = require('@electron/packager');
 const {
-  REMOTION_ASAR_UNPACK_DIRS,
+  HYPERFRAMES_ASAR_UNPACK_DIRS,
   RUNTIME_ROOT_PACKAGES,
   buildReleaseManifest,
   shouldStageProjectPath,
@@ -17,18 +17,39 @@ const appName = packageJson.productName || packageJson.name;
 const releaseDir = path.join(rootDir, 'release');
 const iconPath = path.join(rootDir, 'build', 'icon.ico');
 const pngIconPath = path.join(rootDir, 'build', 'icon.png');
+const ffmpegVendorCacheDir = path.join(rootDir, '.tmp', 'ffmpeg-vendor');
 const stageRootDir = path.join(rootDir, '.tmp', 'package-stage');
 const buildOutputs = [
   path.join(rootDir, 'dist', 'index.html'),
   path.join(rootDir, 'dist-electron', 'main.js'),
   path.join(rootDir, 'dist-electron', 'preload.js'),
-  path.join(rootDir, 'dist-remotion', 'index.html'),
 ];
 
-const supportedArch = new Set(['x64', 'ia32', 'arm64']);
+const supportedArch = new Set(['x64', 'ia32']);
+const windowsFfmpegPackages = {
+  x64: {
+    name: '@ffmpeg-installer/win32-x64',
+    version: '4.1.0',
+    tarball: 'https://registry.npmmirror.com/@ffmpeg-installer/win32-x64/-/win32-x64-4.1.0.tgz',
+  },
+  ia32: {
+    name: '@ffmpeg-installer/win32-ia32',
+    version: '4.1.0',
+    tarball: 'https://registry.npmmirror.com/@ffmpeg-installer/win32-ia32/-/win32-ia32-4.1.0.tgz',
+  },
+};
 
 function normalizePackageArch(arch) {
   return supportedArch.has(arch) ? arch : null;
+}
+
+function resolvePackageArch({
+  requestedArch = process.env.ARCH,
+  hostArch = process.arch,
+  hostPlatform = process.platform,
+} = {}) {
+  const arch = requestedArch || (hostPlatform === 'win32' ? hostArch : 'x64');
+  return normalizePackageArch(arch);
 }
 
 function readPngDimensions(pngBuffer) {
@@ -103,6 +124,25 @@ async function copyDirectory(sourcePath, targetPath) {
   await fsp.cp(sourcePath, targetPath, { recursive: true });
 }
 
+async function runCommand(command, args, options = {}) {
+  const { spawn } = require('node:child_process');
+  await new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: rootDir,
+      stdio: 'inherit',
+      ...options,
+    });
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(`${command} ${args.join(' ')} exited with code ${code}`));
+    });
+  });
+}
+
 async function resetDirectory(directoryPath) {
   await fsp.rm(directoryPath, { recursive: true, force: true });
   await fsp.mkdir(directoryPath, { recursive: true });
@@ -160,6 +200,60 @@ async function stageProjectFiles(stageDir) {
   );
 }
 
+async function ensureWindowsFfmpegVendor(arch) {
+  const packageInfo = windowsFfmpegPackages[arch];
+  if (!packageInfo) {
+    throw new Error(`Windows ${arch} 暂无可用 FFmpeg vendor 包`);
+  }
+
+  const targetPath = path.join(ffmpegVendorCacheDir, 'win32', arch, 'ffmpeg.exe');
+  if (fs.existsSync(targetPath)) {
+    return targetPath;
+  }
+
+  const extractDir = path.join(ffmpegVendorCacheDir, 'extract', `win32-${arch}`);
+  await fsp.rm(extractDir, { recursive: true, force: true });
+  await fsp.mkdir(extractDir, { recursive: true });
+
+  const tarballPath = path.join(
+    ffmpegVendorCacheDir,
+    `ffmpeg-installer-${packageInfo.name.split('/').pop()}-${packageInfo.version}.tgz`,
+  );
+  await fsp.mkdir(path.dirname(tarballPath), { recursive: true });
+
+  console.log(`准备 Windows FFmpeg：${packageInfo.name}@${packageInfo.version}`);
+  await runCommand('npm', [
+    'pack',
+    `${packageInfo.name}@${packageInfo.version}`,
+    '--pack-destination',
+    ffmpegVendorCacheDir,
+  ]);
+
+  if (!fs.existsSync(tarballPath)) {
+    throw new Error(`FFmpeg vendor 包下载失败：${tarballPath}`);
+  }
+
+  await runCommand('tar', ['-xzf', tarballPath, '-C', extractDir]);
+
+  const extractedFfmpeg = path.join(extractDir, 'package', 'ffmpeg.exe');
+  if (!fs.existsSync(extractedFfmpeg)) {
+    throw new Error(`FFmpeg vendor 包缺少 ffmpeg.exe：${packageInfo.tarball}`);
+  }
+
+  await fsp.mkdir(path.dirname(targetPath), { recursive: true });
+  await fsp.copyFile(extractedFfmpeg, targetPath);
+  await fsp.chmod(targetPath, 0o755);
+  await fsp.rm(extractDir, { recursive: true, force: true });
+  return targetPath;
+}
+
+async function stageWindowsFfmpeg(stageDir, arch) {
+  const sourcePath = await ensureWindowsFfmpegVendor(arch);
+  const targetPath = path.join(stageDir, 'vendor', 'ffmpeg', 'win32', arch, 'ffmpeg.exe');
+  await fsp.mkdir(path.dirname(targetPath), { recursive: true });
+  await fsp.copyFile(sourcePath, targetPath);
+}
+
 async function stageNodeModules(stageDir) {
   const stageNodeModulesDir = path.join(stageDir, 'node_modules');
   await fsp.mkdir(stageNodeModulesDir, { recursive: true });
@@ -184,10 +278,11 @@ async function writeStageManifest(stageDir) {
   );
 }
 
-async function createStageDirectory(stageDir) {
+async function createStageDirectory(stageDir, arch) {
   await resetDirectory(stageDir);
   await writeStageManifest(stageDir);
   await stageProjectFiles(stageDir);
+  await stageWindowsFfmpeg(stageDir, arch);
   await stageNodeModules(stageDir);
 }
 
@@ -212,16 +307,16 @@ function buildWindowsPackagerOptions({
     platform: 'win32',
     prune: false,
     asar: {
-      unpackDir: REMOTION_ASAR_UNPACK_DIRS,
+      unpackDir: HYPERFRAMES_ASAR_UNPACK_DIRS,
     },
   };
 }
 
 async function packageWindows() {
-  const arch = normalizePackageArch(process.env.ARCH || process.arch);
+  const arch = resolvePackageArch();
   if (!arch) {
     console.error(`不支持的 Windows 打包架构：${process.env.ARCH || process.arch}`);
-    console.error('请使用 npm run package:win，或设置 ARCH=x64 / ARCH=ia32 / ARCH=arm64');
+    console.error('请使用 npm run package:win，或设置 ARCH=x64 / ARCH=ia32');
     process.exit(1);
   }
 
@@ -241,7 +336,7 @@ async function packageWindows() {
   console.log(`准备最小发布目录：${path.relative(rootDir, stageDir)}`);
 
   const resolvedIconPath = await ensureWindowsIcon();
-  await createStageDirectory(stageDir);
+  await createStageDirectory(stageDir, arch);
 
   try {
     const appPaths = await packager(
@@ -273,7 +368,11 @@ if (require.main === module) {
 
 module.exports = {
   buildWindowsPackagerOptions,
+  createStageDirectory,
   createIcoFromPng,
   ensureWindowsIcon,
+  ensureWindowsFfmpegVendor,
   normalizePackageArch,
+  resolvePackageArch,
+  windowsFfmpegPackages,
 };

@@ -17,7 +17,12 @@ const entries: SrtEntry[] = [
   { index: 2, startMs: 1_500, endMs: 3_000, text: '第二条字幕，比较重要。' },
 ];
 
-const VALID_MOTION_SOURCE = 'const MotionComponent = (props) => null;';
+const VALID_MOTION_HTML = `<div class="motion-card"><span>摘要卡</span><script>
+  const local = gsap.timeline({ paused: true });
+  local.from(document.currentScript.parentElement, { opacity: 0, duration: 0.4 }, 0);
+  window.__lingjiMotionTimelines = window.__lingjiMotionTimelines || [];
+  window.__lingjiMotionTimelines.push(local);
+</script></div>`;
 
 const motionCardResponse = {
   id: 'generated-card',
@@ -31,7 +36,7 @@ const motionCardResponse = {
   template: 'summary-default',
   enabled: true,
   renderMode: 'motion-card',
-  motionCard: { sourceCode: VALID_MOTION_SOURCE },
+  motionCard: { html: VALID_MOTION_HTML },
   style: {
     primaryColor: '#79c4ff',
     backgroundColor: '#151922',
@@ -63,8 +68,8 @@ describe('generateSingleCardFromSubtitles', () => {
     expect(card.startMs).toBe(500);
     expect(card.endMs).toBe(3_000);
     expect(card.displayDurationMs).toBe(2_500);
-    expect(card.motionCard?.sourceCode).toContain('MotionComponent');
-    expect(card.motionCard?.compiledCode.length).toBeGreaterThan(0);
+    expect(card.motionCard?.html).toContain('gsap.timeline');
+    expect(card.motionCard?.html).toContain('__lingjiMotionTimelines.push(local)');
     expect(modelCaller).toHaveBeenCalledTimes(1);
     const systemPrompt = modelCaller.mock.calls[0]?.[1] ?? '';
     expect(systemPrompt).toContain('突出核心数字');
@@ -105,10 +110,10 @@ describe('generateSingleCardFromSubtitles', () => {
     ).rejects.toThrow('时间范围无效');
   });
 
-  it('throws a "请重新生成" error when motion sourceCode does not compile', async () => {
+  it('throws a "请重新生成" error when motion html does not compile', async () => {
     const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
       ...motionCardResponse,
-      motionCard: { sourceCode: 'garbage that cannot compile' },
+      motionCard: { html: 'garbage that cannot compile' },
     });
 
     await expect(
@@ -127,31 +132,28 @@ describe('generateSingleCardFromSubtitles', () => {
     ).rejects.toThrow(/请重新生成/);
   });
 
-  it('creates a fallback motion-card when the model omits motionCard', async () => {
+  it('rejects missing motionCard html instead of generating fallback motion', async () => {
     const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
       ...motionCardResponse,
       title: '真实流程测试卡',
-      content: '缺少源码时也应生成可播放的兜底 Motion。',
+      content: '缺少源码时必须失败。',
       motionCard: undefined,
     });
 
-    const card = await generateSingleCardFromSubtitles(
-      entries,
-      {
-        text: 'AI 创作测试：国产存储周期正在被价格、产能与先进封装同时重写。',
-        startMs: 0,
-        endMs: 3_000,
-        displayDurationMs: 3_000,
-        type: 'insight',
-      },
-      settings,
-      { generateStructuredData: modelCaller },
-    );
-
-    expect(card.renderMode).toBe('motion-card');
-    expect(card.title).toBe('真实流程测试卡');
-    expect(card.motionCard?.sourceCode).toContain('const MotionComponent');
-    expect(card.motionCard?.compiledCode).toContain('React.createElement');
+    await expect(
+      generateSingleCardFromSubtitles(
+        entries,
+        {
+          text: 'AI 创作测试：国产存储周期正在被价格、产能与先进封装同时重写。',
+          startMs: 0,
+          endMs: 3_000,
+          displayDurationMs: 3_000,
+          type: 'insight',
+        },
+        settings,
+        { generateStructuredData: modelCaller },
+      ),
+    ).rejects.toThrow(/motionCard/);
   });
 
   it('rejects invalid card type', async () => {

@@ -1,4 +1,3 @@
-import { type PlayerRef } from '@remotion/player';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AIPanel } from '../components/AIPanel';
 import { AssetPanel } from '../components/AssetPanel';
@@ -7,6 +6,7 @@ import { ResizeHandle } from '../components/ResizeHandle';
 import { useTaskProgressStore } from '../store/task-progress';
 import { ExportSettingsModal } from '../components/ExportSettingsModal';
 import { PreviewPanel } from '../components/PreviewPanel';
+import type { HyperframesPreviewHandle } from '../components/HyperframesPreviewPlayer';
 import { TimelineAIOverlay } from '../components/TimelineAIOverlay';
 import { Timeline } from '../components/Timeline';
 import type { ProjectOverviewMeta } from '../components/ProjectOverviewPanel';
@@ -24,10 +24,8 @@ import { getEditorLayoutMode, getTimelinePanelBounds } from '../lib/layout';
 import { isTextEditingTarget } from '../lib/native-shortcuts';
 import { shouldUpdatePlaybackTime } from '../lib/playback';
 import {
-  frameToMs,
   getEffectiveTimelineDurationMs,
   getFileNameFromPath,
-  msToFrame,
 } from '../lib/utils';
 import { loadAISettings, useAIStore } from '../store/ai';
 import { useTimelineStore } from '../store/timeline';
@@ -112,7 +110,7 @@ export function Editor({
   const viewport = useViewportSize();
   const layout = getEditorLayoutMode(viewport.width, viewport.height);
   const panelBounds = getTimelinePanelBounds(viewport.height, layout.compactTimeline);
-  const playerRef = useRef<PlayerRef>(null);
+  const playerRef = useRef<HyperframesPreviewHandle>(null);
   const timelineWrapRef = useRef<HTMLDivElement>(null);
   const currentTimeRef = useRef(0);
   const [timelinePanelHeight, setTimelinePanelHeight] = useState(layout.timelineHeight);
@@ -333,42 +331,21 @@ export function Editor({
     return cleanup;
   }, []);
 
-  useEffect(() => {
-    const player = playerRef.current;
-    if (!player) {
+  const handlePreviewTimeUpdate = useCallback((nextTimeMs: number) => {
+    if (!shouldUpdatePlaybackTime(currentTimeRef.current, nextTimeMs)) {
       return;
     }
+    currentTimeRef.current = nextTimeMs;
+    setCurrentTimeMs(nextTimeMs);
+  }, []);
 
-    const handleFrameUpdate = ({ detail }: { detail: { frame: number } }) => {
-      const nextTimeMs = frameToMs(detail.frame, fps);
-
-      if (!shouldUpdatePlaybackTime(currentTimeRef.current, nextTimeMs)) {
-        return;
-      }
-
-      currentTimeRef.current = nextTimeMs;
-      setCurrentTimeMs(nextTimeMs);
-    };
-    const handlePlay = () => setIsPlaying(true);
-    const handlePause = () => setIsPlaying(false);
-    const handleEnded = () => {
-      currentTimeRef.current = effectiveDurationMs;
-      setCurrentTimeMs(effectiveDurationMs);
-      setIsPlaying(false);
-    };
-
-    player.addEventListener('frameupdate', handleFrameUpdate);
-    player.addEventListener('play', handlePlay);
-    player.addEventListener('pause', handlePause);
-    player.addEventListener('ended', handleEnded);
-
-    return () => {
-      player.removeEventListener('frameupdate', handleFrameUpdate);
-      player.removeEventListener('play', handlePlay);
-      player.removeEventListener('pause', handlePause);
-      player.removeEventListener('ended', handleEnded);
-    };
-  }, [fps, effectiveDurationMs]);
+  const handlePreviewPlay = useCallback(() => setIsPlaying(true), []);
+  const handlePreviewPause = useCallback(() => setIsPlaying(false), []);
+  const handlePreviewEnded = useCallback(() => {
+    currentTimeRef.current = effectiveDurationMs;
+    setCurrentTimeMs(effectiveDurationMs);
+    setIsPlaying(false);
+  }, [effectiveDurationMs]);
 
   // exportRequestToken 是 App 级计数器，用户点击菜单/工具栏「导出」时自增。
   // 这里用 ref 记录组件"已处理过的"token 值，仅在 token 真正递增时弹出导出框，
@@ -432,11 +409,11 @@ export function Editor({
         return;
       }
 
-      player.seekTo(msToFrame(targetMs, fps));
+      player.seekToMs(targetMs);
       currentTimeRef.current = targetMs;
       setCurrentTimeMs(targetMs);
     },
-    [fps],
+    [],
   );
 
   const handleExport = useCallback(async () => {
@@ -745,6 +722,10 @@ export function Editor({
                 }
                 onSelectOverlay={handleSelectOverlayOnCanvas}
                 onUpdateOverlayPosition={handleUpdateOverlayPosition}
+                onPreviewTimeUpdate={handlePreviewTimeUpdate}
+                onPreviewPlay={handlePreviewPlay}
+                onPreviewPause={handlePreviewPause}
+                onPreviewEnded={handlePreviewEnded}
               />
             </div>
             <div className={styles.inspectorWrap}>
@@ -857,6 +838,10 @@ export function Editor({
                 }
                 onSelectOverlay={handleSelectOverlayOnCanvas}
                 onUpdateOverlayPosition={handleUpdateOverlayPosition}
+                onPreviewTimeUpdate={handlePreviewTimeUpdate}
+                onPreviewPlay={handlePreviewPlay}
+                onPreviewPause={handlePreviewPause}
+                onPreviewEnded={handlePreviewEnded}
               />
             </div>
             {!layout.stackSidebar ? (
@@ -1028,4 +1013,3 @@ function mapProjectMetadata(metadata: ProjectMetadata): ProjectOverviewMeta {
     sizeBytes: metadata.sizeBytes,
   };
 }
-

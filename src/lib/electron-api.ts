@@ -190,6 +190,19 @@ export interface ProjectMetadata {
   createdAtMs: number;
 }
 
+export interface HyperframesRuntimePreflightCheck {
+  key: 'hyperframesCli' | 'gsap' | 'ffmpeg' | 'ffprobe' | 'chrome';
+  ok: boolean;
+  path: string | null;
+  source?: string;
+  message?: string;
+}
+
+export interface HyperframesRuntimePreflightResult {
+  ok: boolean;
+  checks: HyperframesRuntimePreflightCheck[];
+}
+
 export interface RecentProjectEntry {
   path: string;
   name: string;
@@ -202,6 +215,7 @@ export interface RecentProjectEntry {
 export interface ElectronAPI {
   parseSrtFile: (filePath: string) => Promise<{ entries: SrtEntry[]; durationMs: number }>;
   getAudioDuration: (filePath: string) => Promise<number>;
+  getHyperframesRuntimePreflight: () => Promise<HyperframesRuntimePreflightResult>;
   /** 返回文件的 mtime（毫秒整数）。文件不存在或读取失败时返回 null。 */
   getFileMtime: (filePath: string) => Promise<number | null>;
   analyzeSrt: (args: {
