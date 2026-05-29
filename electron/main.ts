@@ -36,6 +36,8 @@ import { prepareTimelineForHyperframes, type HyperframesAssetDescriptor } from '
 import { subtitleJsonToSRT } from '../src/lib/minimax-tts';
 import { buildEstimatedSrtTextFromText } from '../src/lib/srt-resegment';
 import { runTTSProvider } from './tts-provider-runner';
+import { groupSentencesByBudget, buildSrtFromChunks, MIMO_TTS_CHUNK_CHAR_BUDGET, type ChunkPart } from './tts-chunking';
+import { concatWavFiles } from './media-concat';
 import {
   buildLegacyMinimaxTTSProvider,
   buildLegacyMinimaxTTSVoice,
@@ -2146,6 +2148,8 @@ ipcMain.handle(
       apiKey?: string;
       projectDir: string;
       telemetryRunId?: string | null;
+      styleInstruction?: string;
+      sentences?: Array<{ subtitle: string; speak: string }>;
     },
   ) => {
     const { requestId, text, projectDir } = args;
@@ -2191,64 +2195,90 @@ ipcMain.handle(
     }, 1500);
 
     try {
-      const result = await runTTSProvider({
-        text,
-        provider,
-        voice,
-        signal: controller.signal,
-      });
-      writeAppLog('info', 'tts', 'TTS 同步响应接收完成', `provider=${provider.type}`);
-      mainWindow?.webContents.send('tts-progress', 35);
-
       await fs.mkdir(projectDir, { recursive: true });
+      let audioPath: string;
+      let durationMs = 0;
+      let srtText = '';
+      const isMimoChunked =
+        provider.type === 'xiaomi_mimo' && Array.isArray(args.sentences) && args.sentences.length > 0;
 
-      const audioBuf = result.audioBuffer;
-      if (audioBuf.byteLength === 0) {
-        throw new Error('TTS 未返回任何音频数据，请检查 API Key 及配置');
+      if (isMimoChunked) {
+        const chunks = groupSentencesByBudget(args.sentences!, MIMO_TTS_CHUNK_CHAR_BUDGET);
+        const { ffmpegPath: ffmpegPathOrNull, ffprobePath } = resolveRuntimeBinaries();
+        if (!ffmpegPathOrNull) throw new Error('ffmpeg 未找到，无法合并 MiMo 分块音频');
+        const ffmpegPath = ffmpegPathOrNull;
+        audioPath = path.join(projectDir, 'podcast-audio.wav');
+        const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lingji-tts-'));
+        const parts: ChunkPart[] = [];
+        const partPaths: string[] = [];
+        try {
+          for (let i = 0; i < chunks.length; i++) {
+            const speakText = chunks[i].map((u) => u.speak).join('');
+            let buf: Buffer | null = null;
+            let lastErr: unknown;
+            for (let attempt = 0; attempt <= 2 && !buf; attempt++) {
+              try {
+                const r = await runTTSProvider({
+                  text: speakText,
+                  provider,
+                  voice,
+                  signal: controller.signal,
+                  styleInstruction: args.styleInstruction,
+                  speakText,
+                });
+                if (r.audioBuffer.byteLength > 0) buf = r.audioBuffer;
+                else lastErr = new Error('MiMo 返回空音频');
+              } catch (err) {
+                lastErr = err;
+                if ((err as { name?: string }).name === 'AbortError') throw err;
+              }
+            }
+            if (!buf) throw lastErr instanceof Error ? lastErr : new Error('MiMo 分块合成失败');
+            const partPath = path.join(tmpDir, `chunk-${i}.wav`);
+            await fs.writeFile(partPath, buf);
+            partPaths.push(partPath);
+            parts.push({ durMs: await readAudioDurationMs(partPath, { ffprobePath }), units: chunks[i] });
+            mainWindow?.webContents.send('tts-progress', 35 + Math.round((50 * (i + 1)) / chunks.length));
+          }
+          await concatWavFiles(partPaths, audioPath, { ffmpegPath });
+          durationMs = parts.reduce((sum, p) => sum + p.durMs, 0);
+          srtText = buildSrtFromChunks(parts);
+          writeAppLog('info', 'tts', `MiMo 分块合成完成，块数=${chunks.length}，时长=${durationMs}ms，路径=${audioPath}`);
+        } finally {
+          await fs.rm(tmpDir, { recursive: true, force: true });
+        }
+      } else {
+        const result = await runTTSProvider({ text, provider, voice, signal: controller.signal });
+        writeAppLog('info', 'tts', 'TTS 同步响应接收完成', `provider=${provider.type}`);
+        mainWindow?.webContents.send('tts-progress', 35);
+        const audioBuf = result.audioBuffer;
+        if (audioBuf.byteLength === 0) {
+          throw new Error('TTS 未返回任何音频数据，请检查 API Key 及配置');
+        }
+        audioPath = path.join(projectDir, `podcast-audio.${result.audioExtension}`);
+        await fs.writeFile(audioPath, audioBuf);
+        writeAppLog('info', 'tts', `音频已保存，大小=${audioBuf.byteLength} 字节，路径=${audioPath}`);
+        durationMs = result.durationMs ?? 0;
+        if (durationMs <= 0) {
+          try {
+            durationMs = await readAudioDurationMs(audioPath, { ffprobePath: resolveRuntimeBinaries().ffprobePath });
+          } catch (error) {
+            writeAppLog('warn', 'tts', '读取音频时长失败，将使用 1 秒兜底', error instanceof Error ? error.message : String(error));
+            durationMs = 1_000;
+          }
+        }
+        srtText = result.subtitleText?.trim()
+          ? result.subtitleText
+          : text.trim()
+            ? buildEstimatedSrtTextFromText(text, durationMs)
+            : '';
       }
 
-      const audioPath = path.join(projectDir, `podcast-audio.${result.audioExtension}`);
-      await fs.writeFile(audioPath, audioBuf);
-      writeAppLog(
-        'info',
-        'tts',
-        `音频已保存，大小=${audioBuf.byteLength} 字节，路径=${audioPath}`,
-      );
-
-      if (audioBuf.byteLength === 0) {
-        throw new Error('TTS 未返回任何音频数据，请检查 API Key 及配置');
-      }
       mainWindow?.webContents.send('tts-progress', 70);
-
       const srtPath = path.join(projectDir, 'podcast-subtitles.srt');
       const originalSrtPath = path.join(projectDir, 'podcast-subtitles.original.srt');
-      let durationMs = result.durationMs ?? 0;
-      if (durationMs <= 0) {
-        try {
-          durationMs = await readAudioDurationMs(audioPath, {
-            ffprobePath: resolveRuntimeBinaries().ffprobePath,
-          });
-        } catch (error) {
-          writeAppLog(
-            'warn',
-            'tts',
-            '读取音频时长失败，将使用 1 秒兜底',
-            error instanceof Error ? error.message : String(error),
-          );
-          durationMs = 1_000;
-        }
-      }
-      // Provider 返回了逐句时间戳（MiniMax）直接用；否则（MiMo 等无时间戳）
-      // 按字数等比分摊总时长，生成多条合法 SRT，避免把整段脚本塞进单条 cue。
-      const srtText = result.subtitleText?.trim()
-        ? result.subtitleText
-        : text.trim()
-          ? buildEstimatedSrtTextFromText(text, durationMs)
-          : '';
       await fs.writeFile(srtPath, srtText, 'utf-8');
       await fs.writeFile(originalSrtPath, srtText, 'utf-8');
-      mainWindow?.webContents.send('tts-progress', 85);
-
       mainWindow?.webContents.send('tts-progress', 100);
       ttsTelemetry.emit('stage.end', {
         stage: 'tts',
