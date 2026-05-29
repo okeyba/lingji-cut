@@ -232,6 +232,8 @@ export interface AISettings {
   defaultTtsProviderId: string | null;
   defaultTtsVoiceId: string | null;
   ttsVoices: TTSVoicePreset[];
+  /** MiMo 智能语气打标开关；缺省视为 true */
+  ttsMimoAutoAnnotate?: boolean;
   // —— 新增：图像 Provider ——
   imageProviders: ImageProvider[];
   defaultImageProviderId: string | null;

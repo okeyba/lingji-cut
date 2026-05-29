@@ -60,6 +60,10 @@ export interface UserPromptEntry {
   isBuiltin: boolean;
   createdAt?: string;
   updatedAt?: string;
+  /** MiMo 演绎人设：原样作为 MiMo role:user 指令；仅 MiMo 使用 */
+  ttsStyle?: string;
+  /** 打标风格倾向：注入打标 prompt 的一句话偏好 */
+  ttsAnnotateHint?: string;
 }
 
 export interface UserPromptSeed {
@@ -70,6 +74,10 @@ export interface UserPromptSeed {
   version: number;
   system: string;
   user: string;
+  /** MiMo 演绎人设：原样作为 MiMo role:user 指令；仅 MiMo 使用 */
+  ttsStyle?: string;
+  /** 打标风格倾向：注入打标 prompt 的一句话偏好 */
+  ttsAnnotateHint?: string;
 }
 
 /**
