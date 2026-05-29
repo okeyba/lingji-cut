@@ -390,6 +390,8 @@ export interface ElectronAPI {
     emotion?: string;
     model?: string;
     apiKey?: string;
+    styleInstruction?: string;
+    sentences?: Array<{ subtitle: string; speak: string }>;
     projectDir: string;
     telemetryRunId?: string | null;
   }) => Promise<{ audioPath: string; srtPath: string; durationMs: number }>;

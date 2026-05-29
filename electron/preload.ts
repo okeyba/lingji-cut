@@ -257,6 +257,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     emotion?: string;
     model?: string;
     apiKey?: string;
+    styleInstruction?: string;
+    sentences?: Array<{ subtitle: string; speak: string }>;
     projectDir: string;
     telemetryRunId?: string | null;
   }) => ipcRenderer.invoke('generate-tts', args),
