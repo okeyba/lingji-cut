@@ -35,6 +35,7 @@ import {
   buildProjectStylePromptBlock,
   projectStylePromptValue,
 } from './project-style-prompt';
+import { getStyleFacetBlock } from './card-style';
 import { compileMotionSource } from './motion-compiler';
 
 export interface AnalyzeSrtProgress {
@@ -696,6 +697,7 @@ export function buildCoverPromptRegenerationPrompt(
     globalPrompt?: string;
     projectStylePrompt?: string;
     currentPrompt?: string;
+    stylePresetId?: string;
   } = {},
   template?: PromptTemplate,
 ): string {
@@ -708,6 +710,7 @@ export function buildCoverPromptRegenerationPrompt(
     projectStylePrompt: projectStylePrompt || '无',
     projectStylePromptBlock: buildProjectStylePromptBlock(projectStylePrompt),
     currentPrompt: currentPrompt || '无',
+    styleSystemBlock: getStyleFacetBlock(options.stylePresetId, 'cover'),
   });
 }
 
@@ -722,6 +725,7 @@ export function buildSegmentCardPrompt(
     programSummary?: string;
     keywords?: string[];
     visualType?: AISegmentVisualType;
+    stylePresetId?: string;
   },
   template?: PromptTemplate,
 ): string {
@@ -735,6 +739,7 @@ export function buildSegmentCardPrompt(
     programSummary,
     keywords = [],
     visualType,
+    stylePresetId,
   } = params;
   const tpl = template ?? getBuiltinPromptTemplate('cards.segment');
 
@@ -771,6 +776,7 @@ export function buildSegmentCardPrompt(
     currentCardSection,
     programContext,
     segmentVisualType: visualType ?? 'motion',
+    styleSystemBlock: getStyleFacetBlock(stylePresetId, 'motion'),
     // 旧版自定义模板可能仍在使用 {{fullTranscript}}；这里给它注入与 programContext
     // 同值的浓缩上下文，避免破坏存量模板，同时不再发送整篇全文。
     fullTranscript: programContext,
@@ -793,6 +799,7 @@ export function buildSegmentImagePrompt(
     programSummary?: string;
     keywords?: string[];
     cardPromptHint?: string;
+    stylePresetId?: string;
   },
   template?: PromptTemplate,
 ): string {
@@ -805,6 +812,7 @@ export function buildSegmentImagePrompt(
     programSummary,
     keywords = [],
     cardPromptHint,
+    stylePresetId,
   } = params;
   const tpl = template ?? getBuiltinPromptTemplate('card.image');
   const cardContent =
@@ -826,6 +834,7 @@ export function buildSegmentImagePrompt(
     displayMode: card.displayMode,
     aspectRatio,
     cardPromptHint: cardPromptHint?.trim() || '无',
+    styleSystemBlock: getStyleFacetBlock(stylePresetId, 'image'),
   });
 }
 
