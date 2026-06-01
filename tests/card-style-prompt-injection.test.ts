@@ -51,6 +51,24 @@ describe('新增风格预设 facet 锚点', () => {
     expect(block.length).toBeGreaterThan(0);
     expect(block).toMatch(/故障|扫描线/);
   });
+
+  it('film-leak motion facet 含「胶片」/「信箱」锚点且非空', () => {
+    const block = getStyleFacetBlock('film-leak', 'motion');
+    expect(block.length).toBeGreaterThan(0);
+    expect(block).toMatch(/胶片|信箱/);
+  });
+
+  it('hand-sketch motion facet 含「便签」/「方格」/「手绘」锚点且非空', () => {
+    const block = getStyleFacetBlock('hand-sketch', 'motion');
+    expect(block.length).toBeGreaterThan(0);
+    expect(block).toMatch(/便签|方格|手绘/);
+  });
+
+  it('soft-apple motion facet 含「squircle」/「圆角」/「柔」锚点且非空', () => {
+    const block = getStyleFacetBlock('soft-apple', 'motion');
+    expect(block.length).toBeGreaterThan(0);
+    expect(block).toMatch(/squircle|圆角|柔/);
+  });
 });
 
 describe('build 函数注入 styleSystemBlock', () => {
