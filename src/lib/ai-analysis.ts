@@ -1196,6 +1196,7 @@ export async function analyzeSrt(
   telemetry?.emit('stage.start', { stage: 'analyze.planning', srtEntries: entries.length });
   let planning: SegmentPlanningResult;
   try {
+    // planning 阶段不注入 styleSystemBlock（planning.segment 无该占位符）。
     planning = await planTranscriptSegments(entries, settings, {
       generateStructuredData: requestStructuredData,
       globalPrompt,

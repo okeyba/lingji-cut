@@ -456,6 +456,11 @@ export default function App() {
           setCoverCandidates(projectData.aiAnalysis?.coverCandidates ?? []);
         }
 
+        // 项目级默认风格预设：旧工程缺该字段时为 undefined（继承全局默认）。
+        useAIStore
+          .getState()
+          .loadProjectStylePresetId(projectData.stylePresetId ?? undefined);
+
         // 添加到最近项目列表（projectDir 已在前面设置过，不需要重复设置）
         await window.electronAPI.addRecentProject(projectDir);
         void syncWorkspaceState();

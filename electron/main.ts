@@ -671,6 +671,21 @@ function makeMainTelemetry(runId?: string | null): { emit: (kind: string, extra?
   };
 }
 
+/**
+ * 读取项目级默认风格预设 id（项目 → 全局 → 内置默认 优先级中的"项目"层）。
+ * 旧工程缺该字段时返回 undefined，由下游 resolveStylePresetId 回退到全局/内置默认。
+ * 无 projectDir（如纯渲染态调用）时同样返回 undefined。
+ */
+async function loadProjectStylePresetId(projectDir?: string): Promise<string | undefined> {
+  if (!projectDir) return undefined;
+  try {
+    const data = await loadProjectFile(projectDir);
+    return data.stylePresetId;
+  } catch {
+    return undefined;
+  }
+}
+
 ipcMain.handle(
   'analyze-srt',
   async (
@@ -718,6 +733,7 @@ ipcMain.handle(
         projectDir: args.projectDir,
       });
       const projectStylePrompt = getProjectStylePromptFromTemplate(projectStyleTemplate);
+      const projectStylePresetId = await loadProjectStylePresetId(args.projectDir);
       // 仅当 renderer 提供了 projectDir 时，才把 image 卡片物化能力注入；
       // 否则 LLM 仍可吐出 image 类型 prompt，但保留 generationStatus='pending'，
       // 用户后续可在 Inspector 手动触发 generate-card-image 完成。
@@ -750,8 +766,8 @@ ipcMain.handle(
       const result = await analyzeSrt(entries, args.settings, {
         globalPrompt: args.globalPrompt,
         projectStylePrompt,
-        // TODO(Task 7): 项目级 stylePresetId 持久化后从项目设置读取并透传。
-        projectStylePresetId: undefined,
+        // 项目级默认风格：从 project.json 读取，缺省时为 undefined（下游回退全局/内置默认）。
+        projectStylePresetId,
         defaultStylePresetId: args.settings.defaultStylePresetId,
         planningTemplate,
         cardTemplate,
@@ -850,12 +866,12 @@ ipcMain.handle(
         projectDir: args.projectDir,
       });
       const projectStylePrompt = getProjectStylePromptFromTemplate(projectStyleTemplate);
+      const projectStylePresetId = await loadProjectStylePresetId(args.projectDir);
       return await regenerateAICard(args.entries, args.card, args.segment, args.settings, {
         globalPrompt: args.globalPrompt,
         projectStylePrompt,
-        // 单卡覆盖来自 args.card.stylePresetId（lib 层 resolve 时合并）；项目级见 Task 7。
-        // TODO(Task 7): 项目级 stylePresetId 持久化后从项目设置读取并透传。
-        projectStylePresetId: undefined,
+        // 单卡覆盖来自 args.card.stylePresetId（lib 层 resolve 时合并）；项目级从 project.json 读取。
+        projectStylePresetId,
         defaultStylePresetId: args.settings.defaultStylePresetId,
         cardPrompt: args.cardPrompt,
         programSummary: args.programSummary,
@@ -919,6 +935,7 @@ ipcMain.handle(
         projectDir: args.projectDir,
       });
       const projectStylePrompt = getProjectStylePromptFromTemplate(projectStyleTemplate);
+      const projectStylePresetId = await loadProjectStylePresetId(args.projectDir);
       let card = await generateCardForSegment(
         args.entries,
         {
@@ -932,8 +949,9 @@ ipcMain.handle(
           globalPrompt: args.globalPrompt,
           projectStylePrompt,
           // 失败段补生成无单卡覆盖；按 项目 → 全局 → 内置默认 解析。
-          // TODO(Task 7): 项目级 stylePresetId 持久化后并入 project 层。
+          // generateCardForSegment 只接受预解析的 stylePresetId，故在此就地合并 project/global 层。
           stylePresetId: resolveStylePresetId({
+            project: projectStylePresetId,
             global: args.settings.defaultStylePresetId,
           }),
           cardPrompt: args.cardPrompt,
@@ -1025,12 +1043,12 @@ ipcMain.handle(
         projectDir: args.projectDir,
       });
       const projectStylePrompt = getProjectStylePromptFromTemplate(projectStyleTemplate);
+      const projectStylePresetId = await loadProjectStylePresetId(args.projectDir);
       return await generateSingleCardFromSubtitles(args.entries, args.draft, args.settings, {
         globalPrompt: args.globalPrompt,
         projectStylePrompt,
-        // 手动选段是新卡片，无单卡覆盖；项目级见 Task 7。
-        // TODO(Task 7): 项目级 stylePresetId 持久化后从项目设置读取并透传。
-        projectStylePresetId: undefined,
+        // 手动选段是新卡片，无单卡覆盖；项目级从 project.json 读取。
+        projectStylePresetId,
         defaultStylePresetId: args.settings.defaultStylePresetId,
         programSummary: args.programSummary,
         keywords: args.keywords,
@@ -1081,11 +1099,12 @@ ipcMain.handle(
         projectDir: args.projectDir,
       });
       const projectStylePrompt = getProjectStylePromptFromTemplate(projectStyleTemplate);
+      const projectStylePresetId = await loadProjectStylePresetId(args.projectDir);
       return await regenerateCoverPrompt(args.entries, args.settings, {
         globalPrompt: args.globalPrompt,
         projectStylePrompt,
-        // TODO(Task 7): 项目级 stylePresetId 持久化后从项目设置读取并透传。
-        projectStylePresetId: undefined,
+        // 项目级默认风格：从 project.json 读取，缺省时为 undefined（下游回退全局/内置默认）。
+        projectStylePresetId,
         defaultStylePresetId: args.settings.defaultStylePresetId,
         currentPrompt: args.currentPrompt,
         coverTemplate,
@@ -1293,7 +1312,7 @@ ipcMain.handle(
     const parsed = JSON.parse(data);
     await saveProjectSection(
       projectDir,
-      section as 'timeline' | 'aiAnalysis' | 'script' | 'workflowMeta',
+      section as 'timeline' | 'aiAnalysis' | 'script' | 'workflowMeta' | 'stylePresetId',
       parsed,
     );
   },

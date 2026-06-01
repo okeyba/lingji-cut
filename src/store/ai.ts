@@ -234,6 +234,15 @@ export interface AIStore {
   // —— 提示词 × AI 绑定（项目级）——
   projectBindings: PromptBindingMap;
   currentProjectDir: string | null;
+  /**
+   * 项目级默认风格预设 id；undefined 表示继承全局默认。
+   * 解析优先级：单卡 → 项目（此值）→ 全局 → 内置默认（见 resolveStylePresetId）。
+   */
+  projectStylePresetId: string | undefined;
+  /** 打开项目时把 project.json 的 stylePresetId 注入 store（缺省为 undefined）。 */
+  loadProjectStylePresetId: (id: string | undefined) => void;
+  /** 写入/清除项目级默认风格，并通过 save-project-section 持久化到 project.json。 */
+  setProjectStylePresetId: (id: string | undefined) => Promise<void>;
   loadProjectBindings: (projectDir: string | null) => Promise<void>;
   /**
    * 写入/清除单个提示词在当前项目下的 AI 绑定。
@@ -319,6 +328,31 @@ export const useAIStore = create<AIStore>((set, get) => ({
   activeTab: 'cards',
   projectBindings: {},
   currentProjectDir: null,
+  projectStylePresetId: undefined,
+  loadProjectStylePresetId: (id) => {
+    set({ projectStylePresetId: id });
+  },
+  setProjectStylePresetId: async (id) => {
+    const projectDir = get().currentProjectDir;
+    set({ projectStylePresetId: id });
+    if (!projectDir) {
+      console.warn('setProjectStylePresetId: 无当前项目目录，仅更新内存状态');
+      return;
+    }
+    if (typeof window === 'undefined' || !window.electronAPI?.saveProjectSection) {
+      return;
+    }
+    try {
+      await window.electronAPI.saveProjectSection(
+        projectDir,
+        'stylePresetId',
+        JSON.stringify(id ?? null),
+      );
+    } catch (error) {
+      console.error('保存项目级默认风格失败:', error);
+      throw error;
+    }
+  },
   userPromptEntries: { 'script-template': [] },
   userPromptsLoaded: { 'script-template': false },
   loadUserPrompts: async (category) => {

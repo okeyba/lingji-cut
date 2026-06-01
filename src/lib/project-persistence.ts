@@ -42,9 +42,16 @@ export interface ProjectData {
   aiAnalysis: ProjectAIAnalysis;
   script: ProjectScriptState;
   workflowMeta?: ProjectWorkflowMeta;
+  /** 项目级默认风格预设 id；缺省继承全局 */
+  stylePresetId?: string;
 }
 
-export type ProjectSection = 'timeline' | 'aiAnalysis' | 'script' | 'workflowMeta';
+export type ProjectSection =
+  | 'timeline'
+  | 'aiAnalysis'
+  | 'script'
+  | 'workflowMeta'
+  | 'stylePresetId';
 
 export const DEFAULT_WORKFLOW_META: ProjectWorkflowMeta = {
   lastAutoParams: null,

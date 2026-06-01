@@ -61,4 +61,17 @@ describe('project-persistence', () => {
     const merged = mergeProjectSection(data, 'script', scriptData);
     expect(merged.script).toEqual(scriptData);
   });
+
+  it('含 stylePresetId 的 ProjectData 经序列化 → 反序列化后保留', () => {
+    const data = mergeProjectSection(createDefaultProjectData(), 'stylePresetId', 'editorial-eink');
+    const roundTripped = JSON.parse(JSON.stringify(data)) as ProjectData;
+    expect(roundTripped.stylePresetId).toBe('editorial-eink');
+  });
+
+  it('旧工程缺 stylePresetId 字段时反序列化为 undefined', () => {
+    const data = createDefaultProjectData();
+    // 默认结构不写入 stylePresetId，模拟旧工程读取
+    const roundTripped = JSON.parse(JSON.stringify(data)) as ProjectData;
+    expect(roundTripped.stylePresetId).toBeUndefined();
+  });
 });

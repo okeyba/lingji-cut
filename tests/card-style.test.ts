@@ -48,6 +48,9 @@ describe('resolveStylePresetId 优先级', () => {
   it('空白字符串视为未设置', () => {
     expect(resolveStylePresetId({ card: '  ', project: 'editorial-eink' })).toBe('editorial-eink');
   });
+  it('项目缺 stylePresetId 时解析回退默认', () => {
+    expect(resolveStylePresetId({ project: undefined })).toBe(DEFAULT_STYLE_PRESET_ID);
+  });
 });
 
 describe('getStylePresetById / getStyleFacetBlock 回退', () => {
