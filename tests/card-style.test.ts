@@ -30,3 +30,34 @@ describe('buildAICardOverlayData stylePresetId 透传', () => {
     expect(overlay.stylePresetId).toBeUndefined();
   });
 });
+
+import {
+  resolveStylePresetId,
+  getStylePresetById,
+  getStyleFacetBlock,
+} from '../src/lib/card-style';
+import { DEFAULT_STYLE_PRESET_ID } from '../src/types/ai';
+
+describe('resolveStylePresetId 优先级', () => {
+  it('单卡 > 项目 > 全局 > 默认', () => {
+    expect(resolveStylePresetId({ card: 'a', project: 'b', global: 'c' })).toBe('a');
+    expect(resolveStylePresetId({ project: 'b', global: 'c' })).toBe('b');
+    expect(resolveStylePresetId({ global: 'c' })).toBe('c');
+    expect(resolveStylePresetId({})).toBe(DEFAULT_STYLE_PRESET_ID);
+  });
+  it('空白字符串视为未设置', () => {
+    expect(resolveStylePresetId({ card: '  ', project: 'editorial-eink' })).toBe('editorial-eink');
+  });
+});
+
+describe('getStylePresetById / getStyleFacetBlock 回退', () => {
+  it('未知 id 回退默认 preset', () => {
+    expect(getStylePresetById('does-not-exist').id).toBe(DEFAULT_STYLE_PRESET_ID);
+  });
+  it('缺失 facet 回退到默认风格同 facet（motion 非空）', () => {
+    expect(getStyleFacetBlock('editorial-eink', 'motion').length).toBeGreaterThan(0);
+  });
+  it('未知 id 取默认风格的 facet', () => {
+    expect(getStyleFacetBlock('nope', 'motion')).toBe(getStyleFacetBlock('editorial-eink', 'motion'));
+  });
+});
