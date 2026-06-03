@@ -6,7 +6,7 @@ import { ResizeHandle } from '../components/ResizeHandle';
 import { useTaskProgressStore } from '../store/task-progress';
 import { ExportSettingsModal } from '../components/ExportSettingsModal';
 import { PreviewPanel } from '../components/PreviewPanel';
-import type { HyperframesPreviewHandle } from '../components/HyperframesPreviewPlayer';
+import type { RemotionPreviewHandle } from '../components/RemotionPreviewPlayer';
 import { TimelineAIOverlay } from '../components/TimelineAIOverlay';
 import { Timeline } from '../components/Timeline';
 import type { ProjectOverviewMeta } from '../components/ProjectOverviewPanel';
@@ -116,7 +116,7 @@ export function Editor({
   const viewport = useViewportSize();
   const layout = getEditorLayoutMode(viewport.width, viewport.height);
   const panelBounds = getTimelinePanelBounds(viewport.height, layout.compactTimeline);
-  const playerRef = useRef<HyperframesPreviewHandle>(null);
+  const playerRef = useRef<RemotionPreviewHandle>(null);
   const timelineWrapRef = useRef<HTMLDivElement>(null);
   const currentTimeRef = useRef(0);
   const scrubStateRef = useRef(IDLE_SCRUB_STATE);

@@ -6,12 +6,12 @@ import { useAIStore } from '../store/ai';
 import { Button, Card, Tooltip, TooltipContent, TooltipTrigger } from '../ui';
 import { AppIcon } from './AppIcon';
 import { CanvasInteractionLayer } from './CanvasInteractionLayer';
-import { HyperframesPreviewPlayer, type HyperframesPreviewHandle } from './HyperframesPreviewPlayer';
+import { RemotionPreviewPlayer, type RemotionPreviewHandle } from './RemotionPreviewPlayer';
 import type { OverlayPosition } from '../types';
 import styles from './PreviewPanel.module.css';
 
 interface PreviewPanelProps {
-  playerRef: RefObject<HyperframesPreviewHandle | null>;
+  playerRef: RefObject<RemotionPreviewHandle | null>;
   isPlaying: boolean;
   onTogglePlay: () => void;
   onSeek?: (ms: number) => void;
@@ -330,7 +330,7 @@ function PreviewPanelComponent({
             height: Math.max(0, stageSize.height),
           }}
         >
-          <HyperframesPreviewPlayer
+          <RemotionPreviewPlayer
             key={timeline.podcast.audioPath || 'empty'}
             ref={playerRef}
             timeline={timeline}
