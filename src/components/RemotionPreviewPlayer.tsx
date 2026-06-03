@@ -1,7 +1,8 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Player, type PlayerRef } from '@remotion/player';
 import { MainComposition } from '../remotion/MainComposition';
 import { buildRenderPlan } from '../remotion/timeline-to-sequences';
+import { collectMotionCards } from '../remotion/collect-cards';
 import type { SrtEntry, TimelineData } from '../types';
 
 export interface RemotionPreviewHandle {
@@ -38,6 +39,25 @@ export const RemotionPreviewPlayer = forwardRef<RemotionPreviewHandle, RemotionP
     );
     const fps = plan.fps;
     const suppressSeek = useRef(false);
+
+    // 预览前把 motion 卡片 TSX 编译为可执行 JS（主进程 esbuild），供 CardHost 求值。
+    const [compiledCards, setCompiledCards] = useState<Record<string, string>>({});
+    const cardSources = useMemo(() => collectMotionCards(timeline), [timeline]);
+    useEffect(() => {
+      let cancelled = false;
+      if (cardSources.length === 0) {
+        setCompiledCards({});
+        return;
+      }
+      const compile = window.electronAPI?.compileMotionCards;
+      if (!compile) return;
+      void compile(cardSources).then((map) => {
+        if (!cancelled) setCompiledCards(map);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [cardSources]);
 
     useImperativeHandle(ref, () => ({
       play: () => player.current?.play(),
@@ -85,7 +105,7 @@ export const RemotionPreviewPlayer = forwardRef<RemotionPreviewHandle, RemotionP
       <Player
         ref={player}
         component={MainComposition}
-        inputProps={{ timeline, srtEntries }}
+        inputProps={{ timeline, srtEntries, compiledCards }}
         durationInFrames={plan.durationFrames}
         compositionWidth={plan.width}
         compositionHeight={plan.height}

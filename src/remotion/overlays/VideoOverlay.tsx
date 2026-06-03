@@ -1,6 +1,6 @@
 import { AbsoluteFill, OffthreadVideo, Video } from 'remotion';
 import type { OverlayItem } from '../../types';
-import { toFileSrc } from '../../lib/utils';
+import { resolveAssetSrc } from '../asset-src';
 import { useIsRendering } from '../use-is-rendering';
 
 export function VideoOverlay({ overlay, zIndex }: { overlay: OverlayItem; zIndex: number }) {
@@ -17,7 +17,7 @@ export function VideoOverlay({ overlay, zIndex }: { overlay: OverlayItem; zIndex
         overflow: 'hidden',
       }}
     >
-      <V src={toFileSrc(overlay.assetPath)} muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      <V src={resolveAssetSrc(overlay.assetPath)} muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
     </AbsoluteFill>
   );
 }

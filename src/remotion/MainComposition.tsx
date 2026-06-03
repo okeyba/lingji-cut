@@ -13,9 +13,11 @@ import { AICardOverlay } from './overlays/AICardOverlay';
 export type MainCompositionProps = {
   timeline: TimelineData;
   srtEntries: SrtEntry[];
+  /** overlayId → 编译后的卡片 CJS 模块字符串（主进程 esbuild 产出）。 */
+  compiledCards?: Record<string, string>;
 };
 
-export function MainComposition({ timeline, srtEntries }: MainCompositionProps) {
+export function MainComposition({ timeline, srtEntries, compiledCards }: MainCompositionProps) {
   const plan = buildRenderPlan(timeline, srtEntries, timeline.fps ?? 30);
   return (
     <AbsoluteFill style={{ backgroundColor: '#04060a' }}>
@@ -27,7 +29,11 @@ export function MainComposition({ timeline, srtEntries }: MainCompositionProps) 
       {plan.visual.map((c) => (
         <Sequence key={c.id} from={c.startFrame} durationInFrames={c.durationFrames}>
           {c.kind === 'ai-card' ? (
-            <AICardOverlay overlay={c.overlay} zIndex={c.zIndex} />
+            <AICardOverlay
+              overlay={c.overlay}
+              zIndex={c.zIndex}
+              compiledJs={compiledCards?.[c.overlay.id]}
+            />
           ) : c.kind === 'text' ? (
             <TextOverlay overlay={c.overlay} zIndex={c.zIndex} durationFrames={c.durationFrames} />
           ) : c.kind === 'video' ? (

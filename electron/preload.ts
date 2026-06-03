@@ -19,10 +19,6 @@ import type { VideoImportTaskSnapshot } from './video-import/types';
 contextBridge.exposeInMainWorld('electronAPI', {
   parseSrtFile: (filePath: string) => ipcRenderer.invoke('parse-srt-file', filePath),
   getAudioDuration: (filePath: string) => ipcRenderer.invoke('get-audio-duration', filePath),
-  getHyperframesRuntimePreflight: () =>
-    ipcRenderer.invoke('hyperframes-runtime-preflight') as Promise<
-      import('../src/lib/electron-api').HyperframesRuntimePreflightResult
-    >,
   analyzeSrt: (args: {
     entries?: SrtEntry[];
     srtContent?: string;
@@ -88,6 +84,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     projectDir?: string;
     projectBindings?: PromptBindingMap | null;
   }) => ipcRenderer.invoke('generate-card-from-subtitles', args),
+  compileMotionCards: (cards: { overlayId: string; tsx: string }[]) =>
+    ipcRenderer.invoke('remotion:compile-cards', cards) as Promise<Record<string, string>>,
   regenerateCoverPrompt: (args: {
     entries: SrtEntry[];
     settings: AISettings;

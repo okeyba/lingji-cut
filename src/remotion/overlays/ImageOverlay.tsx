@@ -1,6 +1,6 @@
 import { AbsoluteFill, Img } from 'remotion';
 import type { OverlayItem } from '../../types';
-import { toFileSrc } from '../../lib/utils';
+import { resolveAssetSrc } from '../asset-src';
 
 export function ImageOverlay({ overlay, zIndex }: { overlay: OverlayItem; zIndex: number }) {
   return (
@@ -14,7 +14,7 @@ export function ImageOverlay({ overlay, zIndex }: { overlay: OverlayItem; zIndex
         overflow: 'hidden',
       }}
     >
-      <Img src={toFileSrc(overlay.assetPath)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      <Img src={resolveAssetSrc(overlay.assetPath)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
     </AbsoluteFill>
   );
 }

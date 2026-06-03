@@ -28,7 +28,6 @@ import {
   type GenerateCardImageArgs,
   type GenerateCardVideoArgs,
 } from './card-media-handlers';
-import { createHyperframesComposition } from '../src/hyperframes/composition';
 import { prepareTimelineForHyperframes, type HyperframesAssetDescriptor } from '../src/hyperframes/assets';
 import { subtitleJsonToSRT } from '../src/lib/minimax-tts';
 import { buildEstimatedSrtTextFromText } from '../src/lib/srt-resegment';
@@ -64,14 +63,15 @@ import {
   readAudioDurationMs,
   readVideoDurationMs,
 } from './media-duration';
-import { resolveHyperframesCliPath } from './hyperframes-cli';
-import { runCurrentHyperframesRuntimePreflight } from './hyperframes-runtime-preflight';
 import {
-  buildPathWithRuntimeBinaries,
   resolveFfmpegPath,
   resolveFfprobePath,
   resolveGsapPath,
 } from './runtime-binaries';
+import { compileCards } from './remotion/compile-card-node';
+import { getRemotionBundle } from './remotion/bundle';
+import { renderRemotionVideo } from './remotion/render';
+import { collectMotionCards } from '../src/remotion/collect-cards';
 import { registerAgentIpc } from './acp/ipc';
 import { HeadlessAcpProvider, type HeadlessAcpProviderEvent } from './acp/headless-provider';
 import { registerConversationIpc } from './conversations/ipc';
@@ -511,39 +511,6 @@ async function createRenderPublicDir(
   };
 }
 
-interface PreparedHyperframesProject {
-  timeline: TimelineData;
-  projectDir: string;
-  cleanup: () => Promise<void>;
-}
-
-async function prepareHyperframesProject(
-  timeline: TimelineData,
-  srtEntries: SrtEntry[],
-): Promise<PreparedHyperframesProject> {
-  const { timeline: renderTimeline, publicDir } = await createRenderPublicDir(timeline);
-  const gsapSourcePath = resolveRuntimeBinaries().gsapPath;
-  if (!gsapSourcePath) {
-    throw new Error('未找到 GSAP runtime，请确认 gsap 已安装并随应用打包');
-  }
-  await fs.copyFile(gsapSourcePath, path.join(publicDir, 'gsap.min.js'));
-  const composition = createHyperframesComposition({
-    timeline: renderTimeline,
-    srtEntries,
-    projectDir: inferProjectDirFromTimeline(timeline),
-    gsapSrc: './gsap.min.js',
-  });
-  await fs.writeFile(path.join(publicDir, 'index.html'), composition.html, 'utf-8');
-
-  return {
-    timeline: renderTimeline,
-    projectDir: publicDir,
-    cleanup: async () => {
-      await fs.rm(publicDir, { recursive: true, force: true });
-    },
-  };
-}
-
 async function getDirectorySizeBytes(directoryPath: string): Promise<number> {
   const entries = await fs.readdir(directoryPath, { withFileTypes: true });
   const sizes = await Promise.all(
@@ -594,13 +561,12 @@ ipcMain.handle('get-audio-duration', async (_event, filePath: string) => {
   return readAudioDurationMs(filePath, { ffprobePath: resolveRuntimeBinaries().ffprobePath });
 });
 
-ipcMain.handle('hyperframes-runtime-preflight', async () =>
-  runCurrentHyperframesRuntimePreflight({
-    appPath: app.getAppPath(),
-    resourcesPath: process.resourcesPath,
-    cwd: process.cwd(),
-    moduleDir: __dirname,
-  }),
+ipcMain.handle(
+  'remotion:compile-cards',
+  async (_event, cards: { overlayId: string; tsx: string }[]) => {
+    if (!Array.isArray(cards) || cards.length === 0) return {};
+    return compileCards(cards);
+  },
 );
 
 ipcMain.handle('get-file-mtime', async (_event, filePath: string) => {
@@ -2438,82 +2404,41 @@ ipcMain.handle(
     }
 
     const projectPrepStart = Date.now();
-    const preparedProject = await prepareHyperframesProject(timelineData, srtEntries);
+    // materialize 资源到临时 publicDir，并把 timeline 内绝对素材路径改写为 assets/... 相对路径。
+    const { timeline: renderTimeline, publicDir } = await createRenderPublicDir(timelineData);
+    // 编译 motion 卡片 TSX → CJS，随 inputProps 传入 Remotion，由 CardHost 在无头 Chrome 内求值。
+    const cardSources = collectMotionCards(renderTimeline);
+    const compiledCards = await compileCards(cardSources);
+    const remotionEntry = path.join(app.getAppPath(), 'src', 'remotion', 'index.ts');
 
     if (isDev) {
       console.log(
-        `${renderLogPrefix} HyperFrames 项目准备完成 耗时=${(
+        `${renderLogPrefix} 资源准备完成 耗时=${(
           (Date.now() - projectPrepStart) / 1000
-        ).toFixed(2)}s @${timestamp()}`,
+        ).toFixed(2)}s cards=${cardSources.length} @${timestamp()}`,
       );
     }
 
     try {
-      const { ffmpegPath, ffprobePath } = resolveRuntimeBinaries();
       const renderStart = Date.now();
       mainWindow?.webContents.send('render-progress', 0.05);
-      const hyperframesCliPath = resolveHyperframesCliPath({
-        appPath: app.getAppPath(),
-        resourcesPath: process.resourcesPath,
-        cwd: process.cwd(),
-        moduleDir: __dirname,
-        existsSync,
-      });
-      const argsList = [
-        hyperframesCliPath,
-        'render',
-        preparedProject.projectDir,
-        '--output',
-        args.outputPath,
-        '--fps',
-        String(timelineData.fps || 30),
-        '--format',
-        'mp4',
-        '--quality',
-        args.exportConfig.quality === 'high' ? 'high' : 'standard',
-        '--workers',
-        String(explicitConcurrency),
-      ];
-
-      await new Promise<void>((resolve, reject) => {
-        const child = execFile(
-          process.execPath,
-          argsList,
-          {
-            cwd: preparedProject.projectDir,
-            env: {
-              ...process.env,
-              ELECTRON_RUN_AS_NODE: '1',
-              PATH: buildPathWithRuntimeBinaries(process.env.PATH, [ffmpegPath, ffprobePath]),
-              Path: buildPathWithRuntimeBinaries(process.env.Path, [ffmpegPath, ffprobePath]),
-            },
-          },
-          (error) => {
-            if (error) reject(error);
-            else resolve();
-          },
-        );
-        child.stdout?.on('data', (chunk: Buffer) => {
-          const text = chunk.toString();
-          if (isDev) process.stdout.write(text);
-          const frameMatch = text.match(/(\d+(?:\.\d+)?)%/);
-          if (frameMatch) {
-            const value = Number.parseFloat(frameMatch[1]);
-            if (Number.isFinite(value)) {
-              mainWindow?.webContents.send('render-progress', Math.max(0.05, Math.min(0.98, value / 100)));
-            }
-          }
-        });
-        child.stderr?.on('data', (chunk: Buffer) => {
-          const text = chunk.toString();
-          if (isDev) process.stderr.write(text);
-        });
+      const serveUrl = await getRemotionBundle(remotionEntry, publicDir);
+      await renderRemotionVideo({
+        serveUrl,
+        outputPath: args.outputPath,
+        timeline: renderTimeline,
+        srtEntries,
+        compiledCards,
+        quality: args.exportConfig.quality === 'quality' ? 'high' : 'standard',
+        concurrency: explicitConcurrency,
+        onProgress: (ratio) =>
+          mainWindow?.webContents.send('render-progress', Math.max(0.05, Math.min(0.98, ratio))),
       });
       mainWindow?.webContents.send('render-progress', 1);
 
       if (isDev) {
         console.log(
-          `${renderLogPrefix} hyperframes render 完成 总耗时=${((Date.now() - renderStart) / 1000).toFixed(2)}s`,
+          `${renderLogPrefix} remotion render 完成 总耗时=${((Date.now() - renderStart) / 1000).toFixed(2)}s`,
         );
       }
 
@@ -2524,7 +2449,7 @@ ipcMain.handle(
       }
       throw err;
     } finally {
-      await preparedProject.cleanup();
+      await fs.rm(publicDir, { recursive: true, force: true });
     }
   },
 );

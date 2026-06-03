@@ -4,7 +4,15 @@ import type { OverlayItem } from '../../types';
 import { LegacyCard } from './LegacyCard';
 import { CardHost } from '../card-host';
 
-export function AICardOverlay({ overlay, zIndex }: { overlay: OverlayItem; zIndex: number }) {
+export function AICardOverlay({
+  overlay,
+  zIndex,
+  compiledJs,
+}: {
+  overlay: OverlayItem;
+  zIndex: number;
+  compiledJs?: string;
+}) {
   const card = overlay.aiCardData;
   if (!card) return null;
 
@@ -24,7 +32,8 @@ export function AICardOverlay({ overlay, zIndex }: { overlay: OverlayItem; zInde
       };
 
   const tsx = card.renderMode === 'motion-card' ? card.motionCard?.tsx : undefined;
-  if (card.renderMode === 'motion-card' && !tsx?.trim()) {
+  // 旧 HTML 卡片或缺失 tsx → 降级占位；未编译（compiledJs 缺失）也降级，避免空白。
+  if (card.renderMode === 'motion-card' && (!tsx?.trim() || !compiledJs)) {
     return (
       <AbsoluteFill style={wrapper}>
         <LegacyCard title={card.title} />
@@ -34,7 +43,7 @@ export function AICardOverlay({ overlay, zIndex }: { overlay: OverlayItem; zInde
 
   return (
     <AbsoluteFill style={wrapper}>
-      <CardHost overlayId={overlay.id} tsx={tsx ?? ''} />
+      <CardHost overlayId={overlay.id} compiledJs={compiledJs ?? ''} />
     </AbsoluteFill>
   );
 }
