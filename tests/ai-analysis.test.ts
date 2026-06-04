@@ -13,7 +13,7 @@ import {
 } from '../src/lib/ai-analysis';
 import type { SrtEntry } from '../src/types';
 import type { AICard, AISegment, AISettings } from '../src/types/ai';
-import { generateStructuredData } from '../src/lib/llm';
+import { generateMotionCardSource, generateStructuredData } from '../src/lib/llm';
 
 const makeSrtEntry = (index: number, startMs: number, endMs: number, text: string): SrtEntry => ({
   index,
@@ -179,9 +179,12 @@ describe('buildSegmentCardPrompt', () => {
     expect(prompt).toContain('概括节目开场对 AI 视频生产现状的说明');
     expect(prompt).toContain('整体偏商业分析风');
     expect(prompt).toContain('这一张做成粒子聚合');
-    expect(prompt).toContain('motionCard.tsx');
+    // TSX-only 契约：要求 tsx 代码块 + export default + 帧驱动，且不再要求严格 JSON
+    expect(prompt).toContain('tsx');
+    expect(prompt).toContain('export default');
     expect(prompt).toContain('useCurrentFrame');
     expect(prompt).toContain('Remotion');
+    expect(prompt).not.toContain('严格 JSON');
     // 旧引擎痕迹不得残留
     expect(prompt).not.toContain('gsap.timeline');
     expect(prompt).not.toContain('window.__lingjiMotionTimelines');
@@ -263,28 +266,10 @@ describe('planTranscriptSegments', () => {
 });
 
 describe('generateCardForSegment', () => {
-  it('returns a motion-card with HyperFrames HTML when LLM response is well-formed', async () => {
-    const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
-      id: 'generated-card-1',
-      type: 'summary',
-      title: '新标题',
-      content: '新内容',
-      startMs: 100,
-      endMs: 2_900,
-      displayDurationMs: 5_500,
-      displayMode: 'fullscreen',
-      template: 'summary-default',
-      enabled: true,
-      renderMode: 'motion-card',
-      motionCard: {
-        tsx: VALID_MOTION_TSX,
-      },
-      style: {
-        primaryColor: '#79c4ff',
-        backgroundColor: '#151922',
-        fontSize: 48,
-      },
-    });
+  it('builds a motion-card from the LLM TSX source, synthesizing metadata from the segment', async () => {
+    const motionCaller = vi
+      .fn<typeof generateMotionCardSource>()
+      .mockResolvedValue(`\`\`\`tsx\n${VALID_MOTION_TSX}\n\`\`\``);
 
     const result = await generateCardForSegment(
       baseEntries,
@@ -298,248 +283,165 @@ describe('generateCardForSegment', () => {
       baseSegment,
       settings,
       {
-        generateStructuredData: modelCaller,
+        generateMotionSource: motionCaller,
         globalPrompt: '整体偏商业分析风',
         cardPrompt: '做成粒子聚合',
-        currentCard: baseCard,
       },
     );
 
     expect(result.segmentId).toBe('seg-1');
-    expect(result.title).toBe('新标题');
+    // 元信息从 segment 合成（title 取 segment.title），不再来自模型
+    expect(result.title).toBe('AI 视频生产背景');
+    expect(result.startMs).toBe(0);
+    expect(result.endMs).toBe(3_000);
     expect(result.renderMode).toBe('motion-card');
+    expect(result.cardPrompt).toBe('做成粒子聚合');
     expect(result.motionCard?.tsx).toContain('export default');
     expect(result.motionCard?.tsx).toContain('useCurrentFrame');
-    expect(modelCaller).toHaveBeenCalledTimes(1);
-    expect(modelCaller.mock.calls[0]?.[2]).toBe(fullTranscript);
-    expect(modelCaller.mock.calls[0]?.[1]).toContain('AI 视频生产背景');
+    expect(motionCaller).toHaveBeenCalledTimes(1);
+    // user message = 段内逐字稿；system prompt = 卡片提示词，提及当前段
+    expect(motionCaller.mock.calls[0]?.[2]).toContain('欢迎收听本期节目');
+    expect(motionCaller.mock.calls[0]?.[1]).toContain('AI 视频生产背景');
   });
 
-  it('overrides text-card content with the verbatim segment subtitle text', async () => {
-    const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
-      id: 'generated-card-1',
-      type: 'summary',
-      title: '新标题',
-      content: 'AI 改写后可能丢字的内容',
-      startMs: 100,
-      endMs: 2_900,
-      displayDurationMs: 5_500,
-      displayMode: 'fullscreen',
-      template: 'summary-default',
-      enabled: true,
-      renderMode: 'motion-card',
-      motionCard: { tsx: VALID_MOTION_TSX },
-      style: { primaryColor: '#79c4ff', backgroundColor: '#151922', fontSize: 48 },
-    });
+  it('defaults a new card duration to the full segment span so the timeline has no blank gaps', async () => {
+    const motionCaller = vi
+      .fn<typeof generateMotionCardSource>()
+      .mockResolvedValue(VALID_MOTION_TSX);
+
+    const wideSegment: AISegment = {
+      ...baseSegment,
+      id: 'seg-wide',
+      startMs: 0,
+      endMs: 45_000,
+    };
+
+    const result = await generateCardForSegment(
+      baseEntries,
+      { segments: [wideSegment], coverPrompts: [], summary: '', keywords: [] },
+      wideSegment,
+      settings,
+      { generateMotionSource: motionCaller },
+    );
+
+    // 新卡片（无 currentCard）应铺满所在 segment（45s），而不是固定 5s 默认值
+    expect(result.displayDurationMs).toBe(45_000);
+  });
+
+  it('preserves the existing card type/title/timing on regeneration', async () => {
+    const motionCaller = vi
+      .fn<typeof generateMotionCardSource>()
+      .mockResolvedValue(VALID_MOTION_TSX);
 
     const result = await generateCardForSegment(
       baseEntries,
       { segments: [baseSegment], coverPrompts: [], summary: '', keywords: [] },
       baseSegment,
       settings,
-      { generateStructuredData: modelCaller },
+      { generateMotionSource: motionCaller, currentCard: baseCard },
+    );
+
+    expect(result.id).toBe('card-1');
+    expect(result.title).toBe('旧标题');
+    expect(result.displayDurationMs).toBe(5_000);
+  });
+
+  it('fills content with the verbatim segment subtitle text', async () => {
+    const motionCaller = vi
+      .fn<typeof generateMotionCardSource>()
+      .mockResolvedValue(VALID_MOTION_TSX);
+
+    const result = await generateCardForSegment(
+      baseEntries,
+      { segments: [baseSegment], coverPrompts: [], summary: '', keywords: [] },
+      baseSegment,
+      settings,
+      { generateMotionSource: motionCaller },
     );
 
     expect(result.content).toBe('欢迎收听本期节目，我们先聊 AI 视频生产的背景。');
   });
 
-  it('leaves DataContent untouched for data cards', async () => {
-    const dataContent = {
-      chartType: 'bar' as const,
-      items: [
-        { label: '2024', value: 10 },
-        { label: '2025', value: 20, highlight: true },
-      ],
-    };
-    const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
-      id: 'generated-data-card',
-      type: 'data',
-      title: '数据卡',
-      content: dataContent,
-      startMs: 0,
-      endMs: 3_000,
-      displayDurationMs: 5_000,
-      displayMode: 'fullscreen',
-      template: 'data-default',
-      enabled: true,
-      renderMode: 'motion-card',
-      motionCard: { tsx: VALID_MOTION_TSX },
-      style: { primaryColor: '#79c4ff', backgroundColor: '#151922', fontSize: 48 },
-    });
-
-    const result = await generateCardForSegment(
-      baseEntries,
-      { segments: [baseSegment], coverPrompts: [], summary: '', keywords: [] },
-      baseSegment,
-      settings,
-      { generateStructuredData: modelCaller },
-    );
-
-    expect(result.content).toEqual(dataContent);
-  });
-
-  it('keeps the AI content when the segment range has no subtitle text', async () => {
+  it('falls back to the segment summary for content when the range has no subtitle text', async () => {
     const offRangeSegment: AISegment = {
       ...baseSegment,
       id: 'seg-off',
+      summary: '段落摘要兜底',
       startMs: 8_000,
       endMs: 9_000,
     };
-    const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
-      id: 'generated-card-empty',
-      type: 'summary',
-      title: '兜底标题',
-      content: '没有字幕时保留的 AI 内容',
-      startMs: 8_000,
-      endMs: 9_000,
-      displayDurationMs: 5_000,
-      displayMode: 'fullscreen',
-      template: 'summary-default',
-      enabled: true,
-      renderMode: 'motion-card',
-      motionCard: { tsx: VALID_MOTION_TSX },
-      style: { primaryColor: '#79c4ff', backgroundColor: '#151922', fontSize: 48 },
-    });
+    const motionCaller = vi
+      .fn<typeof generateMotionCardSource>()
+      .mockResolvedValue(VALID_MOTION_TSX);
 
     const result = await generateCardForSegment(
       baseEntries,
       { segments: [offRangeSegment], coverPrompts: [], summary: '', keywords: [] },
       offRangeSegment,
       settings,
-      { generateStructuredData: modelCaller },
+      { generateMotionSource: motionCaller },
     );
 
-    expect(result.content).toBe('没有字幕时保留的 AI 内容');
+    expect(result.content).toBe('段落摘要兜底');
   });
 
-  it('throws a regenerate-hinted error when motion html cannot compile', async () => {
-    const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
-      id: 'generated-card-bad',
-      type: 'summary',
-      title: '无法编译的卡片',
-      content: '内容',
-      startMs: 0,
-      endMs: 3_000,
-      displayDurationMs: 5_000,
-      displayMode: 'fullscreen',
-      template: 'summary-default',
-      enabled: true,
-      renderMode: 'motion-card',
-      motionCard: {
-        html: 'this is not a valid html motion source',
-      },
-      style: { primaryColor: '#79c4ff', backgroundColor: '#151922', fontSize: 48 },
-    });
+  it('throws a regenerate-hinted error when the TSX has no default export', async () => {
+    const motionCaller = vi
+      .fn<typeof generateMotionCardSource>()
+      .mockResolvedValue('const Card = 42;');
 
     await expect(
       generateCardForSegment(
         baseEntries,
-        {
-          segments: [baseSegment],
-          coverPrompts: [],
-          summary: '',
-          keywords: [],
-        },
+        { segments: [baseSegment], coverPrompts: [], summary: '', keywords: [] },
         baseSegment,
         settings,
-        { generateStructuredData: modelCaller },
+        { generateMotionSource: motionCaller },
       ),
     ).rejects.toThrow(/请重新生成/);
   });
 
-  it('rejects missing motionCard html instead of generating a fallback card', async () => {
-    const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
-      id: 'generated-card-without-html',
-      type: 'summary',
-      title: '缺失源码卡片',
-      content: '模型只返回了结构化文案，没有返回 Motion 源码。',
-      startMs: 0,
-      endMs: 3_000,
-      displayDurationMs: 5_000,
-      displayMode: 'fullscreen',
-      template: 'summary-default',
-      enabled: true,
-      renderMode: 'motion-card',
-      style: { primaryColor: '#79c4ff', backgroundColor: '#151922', fontSize: 48 },
-    });
+  it('propagates the motion-source error when the model returns no usable component', async () => {
+    const motionCaller = vi
+      .fn<typeof generateMotionCardSource>()
+      .mockRejectedValue(new Error('LLM 未返回 motionCard.tsx；请重新生成'));
 
     await expect(
       generateCardForSegment(
         baseEntries,
-        {
-          segments: [baseSegment],
-          coverPrompts: [],
-          summary: '',
-          keywords: [],
-        },
+        { segments: [baseSegment], coverPrompts: [], summary: '', keywords: [] },
         baseSegment,
         settings,
-        { generateStructuredData: modelCaller },
+        { generateMotionSource: motionCaller },
       ),
     ).rejects.toThrow(/motionCard/);
   });
 });
 
 describe('analyzeSrt', () => {
-  it('uses one planning call plus one card-generation call per segment', async () => {
-    const modelCaller = vi.fn<typeof generateStructuredData>()
-      .mockResolvedValueOnce({
-        segments: [baseSegment, secondSegment],
-        coverPrompts: ['封面提示词'],
-        summary: '节目总结',
-        keywords: ['AI', '播客'],
-        globalPrompt: '整体偏商业分析风',
-      })
-      .mockResolvedValueOnce({
-        id: 'card-seg-1',
-        type: 'summary',
-        title: '第一段卡片',
-        content: '第一段内容',
-        startMs: 0,
-        endMs: 3_000,
-        displayDurationMs: 5_000,
-        displayMode: 'fullscreen',
-        template: 'summary-default',
-        enabled: true,
-        renderMode: 'motion-card',
-        motionCard: { tsx: VALID_MOTION_TSX },
-        style: {
-          primaryColor: '#79c4ff',
-          backgroundColor: '#151922',
-          fontSize: 48,
-        },
-      })
-      .mockResolvedValueOnce({
-        id: 'card-seg-2',
-        type: 'motion',
-        title: '第二段卡片',
-        content: '第二段内容',
-        startMs: 3_000,
-        endMs: 7_000,
-        displayDurationMs: 5_000,
-        displayMode: 'fullscreen',
-        template: 'motion-default',
-        enabled: true,
-        renderMode: 'motion-card',
-        cardPrompt: '做一个粒子聚合动画',
-        motionCard: { tsx: VALID_MOTION_TSX },
-        style: {
-          primaryColor: '#7df9ff',
-          backgroundColor: '#151922',
-          fontSize: 48,
-        },
-      });
+  it('uses one planning call plus one motion-source call per segment', async () => {
+    const planningCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
+      segments: [baseSegment, secondSegment],
+      coverPrompts: ['封面提示词'],
+      summary: '节目总结',
+      keywords: ['AI', '播客'],
+      globalPrompt: '整体偏商业分析风',
+    });
+    const motionCaller = vi
+      .fn<typeof generateMotionCardSource>()
+      .mockResolvedValue(VALID_MOTION_TSX);
 
     const result = await analyzeSrt(baseEntries, settings, {
-      generateStructuredData: modelCaller,
+      generateStructuredData: planningCaller,
+      generateMotionSource: motionCaller,
       globalPrompt: '整体偏商业分析风',
     });
 
-    expect(modelCaller).toHaveBeenCalledTimes(3);
-    expect(modelCaller.mock.calls.every((call) => call[2] === fullTranscript)).toBe(true);
-    expect(modelCaller.mock.calls[0]?.[1]).toContain('segments');
-    expect(modelCaller.mock.calls[1]?.[1]).toContain('AI 视频生产背景');
-    expect(modelCaller.mock.calls[2]?.[1]).toContain('工作流拆分');
+    expect(planningCaller).toHaveBeenCalledTimes(1);
+    expect(planningCaller.mock.calls[0]?.[1]).toContain('segments');
+    expect(motionCaller).toHaveBeenCalledTimes(2);
+    expect(motionCaller.mock.calls[0]?.[1]).toContain('AI 视频生产背景');
+    expect(motionCaller.mock.calls[1]?.[1]).toContain('工作流拆分');
     expect(result.segments).toHaveLength(2);
     expect(result.cards).toHaveLength(2);
     expect(result.cards.map((card) => card.segmentId)).toEqual(['seg-1', 'seg-2']);
@@ -550,44 +452,30 @@ describe('analyzeSrt', () => {
   });
 
   it('continues with other segments when one card generation fails and returns cardErrors', async () => {
-    const modelCaller = vi.fn<typeof generateStructuredData>();
-    modelCaller.mockImplementation(async (_settings, _system, _user, _binding, opts) => {
+    const planningCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
+      segments: [baseSegment, secondSegment],
+      coverPrompts: ['封面提示词'],
+      summary: '节目总结',
+      keywords: ['AI', '播客'],
+      globalPrompt: '整体偏商业分析风',
+    });
+    const motionCaller = vi.fn<typeof generateMotionCardSource>();
+    motionCaller.mockImplementation(async (_settings, _system, _user, _binding, opts) => {
       const label = opts?.label;
-      if (label === 'planning.segment') {
-        return {
-          segments: [baseSegment, secondSegment],
-          coverPrompts: ['封面提示词'],
-          summary: '节目总结',
-          keywords: ['AI', '播客'],
-          globalPrompt: '整体偏商业分析风',
-        };
-      }
       if (typeof label === 'string' && label.includes('seg-1')) {
-        throw new Error('LLM 结构化输出请求 空闲超时');
+        throw new Error('LLM Motion 源码请求 空闲超时');
       }
-      return {
-        id: 'card-seg-2',
-        type: 'summary',
-        title: '第二段卡片',
-        content: '第二段内容',
-        startMs: 3_000,
-        endMs: 7_000,
-        displayDurationMs: 5_000,
-        displayMode: 'fullscreen',
-        template: 'summary-default',
-        enabled: true,
-        renderMode: 'motion-card',
-        motionCard: { tsx: VALID_MOTION_TSX },
-        style: { primaryColor: '#79c4ff', backgroundColor: '#151922', fontSize: 48 },
-      };
+      return VALID_MOTION_TSX;
     });
 
     const result = await analyzeSrt(baseEntries, settings, {
-      generateStructuredData: modelCaller,
+      generateStructuredData: planningCaller,
+      generateMotionSource: motionCaller,
       globalPrompt: '整体偏商业分析风',
     });
 
-    expect(modelCaller).toHaveBeenCalledTimes(3);
+    expect(planningCaller).toHaveBeenCalledTimes(1);
+    expect(motionCaller).toHaveBeenCalledTimes(2);
     expect(result.cards.map((card) => card.segmentId)).toEqual(['seg-2']);
     expect(result.cardErrors).toBeDefined();
     expect(result.cardErrors).toHaveLength(1);
@@ -598,39 +486,19 @@ describe('analyzeSrt', () => {
 
   it('generates one card per split segment when planning returns an overlong segment', async () => {
     const longEntries = makeLongEntries();
-    const modelCaller = vi.fn<typeof generateStructuredData>();
-    modelCaller.mockImplementation(async (_settings, _system, _user, _binding, opts) => {
-      if (opts?.label === 'planning.segment') {
-        return {
-          segments: [longSegment],
-          coverPrompts: ['封面提示词'],
-          summary: '节目总结',
-          keywords: ['AI', '播客'],
-        };
-      }
-
-      const label = typeof opts?.label === 'string' ? opts.label : '';
-      const idMatch = /（(.+?)）$/.exec(label);
-      const segmentId = idMatch?.[1] ?? 'unknown';
-      return {
-        id: `card-${segmentId}`,
-        type: 'summary',
-        title: `卡片 ${segmentId}`,
-        content: '拆分后的子段内容',
-        startMs: 0,
-        endMs: 30_000,
-        displayDurationMs: 5_000,
-        displayMode: 'fullscreen',
-        template: 'summary-default',
-        enabled: true,
-        renderMode: 'motion-card',
-        motionCard: { tsx: VALID_MOTION_TSX },
-        style: { primaryColor: '#79c4ff', backgroundColor: '#151922', fontSize: 48 },
-      };
+    const planningCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
+      segments: [longSegment],
+      coverPrompts: ['封面提示词'],
+      summary: '节目总结',
+      keywords: ['AI', '播客'],
     });
+    const motionCaller = vi
+      .fn<typeof generateMotionCardSource>()
+      .mockResolvedValue(VALID_MOTION_TSX);
 
     const result = await analyzeSrt(longEntries, settings, {
-      generateStructuredData: modelCaller,
+      generateStructuredData: planningCaller,
+      generateMotionSource: motionCaller,
     });
 
     expect(result.segments).toHaveLength(5);
@@ -642,7 +510,8 @@ describe('analyzeSrt', () => {
       'long-seg-part-4',
       'long-seg-part-5',
     ]);
-    expect(modelCaller).toHaveBeenCalledTimes(6);
+    expect(planningCaller).toHaveBeenCalledTimes(1);
+    expect(motionCaller).toHaveBeenCalledTimes(5);
   });
 });
 
@@ -666,27 +535,10 @@ describe('regenerateCoverPrompt', () => {
 });
 
 describe('regenerateAICard', () => {
-  it('regenerates a single motion-card and preserves original card id', async () => {
-    const modelCaller = vi.fn<typeof generateStructuredData>().mockResolvedValue({
-      id: 'another-id',
-      type: 'summary',
-      title: '新标题',
-      content: '新内容',
-      startMs: 100,
-      endMs: 2_900,
-      displayDurationMs: 6_000,
-      displayMode: 'fullscreen',
-      template: 'summary-default',
-      enabled: true,
-      renderMode: 'motion-card',
-      cardPrompt: '做成粒子聚合',
-      motionCard: { tsx: VALID_MOTION_TSX },
-      style: {
-        primaryColor: '#79c4ff',
-        backgroundColor: '#151922',
-        fontSize: 48,
-      },
-    });
+  it('regenerates a single motion-card and preserves original card id/title/timing', async () => {
+    const motionCaller = vi
+      .fn<typeof generateMotionCardSource>()
+      .mockResolvedValue(`\`\`\`tsx\n${VALID_MOTION_TSX}\n\`\`\``);
 
     const result = await regenerateAICard(
       baseEntries,
@@ -694,15 +546,17 @@ describe('regenerateAICard', () => {
       baseSegment,
       settings,
       {
-        generateStructuredData: modelCaller,
+        generateMotionSource: motionCaller,
         globalPrompt: '整体偏商业分析风',
       },
     );
 
+    expect(motionCaller).toHaveBeenCalledTimes(1);
     expect(result.id).toBe('card-1');
     expect(result.segmentId).toBe('seg-1');
-    expect(result.title).toBe('新标题');
-    expect(result.displayDurationMs).toBe(6_000);
+    // 元信息从既有卡片延续（不再由模型决定）
+    expect(result.title).toBe('旧标题');
+    expect(result.displayDurationMs).toBe(5_000);
     expect(result.renderMode).toBe('motion-card');
     expect(result.motionCard?.tsx).toContain('export default');
   });
@@ -715,7 +569,7 @@ describe('regenerateAICard', () => {
         null as unknown as AISegment,
         settings,
         {
-          generateStructuredData: vi.fn(),
+          generateMotionSource: vi.fn(),
         },
       ),
     ).rejects.toThrow('缺少卡片对应的段落信息');

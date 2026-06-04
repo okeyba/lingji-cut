@@ -318,6 +318,23 @@ function normalizeSegment(rawSegment: unknown, index: number): AISegmentAnalysis
 }
 
 /**
+ * 解析新卡片的展示时长：默认铺满所在 segment（`endMs - startMs`），避免时间轴出现大量空白
+ * （此前固定 DEFAULT_CARD_DURATION_MS=5s，导致每段只占 5s、其余留空）。
+ * 重生成时若既有卡片已有有效 displayDurationMs（用户可能在 Inspector 改过），则沿用之。
+ */
+function resolveSegmentCardDurationMs(segment: AISegment, currentCard?: AICard): number {
+  if (
+    currentCard &&
+    Number.isFinite(currentCard.displayDurationMs) &&
+    currentCard.displayDurationMs > 0
+  ) {
+    return Math.round(currentCard.displayDurationMs);
+  }
+  const spanMs = Math.round(segment.endMs - segment.startMs);
+  return spanMs > 0 ? spanMs : DEFAULT_CARD_DURATION_MS;
+}
+
+/**
  * image 段直接合成卡片 shell：cards.segment 模板自 v7 起为 motion-only，
  * 不再为 image 段调用 LLM。这里给一个最小合法 image AICard，
  * 真正的中文文生图 prompt 由后续 card.image 链路填充到 cardPrompt / content.prompt。
@@ -354,7 +371,7 @@ function buildImageCardShell(params: {
     title,
     startMs: segment.startMs,
     endMs: segment.endMs,
-    displayDurationMs: currentCard?.displayDurationMs ?? DEFAULT_CARD_DURATION_MS,
+    displayDurationMs: resolveSegmentCardDurationMs(segment, currentCard),
     displayMode,
     template: currentCard?.template ?? getDefaultTemplate('image'),
     enabled: currentCard?.enabled !== false,
@@ -396,7 +413,7 @@ function buildMotionCardShell(params: {
     title,
     startMs: segment.startMs,
     endMs: segment.endMs,
-    displayDurationMs: currentCard?.displayDurationMs ?? DEFAULT_CARD_DURATION_MS,
+    displayDurationMs: resolveSegmentCardDurationMs(segment, currentCard),
     displayMode,
     template: currentCard?.template ?? getDefaultTemplate(type),
     enabled: currentCard?.enabled !== false,
@@ -457,7 +474,10 @@ function normalizeCard(
     displayDurationMs:
       Number.isFinite(candidate.displayDurationMs) && Number(candidate.displayDurationMs) > 0
         ? Number(candidate.displayDurationMs)
-        : DEFAULT_CARD_DURATION_MS,
+        : // 模型未给时长则铺满 segment（避免时间轴空白），span 非法再退回固定默认值
+          endMs - startMs > 0
+          ? Math.round(endMs - startMs)
+          : DEFAULT_CARD_DURATION_MS,
     displayMode,
     template:
       typeof candidate.template === 'string' && candidate.template
