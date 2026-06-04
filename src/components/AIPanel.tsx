@@ -8,6 +8,7 @@ import {
   toggleCardEnabledInResult,
 } from '../lib/ai-persistence';
 import { getAISettingsIssue } from '../lib/ai-settings';
+import { createAnalyzeProgressBridge } from '../lib/analyze-progress-bridge';
 import type { ManualCardKind } from '../lib/manual-card-types';
 import { useAIStore, loadAISettings } from '../store/ai';
 import { useTaskProgressStore } from '../store/task-progress';
@@ -353,11 +354,26 @@ export function AIPanel({
       id: analyzeTaskId,
       category: 'ai-analyze',
       label: analysisResult ? '内容卡片重新分析' : '内容卡片分析',
-      mode: 'indeterminate',
+      // planning 阶段先用 streaming（脉冲）表明在跑；进入卡片阶段后桥会切换为 determinate。
+      mode: 'streaming',
       progress: 0,
-      phase: analysisResult ? '重新组织卡片' : '解析字幕',
+      phase: analysisResult ? '重新组织卡片' : '规划分段与封面提示词…',
       level: 2,
       canCancel: false,
+    });
+
+    // 订阅 analyze-progress，实时把 planning 心跳 / 卡片 0..N 进度喂给统一进度条。
+    // 复用与一键流水线相同的进度映射逻辑（src/lib/analyze-progress-bridge）。
+    const progressBridge = createAnalyzeProgressBridge(analyzeTaskId, {
+      subscribe: (callback) => window.electronAPI.onAnalyzeProgress(callback),
+      updateTask: (id, patch) => useTaskProgressStore.getState().updateTask(id, patch),
+      cardTasks: {
+        startTask: (input) => useTaskProgressStore.getState().startTask(input),
+        updateTask: (id, patch) => useTaskProgressStore.getState().updateTask(id, patch),
+        completeTask: (id) => useTaskProgressStore.getState().completeTask(id),
+        failTask: (id, error) => useTaskProgressStore.getState().failTask(id, error),
+        hasTask: (id) => useTaskProgressStore.getState().tasks.has(id),
+      },
     });
 
     try {
@@ -402,6 +418,8 @@ export function AIPanel({
       setAnalysisError(errorMessage);
       useTaskProgressStore.getState().failTask(analyzeTaskId, errorMessage);
     } finally {
+      // 停止心跳并解除 analyze-progress 订阅，避免泄漏到下一次分析。
+      progressBridge.dispose();
       setAnalyzing(false);
     }
   }, [

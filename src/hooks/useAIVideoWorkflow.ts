@@ -30,6 +30,7 @@ import {
   type AIAnalysisResult,
   type CoverCandidate,
 } from '../types/ai';
+import { applyCardEvent } from '../lib/analyze-progress-bridge';
 
 interface WorkflowStartOptions {
   pauseAfterTts?: boolean;
@@ -796,6 +797,16 @@ export function useAIVideoWorkflow() {
         // ── Track A: analyze (main 进程内部按 planning → cards 顺序跑) ──
         const cleanupAnalyzeProgress = window.electronAPI.onAnalyzeProgress((progress) => {
           if (isStaleRun()) return;
+          if (progress.card) {
+            applyCardEvent(workflowTaskId, progress.card, {
+              startTask: (input) => useTaskProgressStore.getState().startTask(input),
+              updateTask: (id, patch) => useTaskProgressStore.getState().updateTask(id, patch),
+              completeTask: (id) => useTaskProgressStore.getState().completeTask(id),
+              failTask: (id, error) => useTaskProgressStore.getState().failTask(id, error),
+              hasTask: (id) => useTaskProgressStore.getState().tasks.has(id),
+            });
+            return; // card 事件不参与 3 轨合成百分比
+          }
           analyzePercent = progress.percent;
           refreshCombinedProgress();
         });
