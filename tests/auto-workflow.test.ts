@@ -138,9 +138,9 @@ describe('useAIVideoWorkflow autoMode wiring (source contract)', () => {
     expect(source).toContain("workflowSession.originalText = options?.originalText ?? ''");
   });
 
-  it('TTS voiceId prefers autoParams.voiceId over settings.minimaxVoiceId', () => {
+  it('TTS voiceId prefers autoParams.voiceId over the configured voice', () => {
     expect(source).toMatch(
-      /voiceId:\s*workflowSession\.autoParams\?\.voiceId\s*\|\|\s*settings\.minimaxVoiceId/,
+      /voiceId:\s*workflowSession\.autoParams\?\.voiceId\s*&&\s*defaultTtsConfig\.voice\.providerType\s*===\s*'minimax'\s*\?\s*workflowSession\.autoParams\.voiceId\s*:\s*defaultTtsConfig\.voice\.voiceId/,
     );
   });
 
