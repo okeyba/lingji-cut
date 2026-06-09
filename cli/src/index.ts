@@ -5,6 +5,7 @@ import { connectClient, type ToolCaller } from './client';
 import { output } from './format';
 import { runProjectCommand } from './commands/project';
 import { runTaskCommand } from './commands/task';
+import { runAudioCommand } from './commands/audio';
 import { CliError } from './errors';
 
 const HELP = `灵机 CLI (lingji)
@@ -17,6 +18,7 @@ const HELP = `灵机 CLI (lingji)
   lingji task list [--project <p>]  列出任务
   lingji task cancel <id>           取消任务
   lingji task wait <id>             轮询任务直到完成
+  lingji audio gen [--project <p>] [--wait]   生成口播音频(TTS)
 
 全局开关:
   --json                JSON 输出
@@ -35,8 +37,10 @@ async function dispatch(
       return runProjectCommand(action, positionals, client);
     case 'task':
       return runTaskCommand(action, positionals, flags, client);
+    case 'audio':
+      return runAudioCommand(action, flags, client);
     default:
-      throw new CliError(`未知命令组: ${group}（支持 project/task）`, 'bad_args', 2);
+      throw new CliError(`未知命令组: ${group}（支持 project/task/audio）`, 'bad_args', 2);
   }
 }
 
