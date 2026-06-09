@@ -9,6 +9,7 @@ import {
 } from './project-tools';
 import { buildTaskTools } from './task-tools';
 import { getActiveProjectPath } from '../context';
+import { loadRecentProjects } from '../../recent-projects';
 
 function jsonResult(data: unknown) {
   return {
@@ -181,6 +182,22 @@ export function registerPipelineMcpTools(
     async () => {
       try {
         return jsonResult({ projectPath: getActiveProjectPath() });
+      } catch (err) {
+        return errorResult(pipelineErrorMessage(err), pipelineErrorCode(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'lingji_list_recent_projects',
+    {
+      title: '列出最近项目',
+      description:
+        '返回最近打开过的项目列表（每项含 path/name/lastOpenedAt）；已不存在的项目目录会被过滤。',
+    },
+    async () => {
+      try {
+        return jsonResult(await loadRecentProjects(getUserDataPath()));
       } catch (err) {
         return errorResult(pipelineErrorMessage(err), pipelineErrorCode(err));
       }
