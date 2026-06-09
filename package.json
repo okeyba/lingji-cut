@@ -3,6 +3,9 @@
   "productName": "灵机剪影",
   "version": "1.1.0",
   "main": "dist-electron/main.js",
+  "bin": {
+    "lingji": "dist-cli/lingji.mjs"
+  },
   "scripts": {
     "ensure:electron": "node scripts/ensure-electron-binary.cjs",
     "dev": "node scripts/ensure-electron-binary.cjs && node scripts/dev-windows-utf8.cjs",
@@ -15,7 +18,8 @@
     "dist:mac": "npm run build && npm run package:mac",
     "dist:dmg:mac": "npm run dist:mac && npm run dmg:mac",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:cli": "node scripts/build-cli.cjs"
   },
   "keywords": [],
   "author": "",

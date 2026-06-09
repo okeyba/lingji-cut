@@ -2,6 +2,7 @@ node_modules/
 dist/
 dist-electron/
 dist-remotion/
+dist-cli/
 .superpowers/
 .claude/worktrees/
 .agents/
