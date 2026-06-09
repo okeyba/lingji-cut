@@ -24,7 +24,7 @@ const HELP = `灵机 CLI (lingji)
   lingji task wait <id>             轮询任务直到完成
   lingji audio gen [--project <p>] [--wait]   生成口播音频(TTS)
   lingji subtitle analyze [--wait]            字幕分析 + 卡片生成
-  lingji cards gen [--wait]                   生成 AI 卡片（同 subtitle analyze）
+  lingji cards gen|list|show|update|regenerate|regen-media|convert|delete [<cardId>] [字段/--to/--wait]
   lingji cover prompt|image|gen [--wait]      封面提示词 / 出图 / 一次性
   lingji export [--out <file>] [--wait]       导出 MP4
 
@@ -50,7 +50,7 @@ async function dispatch(
     case 'subtitle':
       return runSubtitleCommand(action, flags, client);
     case 'cards':
-      return runCardsCommand(action, flags, client);
+      return runCardsCommand(action, positionals, flags, client);
     case 'cover':
       return runCoverCommand(action, flags, client);
     case 'export':
