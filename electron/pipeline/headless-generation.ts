@@ -4,6 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { getPipelineService, type TaskHandle } from '.';
 import type { PipelineTaskKind } from './types';
 import { runTtsHeadless } from './runs/tts-run';
+import { runAnalyzeHeadless } from './runs/analyze-run';
 
 const PROJECT_UPDATED_CHANNEL = 'pipeline:project-updated';
 
@@ -94,5 +95,15 @@ export function registerGenerationTools(
     kind: 'tts',
     sections: ['timeline'],
     run: (ctx) => runTtsHeadless(ctx),
+  });
+
+  registerGenerationTool(server, getMainWindow, getUserDataPath, {
+    name: 'lingji_analyze_subtitles',
+    title: '字幕分析+卡片生成',
+    description:
+      '读取 podcast-subtitles.srt，做语义分段并批量生成 AI 卡片与封面提示词，写入 project.json 的 aiAnalysis 节；返回 taskId。注意：本应用中卡片随分析一并产出（cards gen 与 subtitle analyze 等价）。',
+    kind: 'analyze_subtitles',
+    sections: ['aiAnalysis'],
+    run: (ctx) => runAnalyzeHeadless(ctx),
   });
 }
