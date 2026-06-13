@@ -471,7 +471,7 @@ contextBridge.exposeInMainWorld('agentAPI', {
   getPermissionPolicy: () => ipcRenderer.invoke('agent:get-permission-policy'),
   setPermissionPolicy: (policy: string) => ipcRenderer.invoke('agent:set-permission-policy', policy),
 
-  runPreflight: () => ipcRenderer.invoke('agent:run-preflight'),
+  runPreflight: (agentId?: string) => ipcRenderer.invoke('agent:run-preflight', agentId),
   installAgent: (version: string) => ipcRenderer.invoke('agent:install', version),
   uninstallAgent: () => ipcRenderer.invoke('agent:uninstall'),
   getLatestVersion: () => ipcRenderer.invoke('agent:get-latest-version'),

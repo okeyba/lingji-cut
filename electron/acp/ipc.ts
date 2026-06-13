@@ -10,6 +10,7 @@ import { McpConfigManager } from '../mcp/config-manager';
 import { getMcpServerStatus } from '../mcp/server';
 import type { PermissionPolicy } from './types';
 import { ensureProjectAgentContracts } from './contract-sync';
+import { getAgentProfile, DEFAULT_AGENT_ID } from './agent-profiles';
 
 const CONFIG_PATH = path.join(os.homedir(), '.lingji', 'agent-config.json');
 
@@ -34,28 +35,33 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
 
   async function connectRuntime(payload: RuntimeConnectPayload): Promise<void> {
     const configData = await config.load();
-    const agentEntry = configData.agents['claude-acp'];
+    const agentId = payload.agentType ?? DEFAULT_AGENT_ID;
+    const profile = getAgentProfile(agentId);
+    const agentEntry = configData.agents[agentId];
     const policy = configData.permissionPolicy ?? 'tiered';
 
-    // 确保 Claude Code 配置了 MCP Server
-    const mcpConfigMgr = new McpConfigManager();
-    const mcpStatus = getMcpServerStatus();
-    if (mcpStatus.running) {
-      await mcpConfigMgr.registerToApp('claude_code', mcpStatus.port);
+    // 仅 Claude 注册 MCP server + 写 CLAUDE.md MCP 引导；所有 agent 都写 file-first 契约
+    if (agentId === 'claude-acp') {
+      const mcpConfigMgr = new McpConfigManager();
+      const mcpStatus = getMcpServerStatus();
+      if (mcpStatus.running) {
+        await mcpConfigMgr.registerToApp('claude_code', mcpStatus.port);
+      }
+      // 在项目目录写入 CLAUDE.md，引导 Claude Code 使用 MCP 工具
+      await ensureProjectClaudeMd(payload.projectDir);
     }
-
-    // 在项目目录写入 CLAUDE.md，引导 Claude Code 使用 MCP 工具
-    await ensureProjectClaudeMd(payload.projectDir);
 
     // 同步 file-first 编辑契约要点到 CLAUDE/AGENTS/GEMINI.md（多 agent 通用，独立 marker）
     await ensureProjectAgentContracts(payload.projectDir);
 
-    // 构建 env
+    // 构建 env：按 profile 凭证 env 名映射（无 apiKeyEnvVar → 不注入凭证，仅 envText）
     const env: Record<string, string> = {};
-    if (agentEntry?.authMode === 'custom_api') {
-      const apiKey = await config.getApiKey('claude-acp');
-      if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
-      if (agentEntry.apiBaseUrl) env.ANTHROPIC_BASE_URL = agentEntry.apiBaseUrl;
+    if (agentEntry?.authMode === 'custom_api' && profile.apiKeyEnvVar) {
+      const apiKey = await config.getApiKey(agentId);
+      if (apiKey) env[profile.apiKeyEnvVar] = apiKey;
+      if (profile.baseUrlEnvVar && agentEntry.apiBaseUrl) {
+        env[profile.baseUrlEnvVar] = agentEntry.apiBaseUrl;
+      }
     }
     // 解析 envText
     if (agentEntry?.envText) {
@@ -67,14 +73,14 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
       }
     }
 
-    const version = agentEntry?.version || '0.25.0';
-    const { command, args } = binaryManager.getSpawnCommand(version);
+    const version = agentEntry?.version || profile.defaultVersion || '';
+    const { command, args } = await binaryManager.getSpawnCommandForProfile(profile, version);
 
     await connectionRegistry.connect({
       conversationId: payload.conversationId,
       projectDir: payload.projectDir,
       sessionId: payload.sessionId ?? null,
-      agentType: payload.agentType ?? 'claude-acp',
+      agentType: agentId,
       permissionPolicy: policy,
       spawnCommand: command,
       spawnArgs: args,
@@ -144,7 +150,9 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
   });
 
   // 预检与安装
-  ipcMain.handle('agent:run-preflight', () => runPreflight(binaryManager, config, 'claude-acp'));
+  ipcMain.handle('agent:run-preflight', (_e, agentId?: string) =>
+    runPreflight(binaryManager, config, agentId ?? DEFAULT_AGENT_ID),
+  );
   ipcMain.handle('agent:install', async (_event, version: string) => binaryManager.install(version));
   ipcMain.handle('agent:uninstall', () => binaryManager.uninstall());
   ipcMain.handle('agent:get-latest-version', () => binaryManager.getLatestVersion());

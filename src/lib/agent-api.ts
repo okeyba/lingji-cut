@@ -83,7 +83,7 @@ export interface AgentAPI {
   setPermissionPolicy(policy: PermissionPolicy): Promise<void>;
 
   // 预检与安装
-  runPreflight(): Promise<PreflightCheck[]>;
+  runPreflight(agentId?: string): Promise<PreflightCheck[]>;
   installAgent(version: string): Promise<void>;
   uninstallAgent(): Promise<void>;
   getLatestVersion(): Promise<string | null>;
