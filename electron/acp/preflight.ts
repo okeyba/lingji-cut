@@ -1,15 +1,28 @@
 import type { PreflightCheck } from './types';
 import { BinaryManager } from './binary-manager';
 import type { AgentConfig } from './config';
-import { getAgentProfile } from './agent-profiles';
+import { normalizeAgentId } from './config';
+import { getAgentDef } from '../agent-runtime/registry';
+import { detectAgent, createDetectionDeps } from '../agent-runtime/detection';
 
+/**
+ * 多协议 preflight：基于 RuntimeAgentDef + detection 探测 agent CLI 是否可用。
+ *
+ * 返回 PreflightCheck[] 契约不变（UI 不崩）：
+ *   - Node.js / npx：保留原检查（npm 托管安装/升级仍依赖它们）。
+ *   - <agent bin>：用 detection.detectAgent(def, ...) 检查 CLI 是否在 PATH/可探测版本。
+ *   - API Key：仅对显式配置 custom_api authMode 的 agent 提示（subscription/未配置不阻断）。
+ *
+ * agentId 可传旧键（claude-acp/pi-acp），内部 normalize 到 claude/codex/pi。
+ */
 export async function runPreflight(
   binaryManager: BinaryManager,
   config: AgentConfig,
   agentId: string,
 ): Promise<PreflightCheck[]> {
   const checks: PreflightCheck[] = [];
-  const profile = getAgentProfile(agentId);
+  const normalizedId = normalizeAgentId(agentId);
+  const def = getAgentDef(normalizedId);
 
   // 1. Node.js
   const nodeVersion = await binaryManager.getNodeVersion();
@@ -37,69 +50,38 @@ export async function runPreflight(
     });
   }
 
-  if (profile.managed) {
-    // managed（claude）：npm 托管的 agent 安装状态 + API Key
-    const agentLabel = profile.binName || 'claude-agent-acp';
-
-    // 3. Agent 安装状态
-    const installedVersion = await binaryManager.getInstalledVersion();
-    const latestVersion = await binaryManager.getLatestVersion();
-
-    if (installedVersion) {
-      if (latestVersion && installedVersion !== latestVersion) {
-        checks.push({
-          label: agentLabel,
-          status: 'warn',
-          message: `已安装 ${installedVersion}，最新 ${latestVersion}`,
-          fixAction: 'upgrade',
-        });
-      } else {
-        checks.push({
-          label: agentLabel,
-          status: 'pass',
-          message: `v${installedVersion}`,
-        });
-      }
+  // 3. Agent CLI 探测（detection）
+  if (def) {
+    const agentLabel = def.bin;
+    const detection = await detectAgent(def, createDetectionDeps(binaryManager));
+    if (detection.installed) {
+      const versionSuffix = detection.version ? ` ${detection.version}` : '';
+      checks.push({
+        label: agentLabel,
+        status: 'pass',
+        message: `${detection.binPath ?? '已安装'}${versionSuffix}`,
+      });
     } else {
       checks.push({
         label: agentLabel,
         status: 'fail',
-        message: '未安装',
+        message: `未找到 ${agentLabel}，请确认已安装并在 PATH 中`,
         fixAction: 'install',
       });
     }
 
-    // 4. API Key
+    // 4. API Key（仅 custom_api 模式提示；subscription/默认不阻断）
     const configData = await config.load();
-    const agentEntry = configData.agents[agentId];
-    if (agentEntry?.authMode === 'subscription') {
-      checks.push({ label: 'API Key', status: 'pass', message: '使用官方订阅' });
-    } else {
-      const apiKey = await config.getApiKey(agentId);
+    const agentEntry = configData.agents[normalizedId];
+    if (agentEntry?.authMode === 'custom_api') {
+      const apiKey = await config.getApiKey(normalizedId);
       if (apiKey) {
         checks.push({ label: 'API Key', status: 'pass', message: '已配置' });
       } else {
-        checks.push({
-          label: 'API Key',
-          status: 'warn',
-          message: '未设置 API Key',
-        });
+        checks.push({ label: 'API Key', status: 'warn', message: '未设置 API Key' });
       }
-    }
-  } else {
-    // unmanaged（pi）：仅检查 requiredBinary 是否在 PATH，不代管 npm 安装与凭证
-    if (profile.requiredBinary) {
-      const resolved = await binaryManager.resolveBinary(profile.requiredBinary);
-      if (resolved) {
-        checks.push({ label: profile.requiredBinary, status: 'pass', message: resolved });
-      } else {
-        checks.push({
-          label: profile.requiredBinary,
-          status: 'fail',
-          message: profile.installGuide ?? `未找到 ${profile.requiredBinary}，请先安装`,
-          fixAction: 'install',
-        });
-      }
+    } else {
+      checks.push({ label: 'API Key', status: 'pass', message: '使用官方订阅 / CLI 自带凭证' });
     }
   }
 

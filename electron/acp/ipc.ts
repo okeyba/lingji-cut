@@ -2,21 +2,21 @@ import { ipcMain, type BrowserWindow } from 'electron';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { AgentConfig } from './config';
+import { AgentConfig, normalizeAgentId } from './config';
 import { BinaryManager } from './binary-manager';
-import { ConnectionRegistry } from './connection-registry';
+import { RuntimeRegistry } from '../agent-runtime/runtime-registry';
+import { getAgentDef } from '../agent-runtime/registry';
 import { runPreflight } from './preflight';
 import { McpConfigManager } from '../mcp/config-manager';
 import { getMcpServerStatus } from '../mcp/server';
 import type { PermissionPolicy } from './types';
 import { ensureProjectAgentContracts } from './contract-sync';
-import { getAgentProfile, DEFAULT_AGENT_ID } from './agent-profiles';
 
 const CONFIG_PATH = path.join(os.homedir(), '.lingji', 'agent-config.json');
 
 const config = new AgentConfig(CONFIG_PATH);
 const binaryManager = new BinaryManager();
-const connectionRegistry = new ConnectionRegistry();
+const runtimeRegistry = new RuntimeRegistry();
 
 interface RuntimeConnectPayload {
   conversationId: number;
@@ -35,13 +35,13 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
 
   async function connectRuntime(payload: RuntimeConnectPayload): Promise<void> {
     const configData = await config.load();
-    const agentId = payload.agentType ?? DEFAULT_AGENT_ID;
-    const profile = getAgentProfile(agentId);
+    const agentId = normalizeAgentId(payload.agentType);
+    const def = getAgentDef(agentId);
     const agentEntry = configData.agents[agentId];
     const policy = configData.permissionPolicy ?? 'tiered';
 
     // 仅 Claude 注册 MCP server + 写 CLAUDE.md MCP 引导；所有 agent 都写 file-first 契约
-    if (agentId === 'claude-acp') {
+    if (agentId === 'claude') {
       const mcpConfigMgr = new McpConfigManager();
       const mcpStatus = getMcpServerStatus();
       if (mcpStatus.running) {
@@ -54,16 +54,16 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
     // 同步 file-first 编辑契约要点到 CLAUDE/AGENTS/GEMINI.md（多 agent 通用，独立 marker）
     await ensureProjectAgentContracts(payload.projectDir);
 
-    // 构建 env：按 profile 凭证 env 名映射（无 apiKeyEnvVar → 不注入凭证，仅 envText）
+    // 构建 env：
+    //   - custom_api 凭证仅对 claude 注入 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL；
+    //     codex/pi 不代管凭证，仅透传用户 envText。
     const env: Record<string, string> = {};
-    if (agentEntry?.authMode === 'custom_api' && profile.apiKeyEnvVar) {
+    if (agentId === 'claude' && agentEntry?.authMode === 'custom_api') {
       const apiKey = await config.getApiKey(agentId);
-      if (apiKey) env[profile.apiKeyEnvVar] = apiKey;
-      if (profile.baseUrlEnvVar && agentEntry.apiBaseUrl) {
-        env[profile.baseUrlEnvVar] = agentEntry.apiBaseUrl;
-      }
+      if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
+      if (agentEntry.apiBaseUrl) env.ANTHROPIC_BASE_URL = agentEntry.apiBaseUrl;
     }
-    // 解析 envText
+    // 解析 envText（所有 agent 通用）
     if (agentEntry?.envText) {
       for (const line of agentEntry.envText.split('\n')) {
         const eqIdx = line.indexOf('=');
@@ -73,33 +73,28 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
       }
     }
 
-    const version = agentEntry?.version || profile.defaultVersion || '';
-    const { command, args } = await binaryManager.getSpawnCommandForProfile(profile, version);
-
-    await connectionRegistry.connect({
+    await runtimeRegistry.connect({
       conversationId: payload.conversationId,
-      projectDir: payload.projectDir,
-      sessionId: payload.sessionId ?? null,
       agentType: agentId,
-      permissionPolicy: policy,
-      spawnCommand: command,
-      spawnArgs: args,
+      projectDir: payload.projectDir,
+      model: agentEntry?.model || def?.defaultModel,
+      sessionId: payload.sessionId ?? null,
       env,
+      permissionPolicy: policy,
     });
   }
 
-  connectionRegistry.on('status', ({ conversationId, status }) => {
+  // 连接时同步当前权限策略到 runtime
+  void config.load().then((data) => {
+    if (data.permissionPolicy) runtimeRegistry.setPermissionPolicy(data.permissionPolicy);
+  });
+
+  // RuntimeRegistry 仅 emit 'status'/'event'，转发到 Renderer（通道契约不变）
+  runtimeRegistry.on('status', ({ conversationId, status }) => {
     sendToRenderer('agent:runtime-status', { conversationId, status });
   });
-  connectionRegistry.on('event', ({ conversationId, event }) => {
+  runtimeRegistry.on('event', ({ conversationId, event }) => {
     sendToRenderer('agent:runtime-event', { conversationId, event });
-  });
-  connectionRegistry.on('capabilities', ({ conversationId, capabilities }) => {
-    sendToRenderer('agent:runtime-capabilities', { conversationId, capabilities });
-  });
-  connectionRegistry.on('file_changed', ({ conversationId, change }) => {
-    const eventPayload = { type: 'file_changed', ...(change as object) };
-    sendToRenderer('agent:runtime-event', { conversationId, event: eventPayload });
   });
 
   ipcMain.handle('agent:connect-runtime', async (_event, payload: RuntimeConnectPayload) => {
@@ -107,27 +102,27 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
   });
 
   ipcMain.handle('agent:disconnect-runtime', async (_event, conversationId: number) => {
-    connectionRegistry.disconnect(conversationId);
+    runtimeRegistry.disconnect(conversationId);
   });
 
   ipcMain.handle('agent:send-prompt-runtime', async (_event, conversationId: number, contents: unknown[]) => {
-    await connectionRegistry.sendPrompt(conversationId, contents);
+    await runtimeRegistry.sendPrompt(conversationId, contents);
   });
 
   ipcMain.handle('agent:cancel-turn-runtime', async (_event, conversationId: number) => {
-    await connectionRegistry.cancelTurn(conversationId);
+    runtimeRegistry.cancelTurn(conversationId);
   });
 
   ipcMain.handle('agent:set-mode-runtime', async (_event, conversationId: number, modeId: string) => {
-    await connectionRegistry.setMode(conversationId, modeId);
+    await runtimeRegistry.setMode(conversationId, modeId);
   });
 
   ipcMain.handle('agent:set-config-option-runtime', async (_event, conversationId: number, configId: string, valueId: string) => {
-    await connectionRegistry.setConfigOption(conversationId, configId, valueId);
+    await runtimeRegistry.setConfigOption(conversationId, configId, valueId);
   });
 
   ipcMain.handle('agent:respond-permission-runtime', async (_event, conversationId: number, requestId: string, optionId: string) => {
-    await connectionRegistry.respondPermission(conversationId, requestId, optionId);
+    await runtimeRegistry.respondPermission(conversationId, requestId, optionId);
   });
 
   // 配置管理
@@ -146,12 +141,12 @@ export function registerAgentIpc(getMainWindow: () => BrowserWindow | null): voi
     data.permissionPolicy = policy;
     await config.save(data);
     // 同步到所有已连接的运行时，使策略即时生效
-    connectionRegistry.setPermissionPolicy(policy);
+    runtimeRegistry.setPermissionPolicy(policy);
   });
 
   // 预检与安装
   ipcMain.handle('agent:run-preflight', (_e, agentId?: string) =>
-    runPreflight(binaryManager, config, agentId ?? DEFAULT_AGENT_ID),
+    runPreflight(binaryManager, config, agentId ?? 'claude'),
   );
   ipcMain.handle('agent:install', async (_event, version: string) => binaryManager.install(version));
   ipcMain.handle('agent:uninstall', () => binaryManager.uninstall());
