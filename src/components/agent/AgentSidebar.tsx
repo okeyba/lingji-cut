@@ -5,6 +5,7 @@ import { useScriptStore } from '../../store/script';
 import { getCurrentProjectDir } from '../../store/timeline';
 import { useConversationList } from '../../hooks/use-conversation-list';
 import { getPreferredAgentType } from '../../lib/agent-api';
+import { DEFAULT_AGENT_ID } from '../../lib/agent-presentation';
 import { AgentHeader } from './AgentHeader';
 import { ConversationToolbar } from './ConversationToolbar';
 import { SessionListPane } from './SessionListPane';
@@ -44,11 +45,14 @@ function AgentSidebarWorkspace({ projectDir }: { projectDir: string | null }) {
   );
 }
 
-function SidebarWorkspaceShell({ projectDir }: { projectDir: string }) {
+export function SidebarWorkspaceShell({ projectDir }: { projectDir: string }) {
   const [explicitConversationId, setExplicitConversationId] = useState<number | null>(null);
   const [sessionListCollapsed, setSessionListCollapsed] = useState(() =>
     loadAgentSessionListCollapsed(),
   );
+  // 新建会话时使用的 agent，由用户在工具栏的 AgentPicker 中显式选择。
+  // 同步默认 'claude'，挂载后异步用 getPreferredAgentType() 纠正。
+  const [selectedAgentId, setSelectedAgentId] = useState<string>(DEFAULT_AGENT_ID);
   const connections = useAcpConnections();
   const {
     loading,
@@ -67,10 +71,24 @@ function SidebarWorkspaceShell({ projectDir }: { projectDir: string }) {
     }
   }, [explicitConversationId, activeConversationId]);
 
+  // 首屏用 preferred agent 纠正 selectedAgentId 的默认值。
+  // 仅在用户尚未显式改动（仍为 DEFAULT_AGENT_ID）时纠正，避免覆盖用户选择。
+  useEffect(() => {
+    let cancelled = false;
+    void getPreferredAgentType().then((preferred) => {
+      if (cancelled) return;
+      setSelectedAgentId((current) =>
+        current === DEFAULT_AGENT_ID && preferred ? preferred : current,
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function handleCreateConversation() {
-    const agentType = await getPreferredAgentType();
     const created = await createConversation({
-      agentType,
+      agentType: selectedAgentId || DEFAULT_AGENT_ID,
     });
     setExplicitConversationId(created.id);
   }
@@ -130,6 +148,8 @@ function SidebarWorkspaceShell({ projectDir }: { projectDir: string }) {
         <ConversationToolbar
           collapsed={sessionListCollapsed}
           loading={loading}
+          selectedAgentId={selectedAgentId}
+          onSelectAgent={setSelectedAgentId}
           onToggleCollapse={() => setSessionListCollapsed((current) => !current)}
           onCreateConversation={() => void handleCreateConversation()}
           onRefresh={() => void refresh()}
