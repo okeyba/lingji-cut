@@ -11,6 +11,7 @@ import { compileCards } from './compile-card-node';
 import { getRemotionBundle } from './bundle';
 import { renderRemotionVideo } from './render';
 import { collectMotionCards } from '../../src/remotion/collect-cards';
+import { hydrateTimelineCards } from '../../src/lib/motion-card-externalize';
 import { prepareTimelineForHyperframes, type HyperframesAssetDescriptor } from '../../src/hyperframes/assets';
 
 // 以下三个辅助函数由 electron/main.ts 原样迁入（仅 render-video 使用）。
@@ -110,8 +111,20 @@ export async function renderVideoHeadless(
   const projectPrepStart = Date.now();
   // materialize 资源到临时 publicDir，并把 timeline 内绝对素材路径改写为 assets/... 相对路径。
   const { timeline: renderTimeline, publicDir } = await createRenderPublicDir(timelineData);
+  // 防御性 hydrate：若上游传来的是磁盘态（只有 tsxPath 没有内存 tsx），读回源码，保证 collectMotionCards 能拿到卡片。
+  const projectDir = inferProjectDirFromTimeline(timelineData);
+  const hydratedTimeline = await hydrateTimelineCards(renderTimeline, {
+    readFile: async (rel) => {
+      if (!projectDir) return null;
+      try {
+        return await fs.readFile(path.join(projectDir, rel), 'utf-8');
+      } catch {
+        return null;
+      }
+    },
+  });
   // 编译 motion 卡片 TSX → CJS，随 inputProps 传入 Remotion，由 CardHost 在无头 Chrome 内求值。
-  const cardSources = collectMotionCards(renderTimeline);
+  const cardSources = collectMotionCards(hydratedTimeline);
   const compiledCards = await compileCards(cardSources);
   const remotionEntry = path.join(app.getAppPath(), 'src', 'remotion', 'index.ts');
 
