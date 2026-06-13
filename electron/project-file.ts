@@ -9,6 +9,10 @@ import {
   type ProjectSection,
 } from '../src/lib/project-persistence';
 import { parsePersistedScriptState } from '../src/lib/script-persistence';
+import {
+  dehydrateTimelineCards,
+  hydrateTimelineCards,
+} from '../src/lib/motion-card-externalize';
 import type { TimelineData } from '../src/types';
 
 const PROJECT_FILE = 'project.json';
@@ -41,6 +45,24 @@ async function readProjectJson(projectDir: string): Promise<ProjectData | null> 
 async function writeProjectJson(projectDir: string, data: ProjectData): Promise<void> {
   await fs.mkdir(projectDir, { recursive: true });
   await fs.writeFile(path.join(projectDir, PROJECT_FILE), JSON.stringify(data, null, 2), 'utf-8');
+}
+
+/** projectDir 绑定的卡片源码 IO 适配器（相对路径 → 项目目录下绝对路径）。 */
+function cardIo(projectDir: string) {
+  return {
+    writeFile: async (rel: string, content: string) => {
+      const abs = path.join(projectDir, rel);
+      await fs.mkdir(path.dirname(abs), { recursive: true });
+      await fs.writeFile(abs, content, 'utf-8');
+    },
+    readFile: async (rel: string): Promise<string | null> => {
+      try {
+        return await fs.readFile(path.join(projectDir, rel), 'utf-8');
+      } catch {
+        return null;
+      }
+    },
+  };
 }
 
 async function tryReadLegacyFile<T>(filePath: string): Promise<T | null> {
@@ -140,7 +162,7 @@ async function hydrateExistingProjectData(projectDir: string, data: ProjectData)
  * 2. 若有旧文件（timeline.json / ai-analysis.json / script-state.json），迁移后返回
  * 3. 否则创建默认 ProjectData 并写入
  */
-export async function loadProjectFile(projectDir: string): Promise<ProjectData> {
+async function loadProjectFileRaw(projectDir: string): Promise<ProjectData> {
   const existing = await readProjectJson(projectDir);
   if (existing) return hydrateExistingProjectData(projectDir, existing);
 
@@ -157,6 +179,18 @@ export async function loadProjectFile(projectDir: string): Promise<ProjectData> 
 }
 
 /**
+ * 加载项目数据并据 tsxPath 把外置卡片源码读回内存（hydrate）。
+ * 旧工程内嵌 tsx 的卡片会在 hydrate 时回填 tsxPath（再次落盘由 dehydrate 写出独立文件）。
+ */
+export async function loadProjectFile(projectDir: string): Promise<ProjectData> {
+  const data = await loadProjectFileRaw(projectDir);
+  if (data.timeline) {
+    data.timeline = await hydrateTimelineCards(data.timeline, cardIo(projectDir));
+  }
+  return data;
+}
+
+/**
  * 保存项目某一段数据，通过写锁保证并发安全。
  * Web Card 路径已下线，所有卡片走 Motion Card（JSX → Babel 编译 → 运行时沙箱），
  * 源码直接内嵌在 project.json，不再需要把 srcDoc 写到磁盘。
@@ -166,12 +200,23 @@ export async function saveProjectSection(
   section: ProjectSection,
   value: unknown,
 ): Promise<void> {
+  let nextValue = value;
+  if (section === 'timeline' && value) {
+    const timeline = typeof value === 'string' ? JSON.parse(value) : value;
+    if (timeline) {
+      const dehydrated = await dehydrateTimelineCards(
+        timeline as TimelineData,
+        cardIo(projectDir),
+      );
+      nextValue = dehydrated; // 传对象给 merge（卡片 tsx 已外置）
+    }
+  }
   return withWriteLock(projectDir, async () => {
     const current = (await readProjectJson(projectDir)) ?? createDefaultProjectData();
     const merged = mergeProjectSection(
       current,
       section,
-      value as ProjectData[typeof section],
+      nextValue as ProjectData[typeof section],
     );
     await writeProjectJson(projectDir, merged);
   });
