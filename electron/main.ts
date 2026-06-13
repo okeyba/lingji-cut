@@ -76,6 +76,8 @@ import { registerConversationIpc } from './conversations/ipc';
 import { registerMcpIpc } from './mcp/ipc';
 import { registerScriptHistoryIpc } from './script-history/ipc';
 import { LockMonitor } from './ai-edit/lock-watcher';
+import { validateTimeline, type EditError } from '../src/lib/external-edit-validate';
+import { buildEditResult, writeEditResult } from './ai-edit/result-writer';
 import {
   appendAutoRunEvent,
   getAutoRunLogDir,
@@ -1939,6 +1941,17 @@ ipcMain.handle('start-watching', async (_event, dir: string) => {
 
     try {
       const content = await fs.readFile(filePath, 'utf-8');
+      if (relative === 'project.json') {
+        let errors: EditError[] = [];
+        try {
+          const parsed = JSON.parse(content);
+          errors = parsed?.timeline ? validateTimeline(parsed.timeline) : [];
+        } catch (e) {
+          errors = [{ field: 'project.json', message: `非法 JSON: ${(e as Error).message}` }];
+        }
+        await writeEditResult(dir, buildEditResult(errors, new Date().toISOString()));
+        if (errors.length > 0) return; // 脏数据不灌回 Renderer
+      }
       mainWindow?.webContents.send('file-changed', { file: relative, content });
     } catch {
       // 文件可能已被删除，直接忽略。
