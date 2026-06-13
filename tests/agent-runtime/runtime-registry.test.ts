@@ -201,6 +201,95 @@ describe('RuntimeRegistry', () => {
     expect(statuses[statuses.length - 1]).toBe('connected');
   });
 
+  it('start() 立即 resolve 后状态仍是 prompting（不提前回落 connected）', async () => {
+    // 真实时序：AgentSession.start() 只挂监听器即 resolve（不 await 子进程 close）。
+    // 此处 FakeSession 默认 pending=false → start() 立即 resolve，贴近真实。
+    const { registry, sessions } = makeRegistry();
+    attachListeners(registry);
+    await registry.connect({ ...baseConnect });
+    statusEvents = [];
+
+    // sendPrompt 已 await start() resolve；此时仍应处于 prompting（轮未结束）。
+    await registry.sendPrompt(1, [{ type: 'text', text: 'hi' }]);
+
+    expect(registry.get(1)!.status).toBe('prompting');
+    const statuses = statusEvents.map((e) => e.status);
+    expect(statuses).toContain('prompting');
+    // start resolve 不应触发 connected
+    expect(statuses).not.toContain('connected');
+
+    // 文本流式途中：仍是 prompting
+    const s = sessions.find((x) => x.startCalls > 0)!;
+    s.emit({ type: 'text_delta', delta: 'streaming...' });
+    expect(registry.get(1)!.status).toBe('prompting');
+
+    // 只有收到 turn_end 才回落 connected，并 emit turn_complete
+    s.emit({ type: 'turn_end', stopReason: 'end_turn' });
+    expect(registry.get(1)!.status).toBe('connected');
+    const completeEv = runtimeEvents.find((e) => e.event.type === 'turn_complete');
+    expect(completeEv).toBeTruthy();
+    expect(statusEvents[statusEvents.length - 1].status).toBe('connected');
+  });
+
+  it('start() 立即 resolve 后 emit error → 状态变 error', async () => {
+    const { registry, sessions } = makeRegistry();
+    attachListeners(registry);
+    await registry.connect({ ...baseConnect });
+    statusEvents = [];
+    await registry.sendPrompt(1, [{ type: 'text', text: 'hi' }]);
+
+    // start resolve 后仍未结束 → prompting
+    expect(registry.get(1)!.status).toBe('prompting');
+
+    const s = sessions.find((x) => x.startCalls > 0)!;
+    s.emit({ type: 'error', message: 'boom' });
+    expect(registry.get(1)!.status).toBe('error');
+    expect(statusEvents[statusEvents.length - 1].status).toBe('error');
+  });
+
+  it('start() 抛错（spawn 失败）→ emit error event + 状态 error', async () => {
+    const created: FakeSession[] = [];
+    const registry = new RuntimeRegistry({
+      createSession: () => {
+        const s = new FakeSession();
+        s.start = async () => {
+          throw new Error('spawn failed');
+        };
+        created.push(s);
+        return s as any;
+      },
+    });
+    attachListeners(registry);
+    await registry.connect({ ...baseConnect });
+    statusEvents = [];
+    await registry.sendPrompt(1, [{ type: 'text', text: 'hi' }]);
+
+    expect(registry.get(1)!.status).toBe('error');
+    const errEv = runtimeEvents.find((e) => e.event.type === 'error');
+    expect(errEv).toBeTruthy();
+    expect(errEv!.event.message).toContain('spawn failed');
+  });
+
+  it('turn_end 后再次 sendPrompt：新一轮重新进入 prompting 并可再次结束', async () => {
+    const { registry, sessions } = makeRegistry();
+    attachListeners(registry);
+    await registry.connect({ ...baseConnect });
+
+    await registry.sendPrompt(1, [{ type: 'text', text: 'r1' }]);
+    const s1 = sessions.find((x) => x.startCalls > 0)!;
+    s1.emit({ type: 'turn_end', stopReason: 'end_turn' });
+    expect(registry.get(1)!.status).toBe('connected');
+
+    statusEvents = [];
+    await registry.sendPrompt(1, [{ type: 'text', text: 'r2' }]);
+    // 第二轮：start resolve 后仍 prompting
+    expect(registry.get(1)!.status).toBe('prompting');
+    const s2 = sessions.filter((x) => x.startCalls > 0).at(-1)!;
+    expect(s2).not.toBe(s1);
+    s2.emit({ type: 'turn_end', stopReason: 'end_turn' });
+    expect(registry.get(1)!.status).toBe('connected');
+  });
+
   it('cancelTurn 调 session.cancel（轮进行中）', async () => {
     const created: FakeSession[] = [];
     const registry = new RuntimeRegistry({

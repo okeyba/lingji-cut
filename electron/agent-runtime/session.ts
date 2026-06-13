@@ -99,7 +99,16 @@ export class AgentSession {
   }
 
   async start(input: AgentSessionStartInput): Promise<void> {
-    const { def, prompt, cwd, model, parentSession, onEvent } = input;
+    const { def, prompt, cwd, model, parentSession } = input;
+
+    // 包裹 onEvent：任何经 parser 发出的 turn_end / error 都标记 terminalEmitted，
+    // 使 close 兜底（emit turn_end）不会与正常终态重复。
+    const onEvent = (ev: AgentStreamEvent) => {
+      if (ev.type === 'turn_end' || ev.type === 'error') {
+        this.terminalEmitted = true;
+      }
+      input.onEvent(ev);
+    };
 
     // 1) 探测 binPath
     if (!this.binaryManager) {
@@ -172,7 +181,7 @@ export class AgentSession {
 
     child.on('close', (...closeArgs: unknown[]) => {
       const code = typeof closeArgs[0] === 'number' ? (closeArgs[0] as number) : null;
-      // 非 pi 路径：flush parser
+      // 非 pi 路径：flush parser（可能补 emit 末尾的 turn_end）
       this.flushParser?.();
       if (this.cancelled) return;
       if (code != null && code !== 0) {
@@ -181,6 +190,14 @@ export class AgentSession {
           `Agent "${def.id}" 退出码 ${code}`,
           this.stderrBuf.trim() || undefined,
         );
+        return;
+      }
+      // 进程已干净退出：若 parser 未发出任何终态事件（无 turn_end / error），
+      // 兜底 emit turn_end，让上层（RuntimeRegistry）能从 prompting 回落 connected，
+      // 而不是卡在 prompting。flush 后才判断，避免与正常 turn_end 重复。
+      if (!this.terminalEmitted) {
+        this.terminalEmitted = true;
+        onEvent({ type: 'turn_end' });
       }
     });
 

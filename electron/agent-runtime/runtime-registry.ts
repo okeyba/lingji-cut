@@ -209,6 +209,7 @@ export class RuntimeRegistry extends EventEmitter {
         onEvent,
       });
     } catch (err) {
+      // start() 抛错（spawn 失败等）→ error 终态。
       const message = err instanceof Error ? err.message : String(err);
       this.emit('event', {
         conversationId,
@@ -218,9 +219,10 @@ export class RuntimeRegistry extends EventEmitter {
       return;
     }
 
-    // start 已返回但没有显式 turn_end（如 CLI 进程同步结束）时，
-    // 若仍处于 prompting，回落到 connected。
-    settle('connected');
+    // 注意：AgentSession.start() 只挂监听器即 resolve（不 await 子进程 close），
+    // 此时文本可能仍在流式输出。状态保持 'prompting'，回落 'connected' 只由
+    // 该轮 turn_end（AgentStreamEvent）或 error 事件驱动（见 onEvent / settle）。
+    // 进程清退（无 turn_end）由 AgentSession 在 close 时兜底 emit turn_end。
   }
 
   /** 取消当前轮：调 session.cancel；状态回落 connected。 */

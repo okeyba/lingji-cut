@@ -273,6 +273,51 @@ describe('AgentSession', () => {
     expect((errEv?.raw ?? errEv?.message ?? '')).toContain('something broke');
   });
 
+  it('干净退出（code 0）且 parser 未发终态 → 兜底 emit turn_end', async () => {
+    const child = new FakeChild();
+    const bm = makeBinaryManager('/usr/local/bin/codex');
+    const { session } = makeSession(child, bm);
+
+    await session.start({
+      def: codexAgentDef as RuntimeAgentDef,
+      prompt: 'hi',
+      onEvent,
+    });
+
+    // 没有任何 stdout / turn_end，进程干净退出
+    child.emit('close', 0);
+
+    const terminal = events.filter((e) => e.type === 'turn_end' || e.type === 'error');
+    expect(terminal).toHaveLength(1);
+    expect(terminal[0].type).toBe('turn_end');
+  });
+
+  it('parser 已发 turn_end 后干净退出 → 不重复 emit turn_end', async () => {
+    const child = new FakeChild();
+    const bm = makeBinaryManager('/usr/local/bin/claude');
+    const { session } = makeSession(child, bm);
+
+    await session.start({
+      def: claudeAgentDef as RuntimeAgentDef,
+      prompt: 'hi',
+      onEvent,
+    });
+
+    // claude stream-json：assistant 消息带 stop_reason → parser emit turn_end
+    child.stdout.push(
+      JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' },
+      }) + '\n',
+    );
+    const turnEndsBefore = events.filter((e) => e.type === 'turn_end').length;
+    expect(turnEndsBefore).toBe(1);
+
+    child.emit('close', 0);
+    const turnEndsAfter = events.filter((e) => e.type === 'turn_end').length;
+    expect(turnEndsAfter).toBe(1); // 无重复
+  });
+
   it('env: 注入 def.env 与 input.env，过滤 npm_*', async () => {
     const child = new FakeChild();
     const bm = makeBinaryManager('/usr/local/bin/claude');
