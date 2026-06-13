@@ -1,6 +1,7 @@
 import type { PreflightCheck } from './types';
 import { BinaryManager } from './binary-manager';
 import type { AgentConfig } from './config';
+import { getAgentProfile } from './agent-profiles';
 
 export async function runPreflight(
   binaryManager: BinaryManager,
@@ -8,6 +9,7 @@ export async function runPreflight(
   agentId: string,
 ): Promise<PreflightCheck[]> {
   const checks: PreflightCheck[] = [];
+  const profile = getAgentProfile(agentId);
 
   // 1. Node.js
   const nodeVersion = await binaryManager.getNodeVersion();
@@ -35,49 +37,69 @@ export async function runPreflight(
     });
   }
 
-  // 3. Agent 安装状态
-  const installedVersion = await binaryManager.getInstalledVersion();
-  const latestVersion = await binaryManager.getLatestVersion();
+  if (profile.managed) {
+    // managed（claude）：npm 托管的 agent 安装状态 + API Key
+    const agentLabel = profile.binName || 'claude-agent-acp';
 
-  if (installedVersion) {
-    if (latestVersion && installedVersion !== latestVersion) {
-      checks.push({
-        label: 'claude-agent-acp',
-        status: 'warn',
-        message: `已安装 ${installedVersion}，最新 ${latestVersion}`,
-        fixAction: 'upgrade',
-      });
+    // 3. Agent 安装状态
+    const installedVersion = await binaryManager.getInstalledVersion();
+    const latestVersion = await binaryManager.getLatestVersion();
+
+    if (installedVersion) {
+      if (latestVersion && installedVersion !== latestVersion) {
+        checks.push({
+          label: agentLabel,
+          status: 'warn',
+          message: `已安装 ${installedVersion}，最新 ${latestVersion}`,
+          fixAction: 'upgrade',
+        });
+      } else {
+        checks.push({
+          label: agentLabel,
+          status: 'pass',
+          message: `v${installedVersion}`,
+        });
+      }
     } else {
       checks.push({
-        label: 'claude-agent-acp',
-        status: 'pass',
-        message: `v${installedVersion}`,
+        label: agentLabel,
+        status: 'fail',
+        message: '未安装',
+        fixAction: 'install',
       });
     }
-  } else {
-    checks.push({
-      label: 'claude-agent-acp',
-      status: 'fail',
-      message: '未安装',
-      fixAction: 'install',
-    });
-  }
 
-  // 4. API Key
-  const configData = await config.load();
-  const agentEntry = configData.agents[agentId];
-  if (agentEntry?.authMode === 'subscription') {
-    checks.push({ label: 'API Key', status: 'pass', message: '使用官方订阅' });
-  } else {
-    const apiKey = await config.getApiKey(agentId);
-    if (apiKey) {
-      checks.push({ label: 'API Key', status: 'pass', message: '已配置' });
+    // 4. API Key
+    const configData = await config.load();
+    const agentEntry = configData.agents[agentId];
+    if (agentEntry?.authMode === 'subscription') {
+      checks.push({ label: 'API Key', status: 'pass', message: '使用官方订阅' });
     } else {
-      checks.push({
-        label: 'API Key',
-        status: 'warn',
-        message: '未设置 API Key',
-      });
+      const apiKey = await config.getApiKey(agentId);
+      if (apiKey) {
+        checks.push({ label: 'API Key', status: 'pass', message: '已配置' });
+      } else {
+        checks.push({
+          label: 'API Key',
+          status: 'warn',
+          message: '未设置 API Key',
+        });
+      }
+    }
+  } else {
+    // unmanaged（pi）：仅检查 requiredBinary 是否在 PATH，不代管 npm 安装与凭证
+    if (profile.requiredBinary) {
+      const resolved = await binaryManager.resolveBinary(profile.requiredBinary);
+      if (resolved) {
+        checks.push({ label: profile.requiredBinary, status: 'pass', message: resolved });
+      } else {
+        checks.push({
+          label: profile.requiredBinary,
+          status: 'fail',
+          message: profile.installGuide ?? `未找到 ${profile.requiredBinary}，请先安装`,
+          fixAction: 'install',
+        });
+      }
     }
   }
 
