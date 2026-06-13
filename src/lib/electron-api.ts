@@ -369,6 +369,9 @@ export interface ElectronAPI {
   startWatching: (dir: string) => Promise<void>;
   stopWatching: () => Promise<void>;
   onFileChanged: (callback: (data: { file: string; content: string }) => void) => () => void;
+  onAiEditLockChanged: (
+    callback: (change: { active: boolean; scope?: 'video' | 'script' }) => void,
+  ) => () => void;
   onFileTreeChanged: (callback: (data: { type: string; file: string }) => void) => () => void;
   readDirectory: (dir: string) => Promise<FileEntry[]>;
   setMenuContext: (context: MenuContext) => Promise<void>;

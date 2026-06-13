@@ -75,6 +75,7 @@ import { HeadlessAcpProvider, type HeadlessAcpProviderEvent } from './acp/headle
 import { registerConversationIpc } from './conversations/ipc';
 import { registerMcpIpc } from './mcp/ipc';
 import { registerScriptHistoryIpc } from './script-history/ipc';
+import { LockMonitor } from './ai-edit/lock-watcher';
 import {
   appendAutoRunEvent,
   getAutoRunLogDir,
@@ -199,6 +200,7 @@ let menuContext: MenuContext = {
   isAutoRunning: false,
 };
 let fileWatcher: FSWatcher | null = null;
+let lockPollTimer: ReturnType<typeof setInterval> | null = null;
 const activeTtsRequests = new Map<string, AbortController>();
 let isAppQuitting = false;
 const videoImportService = getVideoImportService();
@@ -1952,11 +1954,28 @@ ipcMain.handle('start-watching', async (_event, dir: string) => {
     const relative = path.relative(dir, filePath);
     mainWindow?.webContents.send('file-tree-changed', { type: 'unlink', file: relative });
   });
+
+  // AI 编辑会话锁轮询（chokidar 默认忽略点目录，这里用独立定时器轮询 .lingji/edit-lock.json）
+  if (lockPollTimer) clearInterval(lockPollTimer);
+  const lockMon = new LockMonitor({
+    readLock: async () => {
+      try {
+        return await fs.readFile(path.join(dir, '.lingji', 'edit-lock.json'), 'utf-8');
+      } catch {
+        return null;
+      }
+    },
+    now: () => Date.now(),
+    onChange: (change) => mainWindow?.webContents.send('ai-edit-lock-changed', change),
+  });
+  lockPollTimer = setInterval(() => { void lockMon.poll(); }, 500);
+  void lockMon.poll();
 });
 
 ipcMain.handle('stop-watching', async () => {
   await fileWatcher?.close();
   fileWatcher = null;
+  if (lockPollTimer) { clearInterval(lockPollTimer); lockPollTimer = null; }
 });
 
 ipcMain.handle('read-directory', async (_event, dir: string) => {
