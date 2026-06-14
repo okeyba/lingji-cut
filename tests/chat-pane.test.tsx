@@ -58,6 +58,18 @@ vi.mock('../src/hooks/use-conversation-detail', () => ({
   useConversationDetail: () => detailState,
 }));
 
+// ChatPane header 渲染 ConversationDropdown，后者依赖 useConversationList。
+vi.mock('../src/hooks/use-conversation-list', () => ({
+  useConversationList: () => ({
+    conversations: [],
+    activeConversationId: null,
+    loading: false,
+    createConversation: vi.fn(async () => ({ id: 1, agentType: 'claude' })),
+    deleteConversation: vi.fn(),
+    renameConversation: vi.fn(async () => undefined),
+  }),
+}));
+
 vi.mock('../src/hooks/use-connection-lifecycle', () => ({
   useConnectionLifecycle: () => ({
     status: connectionState.status,
@@ -78,6 +90,20 @@ vi.mock('../src/hooks/use-connection-lifecycle', () => ({
 
 // 在 mock 声明之后再导入被测组件。
 import { ChatPane } from '../src/components/agent/ChatPane';
+
+// 必填回调的轻量占位 + onOpenAgentSettings 探针。
+const onOpenAgentSettings = vi.fn();
+const chatPaneCallbacks = {
+  explicitConversationId: null as number | null,
+  onSelectConversation: () => undefined,
+  onCreateConversation: () => undefined,
+  onDeleteConversation: () => undefined,
+  onOpenAgentSettings,
+};
+
+function renderChatPane(props: { projectDir: string; explicitActivated: boolean }) {
+  return renderToStaticMarkup(<ChatPane {...props} {...chatPaneCallbacks} />);
+}
 
 function makeDetail(overrides: Partial<ConversationDetail> = {}): ConversationDetail {
   return {
@@ -127,9 +153,7 @@ beforeEach(() => {
 
 describe('ChatPane 渲染会话', () => {
   it('renders header title, agent icon/name, message and composer', () => {
-    const html = renderToStaticMarkup(
-      <ChatPane projectDir="/tmp/project-a" explicitActivated={true} />,
-    );
+    const html = renderChatPane({ projectDir: "/tmp/project-a", explicitActivated: true });
     // ChatHeader 标题
     expect(html).toContain('调试会话');
     // 当前 agent 名 + 图标（agentType=codex）
@@ -139,17 +163,24 @@ describe('ChatPane 渲染会话', () => {
     expect(html).toContain('我来处理');
     // composer 由 MessageInput 渲染（占位文案）
     expect(html).toContain('输入消息开始对话');
+    // header 含会话切换 icon（ConversationDropdown 触发）。
+    expect(html).toContain('data-testid="conversation-dropdown-trigger"');
+    // header 含 agent 只读标记（点击进设置）。
+    expect(html).toContain('data-testid="chat-header-agent"');
+    // composer 含模型芯片（agentId=codex → ModelPicker）。
+    expect(html).toContain('data-agent-id="codex"');
+    expect(html).toContain('data-testid="model-picker-agent"');
   });
 
   it('shows resumable marker when externalId exists, otherwise new session', () => {
     detailState.detail = makeDetail({ externalId: 'sess-123' });
     expect(
-      renderToStaticMarkup(<ChatPane projectDir="/tmp/project-a" explicitActivated={true} />),
+      renderChatPane({ projectDir: "/tmp/project-a", explicitActivated: true }),
     ).toContain('可恢复历史会话');
 
     detailState.detail = makeDetail({ externalId: null });
     expect(
-      renderToStaticMarkup(<ChatPane projectDir="/tmp/project-a" explicitActivated={true} />),
+      renderChatPane({ projectDir: "/tmp/project-a", explicitActivated: true }),
     ).toContain('新会话');
   });
 });
@@ -157,26 +188,20 @@ describe('ChatPane 渲染会话', () => {
 describe('ChatPane 连接状态', () => {
   it('shows connected status label', () => {
     connectionState.status = 'connected';
-    const html = renderToStaticMarkup(
-      <ChatPane projectDir="/tmp/project-a" explicitActivated={true} />,
-    );
+    const html = renderChatPane({ projectDir: "/tmp/project-a", explicitActivated: true });
     expect(html).toContain('已连接');
   });
 
   it('shows prompting status label and disables auto-connect hint when activated', () => {
     connectionState.status = 'prompting';
-    const html = renderToStaticMarkup(
-      <ChatPane projectDir="/tmp/project-a" explicitActivated={true} />,
-    );
+    const html = renderChatPane({ projectDir: "/tmp/project-a", explicitActivated: true });
     expect(html).toContain('思考中...');
     // explicitActivated=true 时不显示自动连接提示
     expect(html).not.toContain('发送消息后自动建立 ACP 连接');
   });
 
   it('shows connect hint when not explicitly activated', () => {
-    const html = renderToStaticMarkup(
-      <ChatPane projectDir="/tmp/project-a" explicitActivated={false} />,
-    );
+    const html = renderChatPane({ projectDir: "/tmp/project-a", explicitActivated: false });
     expect(html).toContain('当前仅展示会话内容');
     expect(html).toContain('发送消息后自动建立 ACP 连接');
   });
@@ -186,17 +211,13 @@ describe('ChatPane 连接状态', () => {
       turns: [assistantTurn(2, '正文')],
       usage: { used: 50, size: 100 },
     };
-    const html = renderToStaticMarkup(
-      <ChatPane projectDir="/tmp/project-a" explicitActivated={true} />,
-    );
+    const html = renderChatPane({ projectDir: "/tmp/project-a", explicitActivated: true });
     expect(html).toContain('上下文 50.0%');
   });
 
   it('shows autoConnectError when present', () => {
     connectionState.autoConnectError = 'spawn ENOENT';
-    const html = renderToStaticMarkup(
-      <ChatPane projectDir="/tmp/project-a" explicitActivated={true} />,
-    );
+    const html = renderChatPane({ projectDir: "/tmp/project-a", explicitActivated: true });
     expect(html).toContain('连接失败：spawn ENOENT');
   });
 });
@@ -204,9 +225,7 @@ describe('ChatPane 连接状态', () => {
 describe('ChatPane 权限卡', () => {
   it('renders pending permission card through MessageList', () => {
     connectionState.pendingPermission = makePending();
-    const html = renderToStaticMarkup(
-      <ChatPane projectDir="/tmp/project-a" explicitActivated={true} />,
-    );
+    const html = renderChatPane({ projectDir: "/tmp/project-a", explicitActivated: true });
     expect(html).toContain('需要你授权工具调用');
     expect(html).toContain('write_text_file');
     expect(html).toContain('允许一次');
@@ -218,28 +237,23 @@ describe('ChatPane 空态', () => {
     detailState.conversationId = null;
     detailState.detail = null;
     detailState.runtime = null;
-    const html = renderToStaticMarkup(
-      <ChatPane projectDir="/tmp/project-a" explicitActivated={false} />,
-    );
+    const html = renderChatPane({ projectDir: "/tmp/project-a", explicitActivated: false });
     expect(html).toContain('尚未选择会话');
-    expect(html).toContain('先创建一个会话');
+    // 空态也渲染会话切换入口（ConversationDropdown）。
+    expect(html).toContain('data-testid="conversation-dropdown-trigger"');
   });
 
   it('renders loading state while detail not yet loaded', () => {
     detailState.detail = null;
     detailState.loading = true;
-    const html = renderToStaticMarkup(
-      <ChatPane projectDir="/tmp/project-a" explicitActivated={true} />,
-    );
+    const html = renderChatPane({ projectDir: "/tmp/project-a", explicitActivated: true });
     expect(html).toContain('正在加载会话详情');
   });
 
   it('renders error state when detail load fails', () => {
     detailState.detail = null;
     detailState.error = '网络错误';
-    const html = renderToStaticMarkup(
-      <ChatPane projectDir="/tmp/project-a" explicitActivated={true} />,
-    );
+    const html = renderChatPane({ projectDir: "/tmp/project-a", explicitActivated: true });
     expect(html).toContain('会话详情加载失败：网络错误');
   });
 });

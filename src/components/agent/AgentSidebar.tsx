@@ -4,26 +4,29 @@ import { springs, durations, easings } from '../../ui/lib/motion';
 import { useScriptStore } from '../../store/script';
 import { getCurrentProjectDir } from '../../store/timeline';
 import { useConversationList } from '../../hooks/use-conversation-list';
-import { getPreferredAgentType } from '../../lib/agent-api';
-import { DEFAULT_AGENT_ID } from '../../lib/agent-presentation';
 import { AgentHeader } from './AgentHeader';
-import { ConversationToolbar } from './ConversationToolbar';
-import { SessionListPane } from './SessionListPane';
 import { ChatPane } from './ChatPane';
 import styles from './AgentSidebar.module.css';
 import { ConversationWorkspaceProvider } from '../../contexts/conversation-workspace-context';
 import { AcpConnectionsProvider, useAcpConnections } from '../../contexts/acp-connections-context';
 import { ConversationRuntimeProvider } from '../../contexts/conversation-runtime-context';
 import { QUICK_ACTION_CONVERSATION_EVENT } from '../../lib/quick-action-conversation';
-import {
-  loadAgentSessionListCollapsed,
-  saveAgentSessionListCollapsed,
-} from '../../lib/agent-sidebar-storage';
 
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 700;
 
-function AgentSidebarWorkspace({ projectDir }: { projectDir: string | null }) {
+interface AgentSidebarProps {
+  /** 打开设置中心并定位 Agent tab（点击对话头部 agent 只读标记触发）。 */
+  onOpenAgentSettings?: () => void;
+}
+
+function AgentSidebarWorkspace({
+  projectDir,
+  onOpenAgentSettings,
+}: {
+  projectDir: string | null;
+  onOpenAgentSettings?: () => void;
+}) {
   const conversationProjectId = useMemo(() => projectDir, [projectDir]);
 
   if (!conversationProjectId) {
@@ -38,27 +41,27 @@ function AgentSidebarWorkspace({ projectDir }: { projectDir: string | null }) {
     <ConversationWorkspaceProvider projectId={conversationProjectId}>
       <AcpConnectionsProvider>
         <ConversationRuntimeProvider>
-          <SidebarWorkspaceShell projectDir={conversationProjectId} />
+          <SidebarWorkspaceShell
+            projectDir={conversationProjectId}
+            onOpenAgentSettings={onOpenAgentSettings}
+          />
         </ConversationRuntimeProvider>
       </AcpConnectionsProvider>
     </ConversationWorkspaceProvider>
   );
 }
 
-export function SidebarWorkspaceShell({ projectDir }: { projectDir: string }) {
+export function SidebarWorkspaceShell({
+  projectDir,
+  onOpenAgentSettings,
+}: {
+  projectDir: string;
+  onOpenAgentSettings?: () => void;
+}) {
   const [explicitConversationId, setExplicitConversationId] = useState<number | null>(null);
-  const [sessionListCollapsed, setSessionListCollapsed] = useState(() =>
-    loadAgentSessionListCollapsed(),
-  );
-  // 新建会话时使用的 agent，由用户在工具栏的 AgentPicker 中显式选择。
-  // 同步默认 'claude'，挂载后异步用 getPreferredAgentType() 纠正。
-  const [selectedAgentId, setSelectedAgentId] = useState<string>(DEFAULT_AGENT_ID);
   const connections = useAcpConnections();
   const {
-    loading,
     activeConversationId,
-    refresh,
-    createConversation,
     deleteConversation,
     setActiveConversation,
   } = useConversationList();
@@ -71,26 +74,11 @@ export function SidebarWorkspaceShell({ projectDir }: { projectDir: string }) {
     }
   }, [explicitConversationId, activeConversationId]);
 
-  // 首屏用 preferred agent 纠正 selectedAgentId 的默认值。
-  // 仅在用户尚未显式改动（仍为 DEFAULT_AGENT_ID）时纠正，避免覆盖用户选择。
-  useEffect(() => {
-    let cancelled = false;
-    void getPreferredAgentType().then((preferred) => {
-      if (cancelled) return;
-      setSelectedAgentId((current) =>
-        current === DEFAULT_AGENT_ID && preferred ? preferred : current,
-      );
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  async function handleCreateConversation() {
-    const created = await createConversation({
-      agentType: selectedAgentId || DEFAULT_AGENT_ID,
-    });
-    setExplicitConversationId(created.id);
+  // 新建会话由 ConversationDropdown 自己用 getPreferredAgentType() 创建后回调；
+  // 这里仅负责切到新会话以触发连接。
+  function handleCreatedConversation(conversationId: number) {
+    setExplicitConversationId(conversationId);
+    void setActiveConversation(conversationId);
   }
 
   async function handleSelectConversation(conversationId: number) {
@@ -110,10 +98,6 @@ export function SidebarWorkspaceShell({ projectDir }: { projectDir: string }) {
     }
     await deleteConversation(conversationId);
   }
-
-  useEffect(() => {
-    saveAgentSessionListCollapsed(sessionListCollapsed);
-  }, [sessionListCollapsed]);
 
   useEffect(() => {
     const onActivate = (event: Event) => {
@@ -140,43 +124,24 @@ export function SidebarWorkspaceShell({ projectDir }: { projectDir: string }) {
 
   return (
     <div className="flex-1 min-w-0 min-h-0 flex">
-      <div
-        className={`border-r border-mac-separator bg-white/[0.02] flex flex-col min-h-0 transition-[width] duration-200 ease-out ${
-          sessionListCollapsed ? 'w-[64px] min-w-[64px] max-w-[64px]' : 'w-[240px] min-w-[220px] max-w-[280px]'
-        }`}
-      >
-        <ConversationToolbar
-          collapsed={sessionListCollapsed}
-          loading={loading}
-          selectedAgentId={selectedAgentId}
-          onSelectAgent={setSelectedAgentId}
-          onToggleCollapse={() => setSessionListCollapsed((current) => !current)}
-          onCreateConversation={() => void handleCreateConversation()}
-          onRefresh={() => void refresh()}
-        />
-        <SessionListPane
-          collapsed={sessionListCollapsed}
-          explicitConversationId={explicitConversationId}
-          onSelectConversation={(conversationId) => {
-            void handleSelectConversation(conversationId);
-          }}
-          onDeleteConversation={(conversationId) => {
-            void handleDeleteConversation(conversationId);
-          }}
-          onCreateConversation={() => {
-            void handleCreateConversation();
-          }}
-        />
-      </div>
       <ChatPane
         projectDir={projectDir}
         explicitActivated={explicitConversationId !== null}
+        explicitConversationId={explicitConversationId}
+        onSelectConversation={(conversationId) => {
+          void handleSelectConversation(conversationId);
+        }}
+        onCreateConversation={handleCreatedConversation}
+        onDeleteConversation={(conversationId) => {
+          void handleDeleteConversation(conversationId);
+        }}
+        onOpenAgentSettings={onOpenAgentSettings}
       />
     </div>
   );
 }
 
-export function AgentSidebar() {
+export function AgentSidebar({ onOpenAgentSettings }: AgentSidebarProps = {}) {
   const scriptProjectDir = useScriptStore((s) => s.projectDir);
   const [width, setWidth] = useState(420);
   const resizingRef = useRef(false);
@@ -221,7 +186,10 @@ export function AgentSidebar() {
       <div className={styles.resizeHandle} onMouseDown={handleResizeStart} />
       <div className={styles.content}>
         <AgentHeader />
-        <AgentSidebarWorkspace projectDir={projectDir} />
+        <AgentSidebarWorkspace
+          projectDir={projectDir}
+          onOpenAgentSettings={onOpenAgentSettings}
+        />
       </div>
     </m.aside>
   );

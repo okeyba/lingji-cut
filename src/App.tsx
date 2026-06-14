@@ -16,7 +16,7 @@ import { resolveProjectLandingPage } from './lib/project-navigation';
 import { createBlankScriptProjectState } from './lib/script-project';
 import { Editor } from './pages/Editor';
 import { ScriptWorkbench } from './pages/ScriptWorkbench';
-import { Settings } from './pages/Settings';
+import { Settings, type SettingsTab } from './pages/Settings';
 import { Setup } from './pages/Setup';
 import { AutoRunController } from './components/AutoRunController';
 import { ImportProjectDialog } from './components/ImportProjectDialog';
@@ -55,6 +55,7 @@ export default function App() {
   const [page, setPageRaw] = useState<AppPage>('welcome');
   const [previousPage, setPreviousPage] = useState<AppPage>('welcome');
   const [pageTransitionReason, setPageTransitionReason] = useState<PageTransitionReason>('default');
+  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab | undefined>(undefined);
 
   const setPage = useCallback(
     (next: AppPage, reason: PageTransitionReason = 'default') => {
@@ -653,6 +654,12 @@ export default function App() {
   );
 
   const handleOpenSettings = useCallback(() => {
+    setSettingsInitialTab(undefined);
+    setPage('settings');
+  }, [setPage]);
+
+  const handleOpenAgentSettings = useCallback(() => {
+    setSettingsInitialTab('agent');
     setPage('settings');
   }, [setPage]);
 
@@ -1187,7 +1194,7 @@ export default function App() {
                   onImportProject={handleOpenImportProject}
                 />
               ) : page === 'settings' ? (
-                <Settings onBack={() => setPage(previousPage)} />
+                <Settings onBack={() => setPage(previousPage)} initialTab={settingsInitialTab} />
               ) : page === 'auto-run' ? (
                 <AutoRunController setPage={setPage} />
               ) : (
@@ -1220,7 +1227,7 @@ export default function App() {
           </AppErrorBoundary>
         </div>
         <AnimatePresence initial={false}>
-          {agentSidebarOpen && <AgentSidebar />}
+          {agentSidebarOpen && <AgentSidebar onOpenAgentSettings={handleOpenAgentSettings} />}
         </AnimatePresence>
       </div>
       <AppStatusBar />

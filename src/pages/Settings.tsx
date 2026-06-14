@@ -10,7 +10,7 @@ import { Button, Tabs, TabsContent } from '../ui';
 import styles from './Settings.module.css';
 import type { SettingsLeaveGuard } from '../components/settings/useSettingsTabGuard';
 
-type SettingsTab =
+export type SettingsTab =
   | 'ai-config'
   | 'tts'
   | 'agent'
@@ -29,10 +29,12 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Bot }[] = [
 
 interface SettingsProps {
   onBack: () => void;
+  /** 初始定位的 tab（如从对话头部 agent 标记进入时定位 'agent'）。 */
+  initialTab?: SettingsTab;
 }
 
-export function Settings({ onBack }: SettingsProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('ai-config');
+export function Settings({ onBack, initialTab }: SettingsProps) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'ai-config');
   const tabLeaveGuardRef = useRef<SettingsLeaveGuard | null>(null);
 
   const handleProtectedLeave = useCallback(

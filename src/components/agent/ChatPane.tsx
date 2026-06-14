@@ -1,34 +1,44 @@
 /**
- * ChatPane — 对话容器，替换 ConversationDetailPane（B8）。
+ * ChatPane — 对话容器（T6 重做）。
  *
  * 职责拆分：
- *  - 数据/连接：原样复用 useConversationDetail + useConnectionLifecycle（不改数据流）。
- *  - ChatHeader：标题 + 连接状态 + 上下文用量 + 可恢复标记 + 当前 agent 名/图标。
- *  - 消息区：MessageList（B5），承接原内联 turns.map + PermissionPrompt。
- *  - 底部：ChatComposer（B6），透传原 MessageInput 全部 props。
+ *  - 数据/连接：复用 useConversationDetail + useConnectionLifecycle（不改数据流）。
+ *  - ChatHeader：左侧 ConversationDropdown（会话切换/新建）+ 会话标题；
+ *    右侧连接状态 + 上下文用量 + agent 只读标记（点击进设置）。
+ *  - 消息区：MessageList，承接 turns + PermissionPrompt。
+ *  - 底部：ChatComposer，接 T5 的 agentId/modelId/onModelChange/onOpenAgentSettings。
  *
- * 权限卡位置决策：旧 pane 把 PermissionPrompt 常驻在输入框上方（pane 级）。
- * B5 MessageList 已把权限卡挂到最后一个 assistant turn（无 assistant turn 时
- * 在列表末尾兜底渲染），并在 turns / pendingPermission 变化时自动滚到底。
- * 因此这里改为「权限卡随消息区滚动」，pendingPermission 时仍可见且会滚到，
- * 行为不回归，且消除了 pane 级与 block 级两处重复的 PermissionPrompt。
+ * 模型：会话级受控 state，默认取该 agent 的 presentation.defaultModel；
+ * 发送时经 connection.send(blocks, { model }) → sendPrompt 透传。
  *
- * 本任务 showAgentPicker 固定为 false：已存在会话不换 agent；
- * 新建会话选 agent 由 B9 在新建流程中处理。
+ * 会话的切换/新建已收敛到 header 的 ConversationDropdown（替换旧的左侧 SessionListPane）。
+ * 新建/选择/删除回调由上层 SidebarWorkspaceShell 提供（维护 explicitConversationId + 连接）。
  */
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { EmptyState } from '../../ui';
 import { useConversationDetail } from '../../hooks/use-conversation-detail';
 import { useConnectionLifecycle } from '../../hooks/use-connection-lifecycle';
 import type { PromptInputBlock } from '../../../electron/acp/types';
+import { getAgentPresentation } from '../../lib/agent-presentation';
 import { AgentIcon } from './AgentIcon';
 import { MessageList } from './MessageList';
 import { ChatComposer } from './ChatComposer';
+import { ConversationDropdown } from './ConversationDropdown';
 
 interface ChatPaneProps {
   projectDir: string | null;
   explicitActivated: boolean;
+  /** 当前显式进入的会话 id（透传给 ConversationDropdown 标记「已进入」）。 */
+  explicitConversationId: number | null;
+  /** 选择会话回调。 */
+  onSelectConversation: (conversationId: number) => void;
+  /** 新建会话回调（创建后切到新会话）。 */
+  onCreateConversation: (conversationId: number) => void;
+  /** 删除会话回调。 */
+  onDeleteConversation: (conversationId: number) => void;
+  /** 打开设置中心并定位 Agent tab（点击 agent 只读标记触发）。 */
+  onOpenAgentSettings?: () => void;
 }
 
 function formatConnectionStatus(status: string): string {
@@ -48,21 +58,6 @@ function formatConnectionStatus(status: string): string {
   }
 }
 
-/** agentId → 展示名（与 AssistantMessage 一致）。 */
-function agentDisplayName(agentId: string): string {
-  const normalized = agentId.toLowerCase().replace(/-acp$/, '');
-  switch (normalized) {
-    case 'claude':
-      return 'Claude';
-    case 'codex':
-      return 'Codex';
-    case 'pi':
-      return 'Pi';
-    default:
-      return '助手';
-  }
-}
-
 interface ChatHeaderProps {
   title: string;
   connectionStatus: string;
@@ -70,6 +65,11 @@ interface ChatHeaderProps {
   usageLabel: string | null;
   agentType?: string;
   showConnectHint: boolean;
+  explicitConversationId: number | null;
+  onSelectConversation: (conversationId: number) => void;
+  onCreateConversation: (conversationId: number) => void;
+  onDeleteConversation: (conversationId: number) => void;
+  onOpenAgentSettings?: () => void;
 }
 
 function ChatHeader({
@@ -79,33 +79,62 @@ function ChatHeader({
   usageLabel,
   agentType,
   showConnectHint,
+  explicitConversationId,
+  onSelectConversation,
+  onCreateConversation,
+  onDeleteConversation,
+  onOpenAgentSettings,
 }: ChatHeaderProps) {
+  const agentPresentation = agentType ? getAgentPresentation(agentType) : null;
   return (
-    <div className="px-4 py-3 border-b border-mac-separator shrink-0">
+    <div className="px-3 py-2.5 border-b border-mac-separator shrink-0">
       <div className="flex items-center gap-2 min-w-0">
-        {agentType ? <AgentIcon agentId={agentType} size={16} /> : null}
-        <div className="text-sm font-semibold text-white truncate">{title}</div>
-        {agentType ? (
-          <span className="text-[11px] text-mac-text-muted/60 shrink-0">
-            {agentDisplayName(agentType)}
-          </span>
+        <ConversationDropdown
+          explicitConversationId={explicitConversationId}
+          onSelectConversation={onSelectConversation}
+          onCreateConversation={onCreateConversation}
+          onDeleteConversation={onDeleteConversation}
+        />
+        <div className="text-sm font-semibold text-white truncate min-w-0 flex-1">
+          {title}
+        </div>
+        {/* Agent 只读标记：展示当前 agent，点击进设置切换 */}
+        {agentPresentation ? (
+          <button
+            type="button"
+            data-testid="chat-header-agent"
+            onClick={() => onOpenAgentSettings?.()}
+            title={`${agentPresentation.displayName} — 在设置中切换 Agent`}
+            className="shrink-0 inline-flex items-center gap-1.5 h-6 px-2 rounded-md border border-white/[0.06] bg-white/[0.03] text-[11px] text-mac-text-muted/80 hover:text-white hover:bg-white/[0.06] cursor-pointer"
+          >
+            <AgentIcon agentId={agentType!} size={13} />
+            <span>{agentPresentation.displayName}</span>
+          </button>
         ) : null}
       </div>
-      <div className="mt-1 flex items-center gap-3 text-[11px] text-mac-text-muted/60">
+      <div className="mt-1.5 flex items-center gap-3 text-[11px] text-mac-text-muted/60">
         <span>{formatConnectionStatus(connectionStatus)}</span>
         {resumable ? <span>可恢复历史会话</span> : <span>新会话</span>}
         {usageLabel ? <span>{usageLabel}</span> : null}
       </div>
       {showConnectHint ? (
         <div className="mt-2 text-[11px] text-mac-text-muted/50">
-          当前仅展示会话内容。点击左侧会话或发送消息后，才会建立 ACP 连接。
+          当前仅展示会话内容。选择会话或发送消息后，才会建立 ACP 连接。
         </div>
       ) : null}
     </div>
   );
 }
 
-export function ChatPane({ projectDir, explicitActivated }: ChatPaneProps) {
+export function ChatPane({
+  projectDir,
+  explicitActivated,
+  explicitConversationId,
+  onSelectConversation,
+  onCreateConversation,
+  onDeleteConversation,
+  onOpenAgentSettings,
+}: ChatPaneProps) {
   const { conversationId, detail, runtime, loading, error } = useConversationDetail();
   const connection = useConnectionLifecycle({
     conversationId: conversationId ?? -1,
@@ -124,6 +153,14 @@ export function ChatPane({ projectDir, explicitActivated }: ChatPaneProps) {
     return `上下文 ${Math.max(0, Math.min(100, percent)).toFixed(1)}%`;
   }, [runtime?.usage]);
 
+  // 会话级模型选择：默认取该 agent 的 defaultModel。会话切换时重置为新 agent 的默认。
+  const agentType = detail?.agentType;
+  const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const presentation = agentType ? getAgentPresentation(agentType) : null;
+    setSelectedModel(presentation?.defaultModel ?? presentation?.models?.[0]?.id);
+  }, [agentType, conversationId]);
+
   const ensureConnected = useCallback(async () => {
     if (!conversationId || !projectDir) return;
     if (connection.status === 'connected' || connection.status === 'prompting') return;
@@ -138,18 +175,28 @@ export function ChatPane({ projectDir, explicitActivated }: ChatPaneProps) {
     async (blocks: PromptInputBlock[]) => {
       if (!conversationId || !projectDir) return;
       await ensureConnected();
-      await connection.send(blocks);
+      await connection.send(blocks, selectedModel ? { model: selectedModel } : undefined);
     },
-    [conversationId, projectDir, ensureConnected, connection],
+    [conversationId, projectDir, ensureConnected, connection, selectedModel],
   );
 
   if (conversationId === null) {
     return (
-      <div className="flex-1 flex items-center justify-center px-6">
-        <EmptyState
-          title="尚未选择会话"
-          description="先创建一个会话，或者从左侧选择一个已有会话。"
-        />
+      <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+        <div className="px-3 py-2.5 border-b border-mac-separator shrink-0">
+          <ConversationDropdown
+            explicitConversationId={explicitConversationId}
+            onSelectConversation={onSelectConversation}
+            onCreateConversation={onCreateConversation}
+            onDeleteConversation={onDeleteConversation}
+          />
+        </div>
+        <div className="flex-1 flex items-center justify-center px-6">
+          <EmptyState
+            title="尚未选择会话"
+            description="点击上方会话切换按钮新建会话，或选择一个已有会话。"
+          />
+        </div>
       </div>
     );
   }
@@ -179,6 +226,11 @@ export function ChatPane({ projectDir, explicitActivated }: ChatPaneProps) {
         usageLabel={usageLabel}
         agentType={detail?.agentType}
         showConnectHint={!explicitActivated}
+        explicitConversationId={explicitConversationId}
+        onSelectConversation={onSelectConversation}
+        onCreateConversation={onCreateConversation}
+        onDeleteConversation={onDeleteConversation}
+        onOpenAgentSettings={onOpenAgentSettings}
       />
 
       <MessageList
@@ -198,7 +250,6 @@ export function ChatPane({ projectDir, explicitActivated }: ChatPaneProps) {
           </div>
         ) : null}
         <ChatComposer
-          showAgentPicker={false}
           onSend={(blocks) => void handleSend(blocks)}
           onCancel={isPrompting ? () => void connection.cancel() : undefined}
           disabled={conversationId === null || !projectDir}
@@ -218,6 +269,10 @@ export function ChatPane({ projectDir, explicitActivated }: ChatPaneProps) {
           availableModes={connection.availableModes}
           currentModeId={connection.currentModeId}
           onModeChange={(modeId) => void connection.setMode(modeId)}
+          agentId={agentType}
+          modelId={selectedModel}
+          onModelChange={setSelectedModel}
+          onOpenAgentSettings={onOpenAgentSettings}
         />
         {!explicitActivated ? (
           <div className="text-[10px] text-mac-text-muted/40 px-1">

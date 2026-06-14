@@ -48,8 +48,11 @@ export function useConnectionLifecycle({
     };
   }, [agentType, autoConnectOnActive, connection, isActive, projectDir, sessionId]);
 
-  async function send(contents: PromptInputBlock[]): Promise<void> {
-    await connection.sendPrompt(contents);
+  async function send(
+    contents: PromptInputBlock[],
+    opts?: { model?: string },
+  ): Promise<void> {
+    await connection.sendPrompt(contents, opts);
   }
 
   async function cancel(): Promise<void> {

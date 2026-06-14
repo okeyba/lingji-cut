@@ -10,7 +10,6 @@ import {
 } from '../src/contexts/conversation-workspace-context';
 import { AcpConnectionsProvider } from '../src/contexts/acp-connections-context';
 import { ConversationRuntimeProvider } from '../src/contexts/conversation-runtime-context';
-import { SessionListPane } from '../src/components/agent/SessionListPane';
 import { ChatPane } from '../src/components/agent/ChatPane';
 
 function buildConversationApiMock(): ConversationAPI {
@@ -181,20 +180,21 @@ describe('conversation workspace skeleton', () => {
         <AcpConnectionsProvider>
           <ConversationRuntimeProvider>
             <div>
-              <SessionListPane
+              <ChatPane
+                projectDir="/tmp/project-a"
+                explicitActivated={false}
                 explicitConversationId={null}
                 onSelectConversation={() => undefined}
-                onDeleteConversation={() => undefined}
                 onCreateConversation={() => undefined}
+                onDeleteConversation={() => undefined}
               />
-              <ChatPane projectDir="/tmp/project-a" explicitActivated={false} />
             </div>
           </ConversationRuntimeProvider>
         </AcpConnectionsProvider>
       </ConversationWorkspaceProvider>,
     );
 
-    expect(html).toContain('当前项目还没有会话');
-    expect(html).toContain('先创建一个会话');
+    // ChatPane 渲染会话切换入口（ConversationDropdown 触发 icon）。
+    expect(html).toContain('data-testid="conversation-dropdown-trigger"');
   });
 });
