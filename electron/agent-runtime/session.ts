@@ -18,8 +18,6 @@ import { detectAgent, createDetectionDeps } from './detection';
 import type { RuntimeAgentDef } from './types';
 import type { AgentStreamEvent } from './event-model';
 import type { ResolvedAgentSkill } from '../acp/types';
-import { createClaudeStreamParser } from './parsers/claude-stream';
-import { createCodexParser } from './parsers/codex-json-event';
 import { createPiRpcSession } from './parsers/pi-rpc';
 import { buildBundledNodeSpawn } from './bundled-runtime';
 
@@ -187,7 +185,7 @@ export class AgentSession {
     ];
 
     // 3) spawn
-    const needsStdin = def.promptViaStdin === true || def.streamFormat === 'pi-rpc';
+    const needsStdin = def.streamFormat === 'pi-rpc';
     const stdio: Array<'pipe' | 'ignore'> = [
       needsStdin ? 'pipe' : 'ignore',
       'pipe',
@@ -247,30 +245,6 @@ export class AgentSession {
 
     // 4) 按 streamFormat 接 parser
     switch (def.streamFormat) {
-      case 'claude-stream-json': {
-        const parser = createClaudeStreamParser(onEvent);
-        this.flushParser = () => parser.flush();
-        child.stdout?.on('data', (chunk: unknown) => parser.feed(chunkToString(chunk)));
-        // claude 经 stdin 收 prompt（单轮：写后 end）
-        if (def.promptViaStdin && child.stdin) {
-          child.stdin.write(prompt);
-          child.stdin.end();
-        }
-        break;
-      }
-
-      case 'codex-json-event': {
-        const parser = createCodexParser(onEvent);
-        this.flushParser = () => parser.flush();
-        child.stdout?.on('data', (chunk: unknown) => parser.feed(chunkToString(chunk)));
-        // prompt 经 stdin（按 def.promptViaStdin）或 args
-        if (def.promptViaStdin && child.stdin) {
-          child.stdin.write(prompt);
-          child.stdin.end();
-        }
-        break;
-      }
-
       case 'pi-rpc': {
         if (!child.stdout || !child.stdin) {
           this.emitTerminalError(onEvent, 'pi-rpc: child stdio 不可用');

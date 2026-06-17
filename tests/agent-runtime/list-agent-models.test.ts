@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { listAgentModels } from '../../electron/agent-runtime/detection';
 import { parsePiModels, piAgentDef } from '../../electron/agent-runtime/agent-defs/pi';
-import { parseCodexDebugModels } from '../../electron/agent-runtime/agent-defs/codex';
 import type { RuntimeAgentDef } from '../../electron/agent-runtime/types';
 
 // ─── parsePiModels（纯函数）─────────────────────────────────────────────────
@@ -50,29 +49,6 @@ describe('parsePiModels', () => {
   });
 });
 
-// ─── parseCodexDebugModels（纯函数）────────────────────────────────────────
-
-describe('parseCodexDebugModels', () => {
-  it('解析 JSON：slug/display_name，跳过 hidden，前置 default', () => {
-    const raw = JSON.stringify({
-      models: [
-        { slug: 'gpt-5-codex', display_name: 'GPT-5 Codex' },
-        { slug: 'o4-mini', name: 'o4-mini' },
-        { slug: 'secret', visibility: 'hidden' },
-      ],
-    });
-    const models = parseCodexDebugModels(raw);
-    expect(models!.map((m) => m.id)).toEqual(['default', 'gpt-5-codex', 'o4-mini']);
-    expect(models!.find((m) => m.id === 'gpt-5-codex')!.label).toBe('GPT-5 Codex');
-  });
-
-  it('非 JSON / 无 models 字段 / 空 → null', () => {
-    expect(parseCodexDebugModels('not json')).toBeNull();
-    expect(parseCodexDebugModels('{}')).toBeNull();
-    expect(parseCodexDebugModels(JSON.stringify({ models: [] }))).toBeNull();
-  });
-});
-
 // ─── listAgentModels ──────────────────────────────────────────────────────
 
 function fakeBM(resolved: string | null) {
@@ -82,17 +58,17 @@ function fakeBM(resolved: string | null) {
 describe('listAgentModels', () => {
   it('def 无 listModelsArgs/parseModels（静态 agent）→ fallback', async () => {
     const def: RuntimeAgentDef = {
-      id: 'claude',
-      name: 'Claude',
-      bin: 'claude',
+      id: 'static',
+      name: 'Static',
+      bin: 'static',
       versionArgs: ['--version'],
       buildArgs: () => [],
-      streamFormat: 'claude-stream-json',
-      models: [{ id: 'claude-sonnet-4-5', label: 'Sonnet' }],
+      streamFormat: 'pi-rpc',
+      models: [{ id: 'static-model-1', label: 'Static' }],
     };
-    const res = await listAgentModels(fakeBM('/usr/bin/claude') as never, def);
+    const res = await listAgentModels(fakeBM('/usr/bin/static') as never, def);
     expect(res.source).toBe('fallback');
-    expect(res.models.map((m) => m.id)).toContain('claude-sonnet-4-5');
+    expect(res.models.map((m) => m.id)).toContain('static-model-1');
   });
 
   it('bin 解析不到 → fallback（不执行）', async () => {

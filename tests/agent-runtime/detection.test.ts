@@ -12,7 +12,7 @@ function makeDef(overrides?: Partial<RuntimeAgentDef>): RuntimeAgentDef {
     bin: 'claude',
     versionArgs: ['--version'],
     buildArgs: () => [],
-    streamFormat: 'claude-stream-json',
+    streamFormat: 'pi-rpc',
     ...overrides,
   };
 }

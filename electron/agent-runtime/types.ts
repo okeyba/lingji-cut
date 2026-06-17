@@ -1,6 +1,6 @@
 import type { ResolvedAgentSkill } from '../acp/types';
 
-export type StreamFormat = 'claude-stream-json' | 'codex-json-event' | 'pi-rpc';
+export type StreamFormat = 'pi-rpc';
 
 export interface BuildArgsCtx {
   prompt: string;

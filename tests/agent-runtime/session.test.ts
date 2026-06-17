@@ -3,8 +3,6 @@ import { EventEmitter } from 'node:events';
 import { AgentSession } from '../../electron/agent-runtime/session';
 import type { RuntimeAgentDef } from '../../electron/agent-runtime/types';
 import type { AgentStreamEvent } from '../../electron/agent-runtime/event-model';
-import { claudeAgentDef } from '../../electron/agent-runtime/agent-defs/claude';
-import { codexAgentDef } from '../../electron/agent-runtime/agent-defs/codex';
 import { piAgentDef } from '../../electron/agent-runtime/agent-defs/pi';
 
 // ─── Fake child process ────────────────────────────────────────────────────
@@ -49,6 +47,20 @@ function makeBinaryManager(resolved: string | null = '/fake/bin') {
 
 const BUNDLED_EXEC_PATH = '/path/to/electron';
 
+/**
+ * 合成的 PATH 探测型 def（无 bundledNodeEntry）：用于覆盖 session 的
+ * detection / resolveBinary 分支（pi 现为内置入口，不再走 PATH）。
+ */
+const syntheticPathDef: RuntimeAgentDef = {
+  id: 'synthetic',
+  name: 'Synthetic',
+  bin: 'synthetic',
+  versionArgs: ['--version'],
+  streamFormat: 'pi-rpc',
+  defaultModel: 'default',
+  buildArgs: () => ['--mode', 'rpc'],
+} as RuntimeAgentDef;
+
 function makeSession(
   child: FakeChild,
   bm: ReturnType<typeof makeBinaryManager>,
@@ -71,77 +83,6 @@ describe('AgentSession', () => {
   beforeEach(() => {
     events = [];
     onEvent = (ev) => events.push(ev);
-  });
-
-  it('claude: spawn + stream-json → 归一化事件，prompt 写入 stdin', async () => {
-    const child = new FakeChild();
-    const bm = makeBinaryManager('/usr/local/bin/claude');
-    const { session, spawnFn } = makeSession(child, bm);
-
-    await session.start({
-      def: claudeAgentDef as RuntimeAgentDef,
-      prompt: 'hello',
-      cwd: '/tmp/proj',
-      onEvent,
-    });
-
-    // spawn called with resolved binPath and built args
-    expect(spawnFn).toHaveBeenCalledTimes(1);
-    const [cmd, args, opts] = spawnFn.mock.calls[0];
-    expect(cmd).toBe('/usr/local/bin/claude');
-    expect(args).toContain('stream-json');
-    expect(opts.cwd).toBe('/tmp/proj');
-
-    // promptViaStdin → prompt written to stdin then end
-    expect(child.stdin.write).toHaveBeenCalledWith('hello');
-    expect(child.stdin.end).toHaveBeenCalled();
-
-    // push stream-json lines
-    child.stdout.push(
-      JSON.stringify({
-        type: 'content_block_delta',
-        delta: { type: 'text_delta', text: 'Hi' },
-      }) + '\n',
-    );
-    child.stdout.push(
-      JSON.stringify({
-        type: 'content_block_start',
-        content_block: { type: 'tool_use', id: 't1', name: 'Read' },
-      }) + '\n',
-    );
-    child.stdout.push(
-      JSON.stringify({ type: 'content_block_stop' }) + '\n',
-    );
-
-    expect(events).toContainEqual({ type: 'text_delta', delta: 'Hi' });
-    expect(events).toContainEqual({ type: 'tool_use', id: 't1', name: 'Read', input: {} });
-  });
-
-  it('codex: spawn + codex-json-event → 归一化事件', async () => {
-    const child = new FakeChild();
-    const bm = makeBinaryManager('/usr/local/bin/codex');
-    const { session, spawnFn } = makeSession(child, bm);
-
-    await session.start({
-      def: codexAgentDef as RuntimeAgentDef,
-      prompt: 'do it',
-      onEvent,
-    });
-
-    const [cmd, args] = spawnFn.mock.calls[0];
-    expect(cmd).toBe('/usr/local/bin/codex');
-    expect(args).toContain('exec');
-
-    child.stdout.push(JSON.stringify({ type: 'turn.started' }) + '\n');
-    child.stdout.push(
-      JSON.stringify({
-        type: 'item.completed',
-        item: { type: 'agent_message', text: 'done' },
-      }) + '\n',
-    );
-
-    expect(events).toContainEqual({ type: 'status', label: 'running' });
-    expect(events).toContainEqual({ type: 'text_delta', delta: 'done' });
   });
 
   it('pi: spawn + pi-rpc → stdin 收到命令，stdout 事件归一化', async () => {
@@ -201,11 +142,11 @@ describe('AgentSession', () => {
 
   it('cancel(): kill 子进程 (SIGTERM)', async () => {
     const child = new FakeChild();
-    const bm = makeBinaryManager('/usr/local/bin/claude');
+    const bm = makeBinaryManager('/usr/local/bin/pi');
     const { session } = makeSession(child, bm);
 
     await session.start({
-      def: claudeAgentDef as RuntimeAgentDef,
+      def: piAgentDef as RuntimeAgentDef,
       prompt: 'hi',
       onEvent,
     });
@@ -219,8 +160,9 @@ describe('AgentSession', () => {
     const bm = makeBinaryManager(null);
     const { session, spawnFn } = makeSession(child, bm);
 
+    // 用合成 PATH 探测型 def 覆盖 detection 失败分支
     await session.start({
-      def: claudeAgentDef as RuntimeAgentDef,
+      def: syntheticPathDef,
       prompt: 'hi',
       onEvent,
     });
@@ -231,11 +173,11 @@ describe('AgentSession', () => {
 
   it('ensureNodeInPath 在 spawn 前被调用', async () => {
     const child = new FakeChild();
-    const bm = makeBinaryManager('/usr/local/bin/claude');
+    const bm = makeBinaryManager('/usr/local/bin/pi');
     const { session } = makeSession(child, bm);
 
     await session.start({
-      def: claudeAgentDef as RuntimeAgentDef,
+      def: piAgentDef as RuntimeAgentDef,
       prompt: 'hi',
       onEvent,
     });
@@ -245,11 +187,11 @@ describe('AgentSession', () => {
 
   it('child error 事件 → onEvent error', async () => {
     const child = new FakeChild();
-    const bm = makeBinaryManager('/usr/local/bin/claude');
+    const bm = makeBinaryManager('/usr/local/bin/pi');
     const { session } = makeSession(child, bm);
 
     await session.start({
-      def: claudeAgentDef as RuntimeAgentDef,
+      def: piAgentDef as RuntimeAgentDef,
       prompt: 'hi',
       onEvent,
     });
@@ -262,11 +204,11 @@ describe('AgentSession', () => {
 
   it('非零退出 + stderr → error 事件附带 stderr', async () => {
     const child = new FakeChild();
-    const bm = makeBinaryManager('/usr/local/bin/codex');
+    const bm = makeBinaryManager('/usr/local/bin/pi');
     const { session } = makeSession(child, bm);
 
     await session.start({
-      def: codexAgentDef as RuntimeAgentDef,
+      def: piAgentDef as RuntimeAgentDef,
       prompt: 'hi',
       onEvent,
     });
@@ -283,16 +225,16 @@ describe('AgentSession', () => {
 
   it('干净退出（code 0）且 parser 未发终态 → 兜底 emit turn_end', async () => {
     const child = new FakeChild();
-    const bm = makeBinaryManager('/usr/local/bin/codex');
+    const bm = makeBinaryManager('/usr/local/bin/pi');
     const { session } = makeSession(child, bm);
 
     await session.start({
-      def: codexAgentDef as RuntimeAgentDef,
+      def: piAgentDef as RuntimeAgentDef,
       prompt: 'hi',
       onEvent,
     });
 
-    // 没有任何 stdout / turn_end，进程干净退出
+    // 没有任何终态事件，进程干净退出
     child.emit('close', 0);
 
     const terminal = events.filter((e) => e.type === 'turn_end' || e.type === 'error');
@@ -302,22 +244,17 @@ describe('AgentSession', () => {
 
   it('parser 已发 turn_end 后干净退出 → 不重复 emit turn_end', async () => {
     const child = new FakeChild();
-    const bm = makeBinaryManager('/usr/local/bin/claude');
+    const bm = makeBinaryManager('/usr/local/bin/pi');
     const { session } = makeSession(child, bm);
 
     await session.start({
-      def: claudeAgentDef as RuntimeAgentDef,
+      def: piAgentDef as RuntimeAgentDef,
       prompt: 'hi',
       onEvent,
     });
 
-    // claude stream-json：assistant 消息带 stop_reason → parser emit turn_end
-    child.stdout.push(
-      JSON.stringify({
-        type: 'assistant',
-        message: { content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' },
-      }) + '\n',
-    );
+    // pi agent_end → parser emit turn_end
+    child.stdout.push(JSON.stringify({ type: 'agent_end' }) + '\n');
     const turnEndsBefore = events.filter((e) => e.type === 'turn_end').length;
     expect(turnEndsBefore).toBe(1);
 
@@ -396,13 +333,13 @@ describe('AgentSession', () => {
 
   it('env: 注入 def.env 与 input.env，过滤 npm_*', async () => {
     const child = new FakeChild();
-    const bm = makeBinaryManager('/usr/local/bin/claude');
+    const bm = makeBinaryManager('/usr/local/bin/pi');
     const { session, spawnFn } = makeSession(child, bm);
 
     process.env.npm_config_foo = 'should-be-filtered';
 
     await session.start({
-      def: { ...(claudeAgentDef as RuntimeAgentDef), env: { DEF_VAR: 'd' } },
+      def: { ...(piAgentDef as RuntimeAgentDef), env: { DEF_VAR: 'd' } },
       prompt: 'hi',
       env: { INPUT_VAR: 'i' },
       onEvent,

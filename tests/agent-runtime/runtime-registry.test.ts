@@ -4,6 +4,24 @@ import { RuntimeRegistry } from '../../electron/agent-runtime/runtime-registry';
 import type { AgentSessionStartInput } from '../../electron/agent-runtime/session';
 import type { AgentStreamEvent } from '../../electron/agent-runtime/event-model';
 
+// 捕获默认 createSession 工厂构造 AgentSession 时注入的 deps，
+// 用于验证 binaryManager 流入 AgentSession（pi 现为内置入口，detection 不再调
+// resolveBinary，故无法通过 resolveBinary 被调用来证明，改为直接断言构造注入）。
+const hoisted = vi.hoisted(() => ({ capturedDeps: null as any }));
+vi.mock('../../electron/agent-runtime/session', () => ({
+  AgentSession: class {
+    constructor(deps: any) {
+      hoisted.capturedDeps = deps;
+    }
+    async start(): Promise<void> {
+      /* no-op：本文件其余测试均注入自定义 createSession，不走此构造 */
+    }
+    cancel(): void {
+      /* no-op */
+    }
+  },
+}));
+
 // ─── Fake AgentSession ───────────────────────────────────────────────────────
 
 /**
@@ -61,7 +79,7 @@ function makeRegistry(): {
 
 const baseConnect = {
   conversationId: 1,
-  agentType: 'claude',
+  agentType: 'pi',
   projectDir: '/proj',
 };
 
@@ -339,8 +357,8 @@ describe('RuntimeRegistry', () => {
   it('多会话隔离：两个 conversationId 各自事件不串', async () => {
     const { registry, sessions } = makeRegistry();
     attachListeners(registry);
-    await registry.connect({ conversationId: 1, agentType: 'claude', projectDir: '/p1' });
-    await registry.connect({ conversationId: 2, agentType: 'codex', projectDir: '/p2' });
+    await registry.connect({ conversationId: 1, agentType: 'pi', projectDir: '/p1' });
+    await registry.connect({ conversationId: 2, agentType: 'pi', projectDir: '/p2' });
     await registry.sendPrompt(1, [{ type: 'text', text: 'one' }]);
     await registry.sendPrompt(2, [{ type: 'text', text: 'two' }]);
 
@@ -386,10 +404,11 @@ describe('RuntimeRegistry', () => {
     await expect(registry.respondPermission(1, 'r', 'o')).resolves.toBeUndefined();
   });
 
-  // 回归：默认 createSession 未注入 binaryManager 时，sendPrompt 会立即报
-  // 'AgentSession: missing binaryManager'。注入 binaryManager 后该错误不应出现，
-  // 且 detection 会真正调用 resolveBinary，证明 binaryManager 流入了 AgentSession。
+  // 回归：默认 createSession 工厂会把 RuntimeRegistry 的 binaryManager 注入新建的
+  // AgentSession。pi 现为内置入口（detection 不再调 resolveBinary），故改为直接断言
+  // 构造期注入的 deps.binaryManager 即传入的 bm，证明 binaryManager 流入了 AgentSession。
   it('默认 createSession 注入 binaryManager（回归 missing binaryManager）', async () => {
+    hoisted.capturedDeps = null;
     const bm = {
       resolveBinary: vi.fn().mockResolvedValue(null),
       ensureNodeInPath: vi.fn(),
@@ -397,15 +416,11 @@ describe('RuntimeRegistry', () => {
     const registry = new RuntimeRegistry({ binaryManager: bm as any });
     attachListeners(registry);
 
-    // 用 PATH 探测型 agent（codex）：pi 现为内置入口，不再调用 resolveBinary。
-    await registry.connect({ conversationId: 1, agentType: 'codex', projectDir: '/proj' });
+    await registry.connect({ conversationId: 1, agentType: 'pi', projectDir: '/proj' });
     await registry.sendPrompt(1, [{ type: 'text', text: 'hi' }]);
 
-    const errors = runtimeEvents
-      .filter((e) => e.event.type === 'error')
-      .map((e) => e.event.message as string);
-    expect(errors.some((m) => m.includes('missing binaryManager'))).toBe(false);
-    // binaryManager 已流入：detection 走到了 resolveBinary
-    expect(bm.resolveBinary).toHaveBeenCalled();
+    // 默认工厂 new AgentSession({ binaryManager }) 已携带传入的 bm。
+    expect(hoisted.capturedDeps).not.toBeNull();
+    expect(hoisted.capturedDeps.binaryManager).toBe(bm);
   });
 });
