@@ -72,7 +72,7 @@ describe('package mac staging helpers', () => {
 
   it('unpacks Remotion runtime artifacts from app.asar for packaged exports', () => {
     expect(RENDER_RUNTIME_ASAR_UNPACK_DIRS).toBe(
-      '{vendor/ffmpeg,node_modules/@remotion,node_modules/esbuild,node_modules/@esbuild,node_modules/@puppeteer,node_modules/puppeteer-core,node_modules/sharp,node_modules/onnxruntime-node,node_modules/ffmpeg-static,node_modules/ffprobe-static}',
+      '{vendor/ffmpeg,resources/pi,node_modules/@remotion,node_modules/esbuild,node_modules/@esbuild,node_modules/@puppeteer,node_modules/puppeteer-core,node_modules/sharp,node_modules/onnxruntime-node,node_modules/ffmpeg-static,node_modules/ffprobe-static}',
     );
   });
 });

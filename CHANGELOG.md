@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Changed
+- **对话面板收敛为唯一「内置 Pi」agent（移除 Codex / Claude 面板路径）**：在本轮多协议 runtime（Claude / Codex / Pi）基础上进一步收敛——AI 对话面板现在只保留 **Pi** 一个 agent，并将其**内置打包**，用户无需自行安装。本条目取代下面「多协议 Runtime」「内置 Pi agent（ACP 接入）」等中间态描述。
+  - **内置打包、开箱即用**：固定版本 `@earendil-works/pi-coding-agent` 经 `scripts/vendor-pi.cjs` 安装到 `resources/pi/`（打包时 asar unpack），用 Electron 自带 Node（`ELECTRON_RUN_AS_NODE`）运行其 `dist/cli.js --mode rpc`；不再要求用户本机安装 `pi`，也不再走 `npx -y pi-acp` 适配器。
+  - **复用 App LLM Provider 配置**：连接时把 `AISettings.llmProviders` 投影成 pi 的 `models.json`（`provider/api/baseUrl/apiKey/models` + 每模型能力默认值），写入 App 托管的 pi 配置目录（`~/.lingji/pi-agent`，经 `PI_CODING_AGENT_DIR`）。用户在 App AI 设置里配好 provider 即可用 agent，无需另填凭证。
+  - **Pi 走 file-first（无 MCP）**：pi 没有 MCP 能力，直接编辑项目 `script.md` / `original.md` / `project.json` / `ai-cards/<id>/motionCard.tsx`，编辑器热重载反映改动（沿用已有 file-first 契约 `CLAUDE.md`/`AGENTS.md`）。移除了原仅服务 in-app Claude 的 MCP 工具引导逻辑；`lingji-editor` MCP server 仍保留给外部 agent。
+  - **移除**：Codex 与 Claude 的面板 agent、其 stream parser、旧 ACP 面板 `connection-registry` 与 `agent-profiles`；设置页 Agent/MCP 配置同步收敛为 Pi。默认 agent 改为 `pi`（旧 `claude`/`codex`/`*-acp` 配置归一化到 pi，不丢用户数据）。`HeadlessAcpProvider`（Claude Code 作为编辑器 AI 的 LLM Provider，即 `claude_code_acp`）保持不变。
 - **AI 对话界面重做（对齐 open-design）**：
   - 移除左侧会话列表，改为顶部 icon 弹 **ConversationDropdown**（搜索 / 切换 / 新建 / 重命名 / 删除会话）。
   - Agent 切换收敛到设置中心，**全局只激活一个 agent**（`activeAgentId`）；对话顶部仅只读标记当前 agent，点击直达设置的 Agent 配置页。

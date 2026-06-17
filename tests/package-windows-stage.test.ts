@@ -76,7 +76,7 @@ describe('package windows helpers', () => {
     expect(options.name).toBe('Lingji');
     expect(options.icon).toBe('F:/repo/build/icon.ico');
     expect(options.asar).toEqual({
-      unpackDir: '{vendor/ffmpeg,node_modules/@remotion,node_modules/esbuild,node_modules/@esbuild,node_modules/@puppeteer,node_modules/puppeteer-core,node_modules/sharp,node_modules/onnxruntime-node,node_modules/ffmpeg-static,node_modules/ffprobe-static}',
+      unpackDir: '{vendor/ffmpeg,resources/pi,node_modules/@remotion,node_modules/esbuild,node_modules/@esbuild,node_modules/@puppeteer,node_modules/puppeteer-core,node_modules/sharp,node_modules/onnxruntime-node,node_modules/ffmpeg-static,node_modules/ffprobe-static}',
     });
   });
 
