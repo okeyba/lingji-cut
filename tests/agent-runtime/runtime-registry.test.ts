@@ -397,7 +397,8 @@ describe('RuntimeRegistry', () => {
     const registry = new RuntimeRegistry({ binaryManager: bm as any });
     attachListeners(registry);
 
-    await registry.connect({ conversationId: 1, agentType: 'pi', projectDir: '/proj' });
+    // 用 PATH 探测型 agent（codex）：pi 现为内置入口，不再调用 resolveBinary。
+    await registry.connect({ conversationId: 1, agentType: 'codex', projectDir: '/proj' });
     await registry.sendPrompt(1, [{ type: 'text', text: 'hi' }]);
 
     const errors = runtimeEvents

@@ -21,6 +21,7 @@ import type { ResolvedAgentSkill } from '../acp/types';
 import { createClaudeStreamParser } from './parsers/claude-stream';
 import { createCodexParser } from './parsers/codex-json-event';
 import { createPiRpcSession } from './parsers/pi-rpc';
+import { buildBundledNodeSpawn } from './bundled-runtime';
 
 // ─── 子进程抽象 ────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,10 @@ export interface AgentSessionDeps {
   spawnFn?: SpawnFn;
   /** 用于 detection / ensureNodeInPath */
   binaryManager?: SessionBinaryManager;
+  /** 解析内置入口相对路径 → 绝对路径（仅 def.bundledNodeEntry 时用）。 */
+  resolveBundledEntry?: (relPath: string) => string | null;
+  /** Electron 自带 Node 路径（默认 process.execPath）。 */
+  execPath?: string;
 }
 
 export interface AgentSessionStartInput {
@@ -90,6 +95,8 @@ function getCleanEnv(): NodeJS.ProcessEnv {
 export class AgentSession {
   private readonly spawnFn: SpawnFn;
   private readonly binaryManager?: SessionBinaryManager;
+  private readonly resolveBundledEntry?: (relPath: string) => string | null;
+  private readonly execPath: string;
 
   private child: ChildProcessLike | null = null;
   private stderrBuf = '';
@@ -101,6 +108,8 @@ export class AgentSession {
   constructor(deps?: AgentSessionDeps) {
     this.spawnFn = deps?.spawnFn ?? (nodeSpawn as unknown as SpawnFn);
     this.binaryManager = deps?.binaryManager;
+    this.resolveBundledEntry = deps?.resolveBundledEntry;
+    this.execPath = deps?.execPath ?? process.execPath;
   }
 
   async start(input: AgentSessionStartInput): Promise<void> {
@@ -115,40 +124,67 @@ export class AgentSession {
       input.onEvent(ev);
     };
 
-    // 1) 探测 binPath
-    if (!this.binaryManager) {
-      onEvent({ type: 'error', message: 'AgentSession: missing binaryManager' });
-      return;
-    }
+    // 1) 解析执行入口：内置 Node 入口 vs PATH 探测
+    let binPath: string;
+    let extraArgs: string[] = [];
+    let bundledEnv: NodeJS.ProcessEnv = {};
 
-    const detectionDeps = createDetectionDeps(this.binaryManager);
-    const detection = await detectAgent(def, detectionDeps);
-    if (!detection.installed || !detection.binPath) {
-      onEvent({
-        type: 'error',
-        message: `Agent "${def.id}" 未安装或不可用（bin: ${def.bin}）`,
+    if (def.bundledNodeEntry) {
+      // 内置 agent：用 Electron 自带 Node 跑打包入口（无需 binaryManager 探测）
+      const entry = this.resolveBundledEntry?.(def.bundledNodeEntry) ?? null;
+      if (!entry) {
+        onEvent({
+          type: 'error',
+          message: `内置 agent "${def.id}" 入口缺失（${def.bundledNodeEntry}）`,
+        });
+        return;
+      }
+      const bundled = buildBundledNodeSpawn(entry, [], {
+        execPath: this.execPath,
+        baseEnv: {},
       });
-      return;
+      binPath = bundled.command;
+      extraArgs = bundled.args;
+      bundledEnv = bundled.env;
+    } else {
+      // 探测 binPath（PATH + BinaryManager.resolveBinary）
+      if (!this.binaryManager) {
+        onEvent({ type: 'error', message: 'AgentSession: missing binaryManager' });
+        return;
+      }
+
+      const detectionDeps = createDetectionDeps(this.binaryManager);
+      const detection = await detectAgent(def, detectionDeps);
+      if (!detection.installed || !detection.binPath) {
+        onEvent({
+          type: 'error',
+          message: `Agent "${def.id}" 未安装或不可用（bin: ${def.bin}）`,
+        });
+        return;
+      }
+      binPath = detection.binPath;
     }
-    const binPath = detection.binPath;
 
     // ensureNodeInPath：确保 npx/node 在 PATH（agent CLI 内部解析）
     try {
-      this.binaryManager.ensureNodeInPath?.();
+      this.binaryManager?.ensureNodeInPath?.();
     } catch {
       // 容错：ensureNodeInPath 失败不阻断
     }
 
     // 2) buildArgs
-    const args = def.buildArgs({
-      prompt,
-      cwd,
-      model: model ?? def.defaultModel,
-      reasoning: input.reasoning ?? def.defaultReasoning,
-      resumeSessionId: input.resumeSessionId ?? null,
-      isResuming: input.isResuming ?? false,
-      skills: input.skills,
-    });
+    const args = [
+      ...extraArgs,
+      ...def.buildArgs({
+        prompt,
+        cwd,
+        model: model ?? def.defaultModel,
+        reasoning: input.reasoning ?? def.defaultReasoning,
+        resumeSessionId: input.resumeSessionId ?? null,
+        isResuming: input.isResuming ?? false,
+        skills: input.skills,
+      }),
+    ];
 
     // 3) spawn
     const needsStdin = def.promptViaStdin === true || def.streamFormat === 'pi-rpc';
@@ -160,6 +196,7 @@ export class AgentSession {
 
     const env: NodeJS.ProcessEnv = {
       ...getCleanEnv(),
+      ...bundledEnv,
       ...(def.env ?? {}),
       ...(input.env ?? {}),
     };

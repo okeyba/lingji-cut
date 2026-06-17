@@ -47,6 +47,8 @@ function makeBinaryManager(resolved: string | null = '/fake/bin') {
   };
 }
 
+const BUNDLED_EXEC_PATH = '/path/to/electron';
+
 function makeSession(
   child: FakeChild,
   bm: ReturnType<typeof makeBinaryManager>,
@@ -55,6 +57,9 @@ function makeSession(
   const session = new AgentSession({
     spawnFn: spawnFn as any,
     binaryManager: bm as any,
+    // 内置入口默认解析为 staged 绝对路径（仅 def.bundledNodeEntry 时生效）。
+    resolveBundledEntry: (rel) => `/staged/${rel}`,
+    execPath: BUNDLED_EXEC_PATH,
   });
   return { session, spawnFn };
 }
@@ -152,8 +157,11 @@ describe('AgentSession', () => {
     });
 
     const [cmd, args, opts] = spawnFn.mock.calls[0];
-    expect(cmd).toBe('/usr/local/bin/pi');
-    expect(args).toEqual(['--mode', 'rpc']);
+    // pi 现为内置入口：用 Electron 自带 Node 跑 staged cli.js
+    expect(cmd).toBe(BUNDLED_EXEC_PATH);
+    expect(args[0]).toBe('/staged/resources/pi/dist/cli.js');
+    expect(args.slice(1)).toEqual(['--mode', 'rpc']);
+    expect(opts.env.ELECTRON_RUN_AS_NODE).toBe('1');
     // pi-rpc needs piped stdin
     expect(opts.stdio[0]).toBe('pipe');
 
@@ -316,6 +324,74 @@ describe('AgentSession', () => {
     child.emit('close', 0);
     const turnEndsAfter = events.filter((e) => e.type === 'turn_end').length;
     expect(turnEndsAfter).toBe(1); // 无重复
+  });
+
+  it('bundledNodeEntry: 用 execPath 跑入口，ELECTRON_RUN_AS_NODE=1，无需 binaryManager 解析', async () => {
+    const child = new FakeChild();
+    const bm = makeBinaryManager(null); // resolveBinary 返回 null，确认不走 detection
+    const spawnFn = vi.fn(() => child as unknown as any);
+    const resolvedEntry = '/staged/resources/pi/dist/cli.js';
+    const session = new AgentSession({
+      spawnFn: spawnFn as any,
+      binaryManager: bm as any,
+      resolveBundledEntry: vi.fn(() => resolvedEntry),
+      execPath: '/path/to/electron',
+    });
+
+    const def: RuntimeAgentDef = {
+      id: 'pi',
+      name: 'Pi',
+      bin: 'pi',
+      bundledNodeEntry: 'resources/pi/dist/cli.js',
+      versionArgs: ['--version'],
+      streamFormat: 'pi-rpc',
+      defaultModel: 'default',
+      buildArgs: () => ['--mode', 'rpc'],
+    } as RuntimeAgentDef;
+
+    await session.start({
+      def,
+      prompt: 'pi prompt',
+      cwd: '/tmp/p',
+      onEvent,
+    });
+
+    expect(spawnFn).toHaveBeenCalledTimes(1);
+    const [cmd, args, opts] = spawnFn.mock.calls[0];
+    expect(cmd).toBe('/path/to/electron');
+    expect(args[0]).toBe(resolvedEntry);
+    expect(args.slice(1)).toEqual(['--mode', 'rpc']);
+    expect(opts.env.ELECTRON_RUN_AS_NODE).toBe('1');
+    // 未走 detection
+    expect(bm.resolveBinary).not.toHaveBeenCalled();
+  });
+
+  it('bundledNodeEntry 缺失（resolveBundledEntry 返回 null）→ error，不 spawn', async () => {
+    const child = new FakeChild();
+    const bm = makeBinaryManager(null);
+    const spawnFn = vi.fn(() => child as unknown as any);
+    const session = new AgentSession({
+      spawnFn: spawnFn as any,
+      binaryManager: bm as any,
+      resolveBundledEntry: vi.fn(() => null),
+      execPath: '/path/to/electron',
+    });
+
+    const def: RuntimeAgentDef = {
+      id: 'pi',
+      name: 'Pi',
+      bin: 'pi',
+      bundledNodeEntry: 'resources/pi/dist/cli.js',
+      versionArgs: ['--version'],
+      streamFormat: 'pi-rpc',
+      defaultModel: 'default',
+      buildArgs: () => ['--mode', 'rpc'],
+    } as RuntimeAgentDef;
+
+    await session.start({ def, prompt: 'hi', onEvent });
+
+    expect(spawnFn).not.toHaveBeenCalled();
+    expect(events.some((e) => e.type === 'error')).toBe(true);
   });
 
   it('env: 注入 def.env 与 input.env，过滤 npm_*', async () => {
