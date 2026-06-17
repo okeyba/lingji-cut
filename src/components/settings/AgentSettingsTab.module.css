@@ -84,6 +84,75 @@
   line-height: 1.6;
 }
 
+.skillRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-control);
+  background: var(--color-panel-elevated);
+}
+
+.skillMeta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.skillDesc {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+  line-height: 1.5;
+}
+
+.skillModes {
+  color: var(--color-text-secondary-strong);
+  font-size: var(--font-size-sm);
+}
+
+.skillPath {
+  color: var(--color-text-placeholder);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+.skillStatus {
+  color: var(--color-text-secondary-strong);
+  font-size: var(--font-size-sm);
+}
+
+.switchOn,
+.switchOff {
+  flex-shrink: 0;
+  align-self: center;
+  min-width: 56px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.switchOn {
+  background: var(--color-system-blue);
+  border: 1px solid var(--color-system-blue);
+  color: #fff;
+}
+
+.switchOff {
+  background: transparent;
+  border: 1px solid var(--color-border-control);
+  color: var(--color-text-secondary-strong);
+}
+
 .spinning {
   animation: spin 1s linear infinite;
 }

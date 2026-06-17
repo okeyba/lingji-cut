@@ -3,7 +3,9 @@ import { Bot, RefreshCw, Trash2 } from 'lucide-react';
 import type {
   AgentConfigData,
   AgentEntry,
+  AgentSkillLoadMode,
   PreflightCheck,
+  ResolvedAgentSkill,
 } from '../../../electron/acp/types';
 import {
   getAgentPresentation,
@@ -45,6 +47,7 @@ function makeDefaultEntry(agentId: string): AgentEntry {
     configJson: '{}',
     version: profile.defaultVersion ?? '0.25.0',
     sortOrder: 0,
+    skills: [{ id: 'lingji-video-workflow', enabled: true }],
   };
 }
 
@@ -58,6 +61,7 @@ export function AgentSettingsTab() {
   const [saved, setSaved] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [uninstallDialogOpen, setUninstallDialogOpen] = useState(false);
+  const [skills, setSkills] = useState<ResolvedAgentSkill[]>([]);
 
   const profile = getAgentPresentation(selectedAgentId);
   const agent = config?.agents?.[selectedAgentId] ?? makeDefaultEntry(selectedAgentId);
@@ -78,10 +82,20 @@ export function AgentSettingsTab() {
     modelOptions.unshift({ value: modelValue, label: modelValue });
   }
 
+  const loadSkills = useCallback(async (agentId: string) => {
+    if (typeof window.agentAPI?.listSkills !== 'function') return;
+    try {
+      setSkills(await window.agentAPI.listSkills(agentId));
+    } catch {
+      setSkills([]);
+    }
+  }, []);
+
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.agentAPI === 'undefined') return;
     void loadConfig(DEFAULT_AGENT_ID);
     void runChecks(DEFAULT_AGENT_ID);
+    void loadSkills(DEFAULT_AGENT_ID);
   }, []);
 
   const loadConfig = async (agentId: string) => {
@@ -100,12 +114,16 @@ export function AgentSettingsTab() {
     setChecking(false);
   };
 
-  const handleSelectAgent = useCallback((agentId: string) => {
-    setSelectedAgentId(agentId);
-    if (typeof window.agentAPI === 'undefined') return;
-    void window.agentAPI.getApiKey(agentId).then(setApiKey);
-    void runChecks(agentId);
-  }, []);
+  const handleSelectAgent = useCallback(
+    (agentId: string) => {
+      setSelectedAgentId(agentId);
+      if (typeof window.agentAPI === 'undefined') return;
+      void window.agentAPI.getApiKey(agentId).then(setApiKey);
+      void runChecks(agentId);
+      void loadSkills(agentId);
+    },
+    [loadSkills],
+  );
 
   const updateAgent = useCallback(
     (patch: Partial<AgentEntry>) => {
@@ -119,6 +137,21 @@ export function AgentSettingsTab() {
       });
     },
     [agent, config, selectedAgentId],
+  );
+
+  // 切换内置 skill 启用态：写回 config.agents[agentId].skills（按 id merge/replace），
+  // 由现有「保存配置」按钮落盘。Task 7 已为默认条目补齐 skills，旧数据兜底默认启用。
+  const toggleSkill = useCallback(
+    (skillId: string, enabled: boolean) => {
+      if (!config) return;
+      const current = agent.skills ?? [{ id: skillId, enabled: true }];
+      const has = current.some((s) => s.id === skillId);
+      const nextSkills = has
+        ? current.map((s) => (s.id === skillId ? { ...s, enabled } : s))
+        : [...current, { id: skillId, enabled }];
+      updateAgent({ skills: nextSkills });
+    },
+    [agent.skills, config, updateAgent],
   );
 
   // 将当前所选 agent 设为全局激活（单选）。立即落盘，避免用户漏点「保存配置」
@@ -242,6 +275,45 @@ export function AgentSettingsTab() {
         </>
       )}
 
+      <Divider label="Skills" />
+      {skills.length === 0 ? (
+        <p className={styles.guideText}>暂无可用内置 skill（种子缺失或复制失败）。</p>
+      ) : (
+        skills.map((skill) => {
+          const cfgEnabled =
+            agent.skills?.find((s) => s.id === skill.id)?.enabled ?? skill.enabled;
+          const modes = skill.loadModesByAgent[selectedAgentId] ?? [];
+          return (
+            <Field key={skill.id} label={skill.displayName}>
+              <div className={styles.skillRow}>
+                <div className={styles.skillMeta}>
+                  <span className={styles.skillDesc}>{skill.description}</span>
+                  <span className={styles.skillModes}>加载方式：{formatLoadModes(modes)}</span>
+                  <span className={styles.skillPath}>{skill.rootPath}</span>
+                  <span className={styles.skillStatus}>
+                    {skill.status === 'available'
+                      ? '可用'
+                      : skill.status === 'missing'
+                        ? '缺失'
+                        : '配置错误'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={cfgEnabled}
+                  aria-label={skill.displayName}
+                  className={cfgEnabled ? styles.switchOn : styles.switchOff}
+                  onClick={() => toggleSkill(skill.id, !cfgEnabled)}
+                >
+                  {cfgEnabled ? '启用' : '关闭'}
+                </button>
+              </div>
+            </Field>
+          );
+        })
+      )}
+
       <Divider label="高级配置" />
       <Field label="环境变量" hint="KEY=VALUE（每行一条）">
         <Textarea
@@ -288,6 +360,18 @@ export function AgentSettingsTab() {
       />
     </div>
   );
+}
+
+const LOAD_MODE_LABELS: Record<AgentSkillLoadMode, string> = {
+  native: '原生加载',
+  directory_access: '目录访问',
+  context_file: '上下文文件引导',
+  prompt_injection: '$ 显式注入',
+};
+
+function formatLoadModes(modes: AgentSkillLoadMode[]): string {
+  if (modes.length === 0) return '—';
+  return modes.map((m) => LOAD_MODE_LABELS[m]).join(' + ');
 }
 
 function getStatusVariant(status: string): 'success' | 'warning' | 'destructive' | 'secondary' {
