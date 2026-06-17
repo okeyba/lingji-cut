@@ -1087,51 +1087,87 @@ git add electron/acp/config.ts tests
 git commit -m "refactor(agent-config): 默认 agent 改为 pi，移除 codex/claude 默认条目"
 ```
 
-### Task 15：ipc.ts —— 注入 pi 配置目录 + provider 投影 + MCP/CLAUDE.md 迁移
+### Task 15：ipc.ts —— 注入内置入口依赖 + provider 投影写盘（pi 走 file-first，**不**接 MCP）
+
+> **⚠️ 重大修正（已核实）：** pi **完全没有 MCP 支持**（dist 零 MCP 引用；扩展机制是 skills/extensions/内置 read·edit·write 工具）。`McpConfigManager` 只支持 `claude_code|codex|gemini`，无 pi 目标。因此 **不要** 把 `MCP_INSTRUCTIONS`/`registerToApp('claude_code')` 迁给 pi——pi 用 **file-first**：直接编辑 `script.md`/`original.md`/`project.json`，靠 `ensureProjectAgentContracts`（已对所有 agent 无条件写入 CLAUDE.md/AGENTS.md 的 file-first 契约块）作为接口。`lingji-editor` MCP server 仍保留给外部 agent（不动）。原 in-app claude agent 的 `if (agentId === 'claude') {…MCP…}` 块现在是死代码，删除即可。
 
 **Files:**
 - Modify: `electron/acp/ipc.ts`
-- Modify: `electron/main.ts`（提供 pi 入口解析所需 appPath/resourcesPath/execPath；RuntimeRegistry 注入）
 
-- [ ] **Step 1: RuntimeRegistry / AgentSession 注入内置入口依赖**
+- [ ] **Step 1: RuntimeRegistry 注入内置入口依赖**
 
-读 `runtime-registry.ts` 看它如何 `new AgentSession`。给其构造或 `createSession` 工厂传入 `resolveBundledEntry`（用 `bundled-runtime.resolveBundledEntry` 绑定 `app.getAppPath()`/`process.resourcesPath`/`process.cwd()`）与 `execPath: process.execPath`。在 `acp/ipc.ts` 构造 `runtimeRegistry` 处注入。
+读 `runtime-registry.ts`：默认 `createSession = () => new AgentSession({ binaryManager })`。在 `acp/ipc.ts` 构造 `runtimeRegistry` 处，改为传入自定义 `createSession`，注入 `resolveBundledEntry` 与 `execPath`：
+```ts
+import { app } from 'electron';
+import { AgentSession } from '../agent-runtime/session';
+import { resolveBundledEntry } from '../agent-runtime/bundled-runtime';
+// …
+const runtimeRegistry = new RuntimeRegistry({
+  binaryManager,
+  createSession: () =>
+    new AgentSession({
+      binaryManager,
+      execPath: process.execPath,
+      resolveBundledEntry: (rel) =>
+        resolveBundledEntry(rel, {
+          appPath: app.getAppPath(),
+          resourcesPath: process.resourcesPath,
+          cwd: process.cwd(),
+        }),
+    }),
+});
+```
 
-- [ ] **Step 2: connect 前写 pi 配置 + 设 PID_DIR env**
+- [ ] **Step 2: connect 前写 pi 配置 + 设 PI_CODING_AGENT_DIR env**
 
-在 `connectRuntime`（ipc.ts）内，pi 连接时：
+在 `connectRuntime`（ipc.ts）内，agentId==='pi' 时（现在只有 pi）：
 ```ts
 import os from 'node:os';
 import path from 'node:path';
 import { writePiConfig } from '../agent-runtime/pi-config-seed';
+import { loadFullHeadlessAISettings } from '../pipeline/headless-settings';
 // …
 const PI_CONFIG_DIR = path.join(os.homedir(), '.lingji', 'pi-agent');
-// 读取 App AISettings（经现有持久化 / IPC；若 main 无现成读取，新增一个读 ai-settings 的入口）
-const ai = await loadAISettingsForPi();           // 见 Step 3
+const ai = await loadFullHeadlessAISettings(app.getPath('userData')); // 明文含 keys + 迁移链
 await writePiConfig(PI_CONFIG_DIR, ai);
 env.PI_CODING_AGENT_DIR = PI_CONFIG_DIR;
 ```
-并把内置 skill / 提示词种子（`resources/pi-config/`）经 `--prompt-template` / `--append-system-prompt` 接入：在 `piAgentDef.buildArgs` 已支持 `--skill`；提示词模板与系统提示词可在 connect 时通过额外 env 或扩展 buildArgs 传入（**实现细节：** 给 `BuildArgsCtx` 增可选 `promptTemplatePaths?: string[]`、`appendSystemPromptPaths?: string[]`，pi def 映射为 `--prompt-template` / `--append-system-prompt`；ipc 解析 `resources/pi-config` 后传入）。
+（`loadFullHeadlessAISettings` 已存在于 `electron/pipeline/headless-settings.ts`，读全局 AISettings，无需新增持久化或改 connect payload。容错：读取失败时 try/catch，仍写一个 `{ providers: {} }` 的空配置，不阻断连接。）
 
-- [ ] **Step 3: 提供 main 侧读取 AISettings 的途径**
+- [ ] **Step 3: 种子静态配置到 pi 配置目录（prompt-templates 自动发现）**
 
-Run: `grep -rn "ai-settings\|aiSettings\|getAISettings\|load.*ai" electron/ | grep -v node_modules`
-按现有机制实现 `loadAISettingsForPi()`（读取全局/项目 AI 设置 JSON）。若 AISettings 仅存在 renderer，需新增一个 main 可读的持久化来源或在 connect 时由 renderer 把 AISettings 一并传入 `agent:connect-runtime` payload（**优先后者**：扩展 `RuntimeConnectPayload` 增 `aiSettings`，renderer 连接时带上；main 直接用，零新增持久化）。
+把 `resources/pi-config/prompt-templates/` 复制进 `PI_CONFIG_DIR/prompt-templates/`（pi 默认从配置目录发现 prompt-templates，除非 `--no-prompt-templates`）。复用 `electron/agent-skills/bundled.ts` 的递归复制（兼容 asar 只读源）或简单 `fs.cp`。系统提示词 `system-prompt.md`：file-first 的领域上下文已由项目 CLAUDE.md/AGENTS.md（`ensureProjectAgentContracts`）提供给 pi（pi 默认读 context files），**本任务不强制 wire `--append-system-prompt`**；如低成本可顺带把它经 `piAgentDef.buildArgs` 注入（需给 `BuildArgsCtx` 加可选 `appendSystemPromptPaths?` 并在 runtime-registry connect→sendPrompt 透传），否则留作后续。优先保证 prompt-templates 种子 + provider 投影可用。
 
-- [ ] **Step 4: MCP / CLAUDE.md 引导迁移给 pi**
+- [ ] **Step 4: 删除 in-app claude 的 MCP/CLAUDE.md 死代码**
 
-把 ipc.ts 中 `if (agentId === 'claude') { …registerToApp('claude_code')…ensureProjectClaudeMd… }` 的条件改为 `if (agentId === 'pi')`（让 pi 也注册 lingji-editor MCP server 并写 `CLAUDE.md` 引导，使 pi 用 `lingji_*` 工具）。`registerToApp` 的目标参数若是 `'claude_code'` 字面量，确认 McpConfigManager 是否支持 pi 注册目标；若不支持，保留写 `CLAUDE.md`（pi 通过 `--no-context-files` 默认关闭则需确保不禁用 context files；pi 默认读取 CLAUDE.md/AGENTS.md）。
+`connectRuntime` 里 `if (agentId === 'claude') { const mcpConfigMgr…registerToApp('claude_code')…await ensureProjectClaudeMd(payload.projectDir); }` 是已删除的 in-app claude agent 的逻辑——删除整个分支。**保留** 紧随其后的 `await ensureProjectAgentContracts(payload.projectDir);`（file-first，所有 agent 通用，pi 靠它）。`ensureProjectClaudeMd` 函数与 `MCP_INSTRUCTIONS` 常量若不再被引用，一并删除（grep 确认）。`getMcpServerStatus`/`McpConfigManager` import 若因此变为未使用，移除该 import；但**不要**改动 `electron/main.ts` 里 `HeadlessAcpProvider`/MCP server 本身（外部 agent 仍用）。
 
-- [ ] **Step 5: 全量构建 + 测试**
+- [ ] **Step 5: 清理 ipc.ts 内残留的 `'claude'` 字面量默认**
+
+`runPreflight(binaryManager, config, agentId ?? 'claude')`（`agent:run-preflight`）与 `normalizeAgentId(agentId ?? 'claude')`（`agent:list-models`、`agent:list-skills`）里的 `'claude'` 默认 → 改 `'pi'`。
+
+- [ ] **Step 6: list-models handler 传内置入口依赖**
+
+`agent:list-models` 调 `listAgentModels(binaryManager, def)` → 改为传第三参 bundled deps，使 pi 真能拉实时模型：
+```ts
+return listAgentModels(binaryManager, def, {
+  resolveBundledEntry: (rel) =>
+    resolveBundledEntry(rel, { appPath: app.getAppPath(), resourcesPath: process.resourcesPath, cwd: process.cwd() }),
+  execPath: process.execPath,
+});
+```
+（注意保留 claude 自定义 API 分支已随 claude 移除而失效——该 `if (id === 'claude')` 块可删，因 normalizeAgentId 不再产出 claude；如仍在则清理。）
+
+- [ ] **Step 7: 全量构建 + 测试**
 
 Run: `npm run build && npm test`
-Expected: 构建通过、测试全绿。
+Expected: 构建通过、测试全绿。若 ipc.ts 无直接单测，确保删除/改动不破坏现有 `tests/acp-*`、`tests/agent-runtime/*`。
 
-- [ ] **Step 6: 提交**
+- [ ] **Step 8: 提交**
 
 ```bash
-git add electron/acp/ipc.ts electron/main.ts electron/agent-runtime
-git commit -m "feat(agent): pi 连接时注入内置入口/配置投影，MCP+CLAUDE.md 引导迁移给 pi"
+git add electron/acp/ipc.ts electron/agent-runtime
+git commit -m "feat(agent): pi 连接注入内置入口/配置投影，移除已废弃 claude MCP 逻辑（pi 走 file-first）"
 ```
 
 ---
