@@ -293,6 +293,45 @@ export interface AgentConfigData {
   activeAgentId?: string;
 }
 
+// ─── Agent Skills ────────────────────────────────────────────
+
+export type AgentSkillLoadMode =
+  | 'native'
+  | 'prompt_injection'
+  | 'context_file'
+  | 'directory_access';
+
+export type AgentSkillStatus = 'available' | 'missing' | 'error';
+
+/** 内置 skill 的静态定义（来自种子目录 frontmatter + openai.yaml）。 */
+export interface AgentSkillDefinition {
+  id: string;
+  displayName: string;
+  description: string;
+  source: 'builtin';
+  /** skill 根目录绝对路径（~/.lingji/agent-skills/<id>）。 */
+  rootPath: string;
+  /** 主 SKILL.md 绝对路径。 */
+  skillFilePath: string;
+  defaultEnabled: boolean;
+  /** 各 agent 的加载方式（用于配置中心展示）。 */
+  loadModesByAgent: Record<string, AgentSkillLoadMode[]>;
+}
+
+/** 持久化在 AgentEntry.skills 中的逐 agent 开关。 */
+export interface AgentSkillConfig {
+  id: string;
+  enabled: boolean;
+}
+
+/** listSkills 返回：定义 + 当前 agent 的启用态与可用状态。 */
+export interface ResolvedAgentSkill extends AgentSkillDefinition {
+  enabled: boolean;
+  status: AgentSkillStatus;
+  /** status 非 available 时的简短原因。 */
+  error?: string;
+}
+
 export interface AgentEntry {
   enabled: boolean;
   authMode: AuthMode;
@@ -303,6 +342,8 @@ export interface AgentEntry {
   configJson: string;
   version: string;
   sortOrder: number;
+  /** 逐 agent 的内置 skill 开关；旧数据缺省由 ensureDefaultAgents 补默认。 */
+  skills?: AgentSkillConfig[];
 }
 
 // ─── 预检 ────────────────────────────────────────────────────
