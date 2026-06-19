@@ -91,6 +91,10 @@ export function PublishAccountsTab() {
 
   useEffect(() => {
     void loadAccounts();
+    return () => {
+      unsubQrcodeRef.current?.();
+      unsubQrcodeRef.current = null;
+    };
   }, []);
 
   // Subscribe to qrcode events during login
@@ -161,6 +165,8 @@ export function PublishAccountsTab() {
     setCheckingId(id);
     try {
       await checkAccount(id);
+    } catch (err: unknown) {
+      setLoginMsg({ text: err instanceof Error ? err.message : '校验失败', isError: true });
     } finally {
       setCheckingId(null);
     }
@@ -168,8 +174,13 @@ export function PublishAccountsTab() {
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
-    await removeAccount(deleteTarget);
-    setDeleteTarget(null);
+    try {
+      await removeAccount(deleteTarget);
+      setDeleteTarget(null);
+    } catch (err: unknown) {
+      setLoginMsg({ text: err instanceof Error ? err.message : '删除失败', isError: true });
+      setDeleteTarget(null);
+    }
   };
 
   const deleteTargetAcc = accounts.find((a) => a.id === deleteTarget);
