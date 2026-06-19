@@ -1,8 +1,13 @@
 import type { PlatformModule, PublishPlatform } from '../types';
 import { douyin } from './douyin';
 import { tencent } from './tencent';
+import { xiaohongshu } from './xiaohongshu';
 
-export const PLATFORMS: Partial<Record<PublishPlatform, PlatformModule>> = { douyin, tencent };
+export const PLATFORMS: Partial<Record<PublishPlatform, PlatformModule>> = {
+  douyin,
+  tencent,
+  xiaohongshu,
+};
 
 export function getPlatform(p: PublishPlatform): PlatformModule {
   const mod = PLATFORMS[p];
