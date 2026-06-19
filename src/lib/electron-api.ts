@@ -30,8 +30,8 @@ import type {
   UserPromptEntry,
   UserPromptSeed,
 } from './prompts';
-import type { PublishAccount } from '../../electron/publish/types';
-export type { PublishAccount };
+import type { PublishAccount, PublishPlatform } from '../../electron/publish/types';
+export type { PublishAccount, PublishPlatform };
 
 export type AppPage = 'welcome' | 'setup' | 'editor' | 'script-workbench' | 'settings' | 'auto-run' | 'publish';
 
@@ -594,6 +594,9 @@ import './agent-api';
 export interface PublishAPI {
   listAccounts(): Promise<PublishAccount[]>;
   deleteAccount(id: string): Promise<void>;
+  login(platform: PublishPlatform, accountName: string): Promise<{ success: boolean; message: string }>;
+  check(id: string): Promise<boolean>;
+  onQrcode(cb: (p: { platform: string; accountName: string; png: string }) => void): () => void;
 }
 
 declare global {

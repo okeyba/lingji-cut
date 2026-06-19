@@ -665,4 +665,13 @@ contextBridge.exposeInMainWorld('scriptHistoryAPI', {
 contextBridge.exposeInMainWorld('publishAPI', {
   listAccounts: () => ipcRenderer.invoke('publish:list-accounts'),
   deleteAccount: (id: string) => ipcRenderer.invoke('publish:delete-account', id),
+  login: (platform: string, accountName: string) =>
+    ipcRenderer.invoke('publish:login', platform, accountName),
+  check: (id: string) => ipcRenderer.invoke('publish:check', id),
+  onQrcode: (cb: (payload: { platform: string; accountName: string; png: string }) => void) => {
+    const handler = (_e: unknown, payload: { platform: string; accountName: string; png: string }) =>
+      cb(payload);
+    ipcRenderer.on('publish:qrcode', handler);
+    return () => ipcRenderer.removeListener('publish:qrcode', handler);
+  },
 });
