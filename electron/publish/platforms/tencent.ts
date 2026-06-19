@@ -20,7 +20,8 @@ const TENCENT_MANAGE_URL = 'https://channels.weixin.qq.com/platform/post/list';
 // ─── Cookie requirements (port of _TENCENT_REQUIRED_COOKIE_NAMES) ─────────────
 
 const REQUIRED_COOKIE_NAMES = new Set(['sessionid', 'wxuin']);
-const MIN_COOKIE_COUNT = 6; // _TENCENT_MIN_COOKIE_COUNT in Python source
+const MIN_COOKIE_COUNT = 6; // _TENCENT_MIN_COOKIE_COUNT in Python source（持久化预热水位线）
+const COOKIE_AUTH_MIN_COUNT = 4; // cookie_auth 静态体检阈值（main.py: len(cookie_list) < 4）
 /** Parent domains to visit so their cookies are captured in the context before persisting. */
 const PARENT_DOMAIN_URLS = ['https://mp.weixin.qq.com', 'https://www.qq.com'] as const;
 
@@ -944,7 +945,7 @@ export const tencent: PlatformModule = {
       const cookieList = state?.cookies ?? [];
       const cookieNames = new Set(cookieList.map((c) => c.name));
       if (
-        cookieList.length < MIN_COOKIE_COUNT ||
+        cookieList.length < COOKIE_AUTH_MIN_COUNT ||
         ![...REQUIRED_COOKIE_NAMES].some((n) => cookieNames.has(n))
       ) {
         return false;
