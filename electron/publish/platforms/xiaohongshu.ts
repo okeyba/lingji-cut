@@ -89,6 +89,7 @@ async function _findXhsQrcodeLocator(page: Page) {
   const qrcodeImg = page
     .locator('.login-box-container')
     .getByText('APP扫一扫登录')
+    .filter({ visible: true })
     .locator('xpath=..//following-sibling::div//img')
     .nth(0);
 
