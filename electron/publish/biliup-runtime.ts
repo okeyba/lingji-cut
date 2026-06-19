@@ -66,10 +66,12 @@ export function biliupBinaryName(platform?: string): string {
 // ---------------------------------------------------------------------------
 
 function defaultResourcesRoot(): string {
-  // Electron 生产环境：process.resourcesPath 由 Electron 注入
-  if (typeof (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath === 'string') {
-    const rp = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath!;
-    if (rp) return rp;
+  // Electron 生产环境：process.resourcesPath 由 Electron 注入。
+  // biliup 通过 asar.unpackDir 解包到 app.asar.unpacked/biliup/，
+  // 因此根目录必须包含 app.asar.unpacked 中间段。
+  const rp = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
+  if (typeof rp === 'string' && rp) {
+    return join(rp, 'app.asar.unpacked');
   }
   // 开发 / 测试回退：__dirname 指向 dist-electron/publish/，向上两级到项目根
   return join(__dirname, '..', '..', 'resources');

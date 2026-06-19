@@ -9,6 +9,7 @@ const {
   buildReleaseManifest,
   shouldStageProjectPath,
 } = require('./package-mac-helpers.cjs');
+const { fetchBiliup } = require('./fetch-biliup.cjs');
 
 const rootDir = path.resolve(__dirname, '..');
 const packageJsonPath = path.join(rootDir, 'package.json');
@@ -165,6 +166,11 @@ async function main() {
 
   await createStageDirectory(stageDir);
   installPlaywrightChromium(stageDir);
+
+  // 下载 biliup 二进制到 stageDir/biliup/<platform-key>/<binary>
+  // 打包后经 asar.unpackDir 解包到 app.asar.unpacked/biliup/...
+  console.log('下载 biliup 二进制到随包目录...');
+  await fetchBiliup(stageDir, { platform: 'darwin', arch });
 
   try {
     const appPaths = await packager({
