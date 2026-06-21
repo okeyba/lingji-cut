@@ -179,6 +179,7 @@ export function Setup({
   }, [aiSettings, selectedTemplate, selectedRole, voiceIdDefault]);
 
   // 待创作箱「生成初稿」：转录稿作为 original.md 素材，复用一键 autoMode 流水线做 AI 二创。
+  // 默认用「二创转述」模板（洗稿、换表达），而非常规写稿模板。
   const handleDraftFromInbox = useCallback(
     async (item: SonarInboxItem, parentDir: string) => {
       await onImportScript(
@@ -186,7 +187,7 @@ export function Setup({
         deriveProjectName(item),
         inboxItemToOriginalMarkdown(item),
         true,
-        autoModeOptions.defaults,
+        { ...autoModeOptions.defaults, templateId: 'rewrite-remix' },
         autoModeOptions.defaultModelBinding,
       );
     },

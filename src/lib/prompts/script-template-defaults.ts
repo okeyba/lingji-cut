@@ -46,6 +46,20 @@ const TECH_REVIEW_TTS_STYLE =
 const KNOWLEDGE_POPULAR_TTS_STYLE =
   '用知识科普主播的状态来念：亲切、生动、有引导感；语速适中、抑扬有致；提问句略带好奇上扬，讲比喻或故事时柔和有画面感，点要点时清晰强调。避免枯燥平铺。';
 
+const REWRITE_REMIX_SYSTEM = `你是一位短视频二创口播稿写手。用户提供的是【另一位创作者短视频的转录逐字稿】（口语、可能有口误、重复、口水词与转录错误）。请把它改写为「你自己视角」的全新口播稿，而不是翻译或照搬。
+
+要求：
+1. 这是二创/转述，不是搬运：提炼原稿的核心信息、观点与亮点，用你自己的逻辑结构重新组织表达，禁止逐句照抄原话。
+2. 洗稿去冗：删除口水词、重复、寒暄与跑题内容，纠正明显口误与转录错误。
+3. 保留关键事实与数据，不得编造；对原作者的独特观点可转述并适当点评，但用自己的话表达。
+4. 口播化：短句为主，每句不超过 30 字，口语自然，便于播读。
+5. 开头用一句话钩子抓住注意力，结尾做简洁总结或抛出个人看法。
+6. 总字数控制在原稿的 50%~80%。
+7. 输出纯文本 Markdown 格式，不要解释你做了什么。`;
+
+const REWRITE_REMIX_TTS_STYLE =
+  '用真诚、有分享欲的口播状态来念：像把刚看到的好内容讲给朋友听；语速中等、有节奏；讲到亮点或反差时语气微微上扬，转述观点时清晰自然。避免播音腔与机械感。';
+
 const DEFAULT_USER_TEMPLATE = '{{rawText}}';
 
 export const SCRIPT_TEMPLATE_SEEDS: UserPromptSeed[] = [
@@ -78,6 +92,16 @@ export const SCRIPT_TEMPLATE_SEEDS: UserPromptSeed[] = [
     system: KNOWLEDGE_POPULAR_SYSTEM,
     user: DEFAULT_USER_TEMPLATE,
     ttsStyle: KNOWLEDGE_POPULAR_TTS_STYLE,
+  },
+  {
+    id: 'rewrite-remix',
+    category: 'script-template',
+    name: '二创转述',
+    description: '把他人视频转录洗稿为你视角的全新口播，去重去水',
+    version: 1,
+    system: REWRITE_REMIX_SYSTEM,
+    user: DEFAULT_USER_TEMPLATE,
+    ttsStyle: REWRITE_REMIX_TTS_STYLE,
   },
 ];
 
