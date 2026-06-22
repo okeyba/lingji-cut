@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-06-22
+
+本版本把 AI 对话 agent 收敛为内置、开箱即用的 **Pi**，底层重构为多协议 runtime，并打通「AI 改文件 → 编辑器实时热重载」的 file-first 闭环；同时新增发布视频选项卡的多画幅封面工作台与待创作箱清空等创作链路改进，并修复工作区标签页互切偶发空白。
+
 ### Changed
 - **对话面板收敛为唯一「内置 Pi」agent（移除 Codex / Claude 面板路径）**：在本轮多协议 runtime（Claude / Codex / Pi）基础上进一步收敛——AI 对话面板现在只保留 **Pi** 一个 agent，并将其**内置打包**，用户无需自行安装。本条目取代下面「多协议 Runtime」「内置 Pi agent（ACP 接入）」等中间态描述。
   - **内置打包、开箱即用**：固定版本 `@earendil-works/pi-coding-agent` 经 `scripts/vendor-pi.cjs` 安装到 `resources/pi/`（打包时 asar unpack），用 Electron 自带 Node（`ELECTRON_RUN_AS_NODE`）运行其 `dist/cli.js --mode rpc`；不再要求用户本机安装 `pi`，也不再走 `npx -y pi-acp` 适配器。
@@ -30,6 +34,13 @@
   - **实时热重载钩子**：`project.json`、`ai-cards/**/motionCard.tsx`、`script.md`/`original.md` 的外部变更经 chokidar 灌回对应 store 并刷新预览；`script.md` 外部保存补建版本历史（`source: external`）（`src/lib/external-edit-sync.ts`）。
   - **校验守门 + 结果回传**：外部改 `project.json` 经基础约束校验（时间为正、动画枚举合法），结果写 `.lingji/edit-result.json` 供 agent 自查，校验失败的脏数据不灌回预览，无需调用 MCP 工具（`src/lib/external-edit-validate.ts`）。
   - **文件契约文档 + 两个 Skill**：`docs/ai-contract/`（视频/文稿/锁/结果协议）+ `lingji-video-edit` / `lingji-script-edit` 两个边界清晰的 file-first skill；ACP 连接时把契约要点同步进项目目录的 `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`（`electron/acp/contract-sync.ts`）。
+- **发布视频选项卡：多画幅封面工作台 + 元数据**：新增 `PublishCoverPanel` / `useCoverStudio`，按 16:9 / 4:3 / 3:4 分组生成与管理封面（`CoverCandidate` 新增 `aspectRatio`，旧数据缺省按 16:9）；编辑器封面面板只展示 16:9 整期封面，竖屏/方屏画幅交由发布选项卡管理。新增 `publish-metadata` 生成发布标题 / 简介 / 标签。导出成功后记录 `lastExportPath`，供发布选项卡预填视频文件。
+- **待创作箱一键清空 + 欢迎页双栏工作区布局**：待创作箱支持一键清空（`inbox-store.clear()` 经 `sonar-inbox-clear` IPC 三件套贯通）；欢迎页改为左侧待创作箱 / 右侧本地草稿双栏布局，各自独立滚动。
+- **pi agent 新增「火山方舟 Coding Plan」provider 预设**：内置火山引擎方舟 Coding Plan（OpenAI 兼容端点 `/api/coding/v3`，Doubao-Seed-Code 等编程模型）。
+- **声呐扩展：抖音主页滚动采集 + DOM 提取 + ffmpeg 本地转码**：内容脚本改为滚动 DOM 采集主页（`secUid` 作 id），后台编排采集任务与进度，offscreen 集成 `ffmpeg.wasm` 本地转码（资源由 `scripts/copy-ffmpeg-assets.mjs` 在 predev/prebuild 生成，不入库）。
+
+### Fixed
+- **工作区 tab 切换偶发空白**：写稿工作台 / 视频编辑器 / 发布三个 tab 互切时，`resolvePageTransition` 仍返回随切换变化的 `contentKey`（如 `crossfade:editor->script-workbench`），导致 `AnimatePresence mode="wait"` 触发「旧页 exit(opacity→0) → 新页 remount」的完整周期；framer-motion v12 在 exit 动画帧与新 render 的时序竞态下会卡在「旧节点已退至透明、`onExitComplete` 未触发、新节点永不挂载」的状态，表现为整片空白（概率性出现）。修复为：工作区三页共用稳定 `contentKey: 'workspace'` + 静态 opacity:1，让 `AnimatePresence` 不介入，真正走 `display:contents/none` 切换显隐（兑现 `App.tsx` / `page-transition.ts` 原有注释的设计意图）。跨类别切换（welcome ↔ workspace、workspace → settings）仍保留正常 crossfade 动画。
 
 ## [1.2.0] - 2026-06-13
 
@@ -59,7 +70,6 @@
 ### Fixed
 - **图片卡转 Motion 卡字幕分支**：`convert→motion` 补齐 `cardTemplate` / `imageTemplate` / `stylePresetId`，转换后样式不再丢失。
 - **`audio gen` UI 刷新失效**：音频生成结果写回 `timeline.podcast`，使已打开项目的 UI 刷新生效。
-- **工作区 tab 切换偶发空白**：写稿工作台 / 视频编辑器 / 发布三个 tab 互切时，`resolvePageTransition` 仍返回随切换变化的 `contentKey`（如 `crossfade:editor->script-workbench`），导致 `AnimatePresence mode="wait"` 触发「旧页 exit(opacity→0) → 新页 remount」的完整周期；framer-motion v12 在 exit 动画帧与新 render 的时序竞态下会卡在「旧节点已退至透明、`onExitComplete` 未触发、新节点永不挂载」的状态，表现为整片空白（概率性出现）。修复为：工作区三页共用稳定 `contentKey: 'workspace'` + 静态 opacity:1，让 `AnimatePresence` 不介入，真正走 `display:contents/none` 切换显隐（兑现 `App.tsx` / `page-transition.ts` 原有注释的设计意图）。跨类别切换（welcome ↔ workspace、workspace → settings）仍保留正常 crossfade 动画。
 
 ## [1.1.0] - 2026-06-06
 
@@ -113,6 +123,7 @@
 ### Build / Packaging
 - macOS 多架构（arm64 + x64）DMG，Windows x64 zip 通过 GitHub Actions 自动构建并发布。
 
+[1.3.0]: https://github.com/yoqu/lingji-cut/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/yoqu/lingji-cut/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/yoqu/lingji-cut/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/yoqu/lingji-cut/compare/v1.0.0...v1.0.1
