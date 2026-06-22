@@ -3,10 +3,14 @@
  *
  * Pi 工具审批门控的纯函数层（风险分类 + 策略决策）。
  *
- * 由 in-process driver（pi-inprocess.ts）在 `uiContext.confirm()` 回调里调用：
- * pi 在需要确认（写文件 / 跑命令等）时会触发 confirm，本模块综合工具名、确认文案、
- * 以及工具入参里的文件路径（是否越出项目目录）判定 risky / benign，再按当前审批策略
- * 决定 auto_allow（自动放行）还是 ask（弹卡片等用户响应）。
+ * 由 in-process driver（pi-inprocess.ts）在 pi 的 `tool_call` 扩展事件 handler 里调用
+ * （`agent.beforeToolCall` → emitToolCall）：pi 在执行任何工具前触发 tool_call，
+ * 本模块综合工具名、入参（序列化后的命令/URL 文本）、以及入参里的文件路径（是否越出
+ * 项目目录）判定 risky / benign，再按当前审批策略决定 auto_allow（自动放行）还是
+ * ask（surface 审批卡片、等用户响应；拒绝时 handler 返回 {block:true} 拦下工具）。
+ *
+ * 注：pi 的内置工具从不调用 `uiContext.confirm`（仅给扩展用），故门控必须挂在
+ * tool_call 事件上，confirm 仅作防御性兜底。
  *
  * 纯函数、无 Node 副作用（仅用 node:path 做路径归一化），便于单测。
  */
@@ -149,4 +153,36 @@ export function decidePermission(policy: string, risk: PermissionRisk): Permissi
   if (policy === 'auto_approve') return 'auto_allow';
   if (policy === 'always_ask') return 'ask';
   return risk === 'risky' ? 'ask' : 'auto_allow';
+}
+
+function safeStringify(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * 一次 pi `tool_call` 的门控组合判定：风险分类 + 策略决策一步到位。
+ *
+ * 策略缺省（undefined / 空串）时保留旧行为自动放行（legacy）。否则把结构化 input
+ * 序列化进 message，使 classifyConfirmRisk 的命令/URL 文本规则仍可扫描 rm -rf、
+ * https:// 等，再按策略决定 auto_allow / ask。
+ */
+export function evaluateToolCallGate(
+  policy: string | undefined,
+  call: { toolName?: string; input?: unknown; cwd?: string },
+): PermissionDecision {
+  if (!policy) return 'auto_allow';
+  const risk = classifyConfirmRisk({
+    title: call.toolName,
+    message: safeStringify(call.input),
+    toolName: call.toolName,
+    toolInput: call.input,
+    cwd: call.cwd,
+  });
+  return decidePermission(policy, risk);
 }

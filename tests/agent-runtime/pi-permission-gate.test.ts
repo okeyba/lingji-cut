@@ -13,6 +13,7 @@ import path from 'node:path';
 import {
   classifyConfirmRisk,
   decidePermission,
+  evaluateToolCallGate,
 } from '../../electron/agent-runtime/pi-permission';
 
 describe('decidePermission', () => {
@@ -96,5 +97,53 @@ describe('classifyConfirmRisk', () => {
   it('无法判定（无工具名、无可识别文案）时从严判为 risky', () => {
     expect(classifyConfirmRisk({ message: '继续吗？', cwd })).toBe('risky');
     expect(classifyConfirmRisk({})).toBe('risky');
+  });
+});
+
+describe('evaluateToolCallGate', () => {
+  const cwd = path.join(os.tmpdir(), 'lingji-proj');
+
+  it('策略缺省（undefined/空）时保留旧行为：自动放行', () => {
+    expect(evaluateToolCallGate(undefined, { toolName: 'bash', input: { command: 'rm -rf /' }, cwd })).toBe(
+      'auto_allow',
+    );
+    expect(evaluateToolCallGate('', { toolName: 'edit', input: { path: 'a.ts' }, cwd })).toBe('auto_allow');
+  });
+
+  it('always_ask：任何工具（含项目内编辑/读取）都 ask', () => {
+    expect(
+      evaluateToolCallGate('always_ask', {
+        toolName: 'edit',
+        input: { path: 'src/index.ts', edits: [{ oldText: 'a', newText: 'b' }] },
+        cwd,
+      }),
+    ).toBe('ask');
+    expect(evaluateToolCallGate('always_ask', { toolName: 'read', input: { path: 'src/index.ts' }, cwd })).toBe('ask');
+  });
+
+  it('tiered：项目内编辑自动放行，执行命令/项目外编辑询问', () => {
+    expect(
+      evaluateToolCallGate('tiered', {
+        toolName: 'edit',
+        input: { path: 'src/index.ts', edits: [{ oldText: 'a', newText: 'b' }] },
+        cwd,
+      }),
+    ).toBe('auto_allow');
+    expect(evaluateToolCallGate('tiered', { toolName: 'bash', input: { command: 'ls' }, cwd })).toBe('ask');
+    expect(
+      evaluateToolCallGate('tiered', { toolName: 'write', input: { path: '/etc/hosts', content: 'x' }, cwd }),
+    ).toBe('ask');
+  });
+
+  it('auto_approve：任何工具都自动放行', () => {
+    expect(evaluateToolCallGate('auto_approve', { toolName: 'bash', input: { command: 'rm -rf build' }, cwd })).toBe(
+      'auto_allow',
+    );
+  });
+
+  it('input 透传文本规则：命令中含 rm -rf / URL 仍判 risky → ask（tiered）', () => {
+    expect(
+      evaluateToolCallGate('tiered', { toolName: 'custom_run', input: { args: 'sudo rm -rf /tmp/x' }, cwd }),
+    ).toBe('ask');
   });
 });

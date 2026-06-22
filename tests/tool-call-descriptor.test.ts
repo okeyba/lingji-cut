@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { describeToolCallBlock } from '../src/components/agent/tool-call-descriptor';
+import {
+  describeToolCallBlock,
+  fileChangeFromToolCall,
+} from '../src/components/agent/tool-call-descriptor';
 
 describe('describeToolCallBlock', () => {
   it('把 PI bash 工具调用描述为命令执行', () => {
@@ -120,6 +123,96 @@ describe('describeToolCallBlock', () => {
       kind: 'diff',
     }]);
     expect(descriptor.sections.some((section) => section.content.includes('Successfully replaced'))).toBe(false);
+  });
+
+  it('解析 PI edit 真实入参格式 edits:[{oldText,newText}] 并渲染 diff', () => {
+    // pi 的 edit 工具入参是 { path, edits:[{oldText,newText}] }（嵌套数组），
+    // 旧实现只认顶层扁平 oldText/newText，识别不到 edits[] → 回退成 JSON+成功文本。
+    const descriptor = describeToolCallBlock({
+      type: 'tool_call',
+      title: 'edit',
+      kind: 'edit',
+      status: 'completed',
+      rawInput: JSON.stringify({
+        path: 'original.md',
+        edits: [{ oldText: '又到了一年一度新能源车下乡活动了', newText: '你好，又到了一年一度新能源车下乡活动了' }],
+      }),
+      rawOutput: 'Successfully replaced 1 block(s) in original.md.',
+    });
+
+    expect(descriptor.label).toBe('编辑文件');
+    expect(descriptor.subject).toBe('original.md');
+    expect(descriptor.sections).toEqual([{
+      label: 'Diff',
+      content:
+        '--- a/original.md\n+++ b/original.md\n@@ -1,1 +1,1 @@\n-又到了一年一度新能源车下乡活动了\n+你好，又到了一年一度新能源车下乡活动了',
+      kind: 'diff',
+    }]);
+    expect(descriptor.sections.some((section) => section.content.includes('Successfully replaced'))).toBe(false);
+  });
+
+  it('PI edit 多条 edits[] 合并为单个文件头、逐条 hunk 的 diff', () => {
+    const descriptor = describeToolCallBlock({
+      type: 'tool_call',
+      title: 'edit',
+      kind: 'edit',
+      status: 'completed',
+      rawInput: JSON.stringify({
+        path: 'src/foo.ts',
+        edits: [
+          { oldText: 'alpha', newText: 'ALPHA' },
+          { oldText: 'omega', newText: 'OMEGA' },
+        ],
+      }),
+    });
+
+    const diff = descriptor.sections.find((section) => section.label === 'Diff')!.content;
+    // 单个文件头
+    expect((diff.match(/^--- a\/src\/foo\.ts$/gm) ?? []).length).toBe(1);
+    expect((diff.match(/^\+\+\+ b\/src\/foo\.ts$/gm) ?? []).length).toBe(1);
+    // 两条改动各一条 +/-，统计 +2 / -2
+    expect(diff.split('\n').filter((l) => /^-(?!--)/.test(l))).toEqual(['-alpha', '-omega']);
+    expect(diff.split('\n').filter((l) => /^\+(?!\+\+)/.test(l))).toEqual(['+ALPHA', '+OMEGA']);
+    expect(descriptor.meta).toContain('+2 / -2');
+  });
+
+  it('edits 以 JSON 字符串形式传来（部分模型行为）也能解析', () => {
+    const descriptor = describeToolCallBlock({
+      type: 'tool_call',
+      title: 'edit',
+      kind: 'edit',
+      status: 'completed',
+      rawInput: JSON.stringify({
+        path: 'a.md',
+        edits: JSON.stringify([{ oldText: 'x', newText: 'y' }]),
+      }),
+    });
+
+    expect(descriptor.sections).toEqual([{
+      label: 'Diff',
+      content: '--- a/a.md\n+++ b/a.md\n@@ -1,1 +1,1 @@\n-x\n+y',
+      kind: 'diff',
+    }]);
+  });
+
+  it('fileChangeFromToolCall 支持 PI edits[] 聚合为文件变更（含 diff）', () => {
+    const change = fileChangeFromToolCall({
+      type: 'tool_call',
+      title: 'edit',
+      kind: 'edit',
+      status: 'completed',
+      rawInput: JSON.stringify({
+        path: 'original.md',
+        edits: [{ oldText: '原稿', newText: '你好，原稿' }],
+      }),
+      rawOutput: 'Successfully replaced 1 block(s) in original.md.',
+    });
+
+    expect(change).not.toBeNull();
+    expect(change!.path).toBe('original.md');
+    expect(change!.operation).toBe('edit');
+    expect(change!.diff).toContain('-原稿');
+    expect(change!.diff).toContain('+你好，原稿');
   });
 
   it('把 PI write 工具调用描述为写入文件并显示写入行数', () => {

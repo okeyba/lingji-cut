@@ -7,9 +7,15 @@
  *   1. 按 agentDir（=App 投影出的 ~/.lingji/pi-agent）解析 auth/models/settings。
  *   2. 解析 model（'provider/modelId'）/ thinkingLevel / 启用的 skills。
  *   3. resume：按 resumeSessionId 在 sessionDir 里找回历史会话文件并 open。
- *   4. createAgentSession → bindExtensions 注入 confirm 门控 → subscribe 把
+ *   4. 经 DefaultResourceLoader.extensionFactories 注入一个 inline 扩展，注册
+ *      `tool_call` handler 做审批门控（pi 内置工具执行前 beforeToolCall → emitToolCall，
+ *      handler 返回 {block:true} 即拦下）；createAgentSession → subscribe 把
  *      AgentSessionEvent 归一化为 AgentStreamEvent → onEvent。
  *   5. session.prompt() 跑一轮；abort / dispose / respondPermission 管理生命周期。
+ *
+ * 审批门控说明：pi 的内置工具（read/edit/write/bash）从不调用 `uiContext.confirm`
+ * （confirm 仅给扩展用），故门控必须挂在 `tool_call` 扩展事件上。confirm 仍保留作
+ * 防御性兜底（若某个自定义工具/扩展走 confirm 路径，同样经审批策略门控）。
  *
  * 注意：pi 包是 ESM-only（package.json exports 仅 `import` 条件），而 Electron 主
  * 进程构建为 CJS，故用 dynamic import() 惰性加载（Node 24 支持从 CJS import ESM）。
@@ -18,12 +24,14 @@
 import path from 'node:path';
 import type { AgentStreamEvent } from './event-model';
 import { classifyToolKind } from './event-model';
-import { classifyConfirmRisk, decidePermission } from './pi-permission';
+import { evaluateToolCallGate } from './pi-permission';
 import type { ResolvedAgentSkill } from '../acp/types';
 import type {
   AgentSession as PiAgentSession,
   AgentSessionEvent,
+  ExtensionFactory,
   ExtensionUIContext,
+  ToolCallEvent,
 } from '@earendil-works/pi-coding-agent';
 
 type PiSdk = typeof import('@earendil-works/pi-coding-agent');
@@ -68,6 +76,17 @@ export interface PiInProcessStartInput {
 /** 数字归一化（usage 字段容错）。 */
 function num(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+}
+
+/** 把工具入参序列化为审批卡片可读文本（容错循环引用 / 非 JSON）。 */
+function safeJsonStringify(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 /**
@@ -237,22 +256,22 @@ export class PiInProcessSession {
         ? (input.reasoning as PiThinkingLevel)
         : undefined;
 
-    // 5) skills：启用且可用的 rootPath 注入 DefaultResourceLoader。
+    // 5) skills + 审批门控扩展：
+    //    skills 走 additionalSkillPaths；审批门控走 extensionFactories（inline 扩展
+    //    注册 tool_call handler）。后者要求始终构造 DefaultResourceLoader——即使没有
+    //    skills，也要把审批扩展挂上，否则 pi 内置工具会无门控直接执行。
     const skillPaths = (input.skills ?? [])
       .filter((s) => s.enabled && s.status === 'available')
       .map((s) => s.rootPath);
-    let resourceLoader;
-    let settingsManager;
-    if (skillPaths.length > 0) {
-      settingsManager = sdk.SettingsManager.create(cwd, agentDir);
-      resourceLoader = new sdk.DefaultResourceLoader({
-        cwd,
-        agentDir: agentDir ?? sdk.getAgentDir(),
-        settingsManager,
-        additionalSkillPaths: skillPaths,
-      });
-      await resourceLoader.reload();
-    }
+    const settingsManager = sdk.SettingsManager.create(cwd, agentDir);
+    const resourceLoader = new sdk.DefaultResourceLoader({
+      cwd,
+      agentDir: agentDir ?? sdk.getAgentDir(),
+      settingsManager,
+      additionalSkillPaths: skillPaths,
+      extensionFactories: [this.buildApprovalExtensionFactory()],
+    });
+    await resourceLoader.reload();
 
     const { session } = await sdk.createAgentSession({
       cwd,
@@ -409,44 +428,79 @@ export class PiInProcessSession {
     }
   }
 
-  // ── 审批门控 uiContext ───────────────────────────────────────────────────────
+  // ── 审批门控 ─────────────────────────────────────────────────────────────────
 
   /**
-   * 构造一个 headless 的 ExtensionUIContext：只有 confirm 接审批门控，
-   * select 取首项、input/editor 返回空，其余 TUI 方法 no-op。
+   * surface 一张审批卡片并等待用户响应。resolve(true)=允许、resolve(false)=拒绝。
+   * 由 tool_call handler（主路径）与 confirm（防御兜底）共用。
+   */
+  private requestApproval(title: string, rawInput: string, toolName?: string): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      const requestId = `perm-${++this.permSeq}`;
+      this.pendingPermissions.set(requestId, resolve);
+      this.onEvent({
+        type: 'permission_request',
+        requestId,
+        toolCall: {
+          title: title || toolName || '需要确认操作',
+          rawInput: rawInput || '',
+          kind: classifyToolKind(toolName ?? ''),
+        },
+        options: [
+          { optionId: 'allow_once', name: '仅此次允许', kind: 'allow_once' },
+          { optionId: 'allow_always', name: '本轮始终允许', kind: 'allow_always' },
+          { optionId: 'reject', name: '拒绝', kind: 'reject_always' },
+        ],
+      });
+    });
+  }
+
+  /**
+   * 构造审批门控扩展（inline ExtensionFactory）：注册 pi 的 `tool_call` 事件 handler。
+   *
+   * pi 在执行任何工具前触发 beforeToolCall → emitToolCall('tool_call')，handler 返回
+   * { block:true } 即拦下工具。这是 pi 内置工具（read/edit/write/bash）唯一的门控点——
+   * 它们从不调用 uiContext.confirm。按当前审批策略：auto_allow 直接放行；ask 则 surface
+   * 审批卡片等用户响应，拒绝时 block。
+   */
+  private buildApprovalExtensionFactory(): ExtensionFactory {
+    return (pi) => {
+      pi.on('tool_call', async (event: ToolCallEvent) => {
+        const policy = this.getPermissionPolicy?.();
+        const decision = evaluateToolCallGate(policy, {
+          toolName: event.toolName,
+          input: event.input,
+          cwd: this.cwd,
+        });
+        if (decision === 'auto_allow') return undefined;
+        const allowed = await this.requestApproval(
+          event.toolName,
+          safeJsonStringify(event.input),
+          event.toolName,
+        );
+        return allowed ? undefined : { block: true, reason: '用户拒绝了该操作' };
+      });
+    };
+  }
+
+  // ── headless uiContext ───────────────────────────────────────────────────────
+
+  /**
+   * 构造一个 headless 的 ExtensionUIContext：confirm 作防御性审批兜底（内置工具不会
+   * 走它，但自定义工具/扩展若调 confirm 同样经审批策略门控），select 取首项、
+   * input/editor 返回空，其余 TUI 方法 no-op。
    */
   private buildUiContext(): ExtensionUIContext {
     const confirm = async (title: string, message: string): Promise<boolean> => {
       const policy = this.getPermissionPolicy?.();
-      // 无策略 getter：保留旧行为，自动放行。
-      if (!policy) return true;
-      const risk = classifyConfirmRisk({
-        title,
-        message,
+      const decision = evaluateToolCallGate(policy, {
         toolName: this.lastToolName,
-        toolInput: this.lastToolInput,
+        // confirm 没有结构化 input；用 message 文案 + 最近工具入参兜底分类。
+        input: message || this.lastToolInput,
         cwd: this.cwd,
       });
-      if (decidePermission(policy, risk) === 'auto_allow') return true;
-      // ask：surface 审批卡片，等待 respondPermission。
-      return new Promise<boolean>((resolve) => {
-        const requestId = `perm-${++this.permSeq}`;
-        this.pendingPermissions.set(requestId, resolve);
-        this.onEvent({
-          type: 'permission_request',
-          requestId,
-          toolCall: {
-            title: title || this.lastToolName || '需要确认操作',
-            rawInput: message || '',
-            kind: classifyToolKind(this.lastToolName ?? ''),
-          },
-          options: [
-            { optionId: 'allow_once', name: '仅此次允许', kind: 'allow_once' },
-            { optionId: 'allow_always', name: '本轮始终允许', kind: 'allow_always' },
-            { optionId: 'reject', name: '拒绝', kind: 'reject_always' },
-          ],
-        });
-      });
+      if (decision === 'auto_allow') return true;
+      return this.requestApproval(title, message, this.lastToolName);
     };
 
     const noop = (): void => {};

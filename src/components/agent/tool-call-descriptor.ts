@@ -205,28 +205,68 @@ function diffStats(diff: string): string | null {
   return parts.length > 0 ? parts.join(' / ') : null;
 }
 
-function makeReplacementDiff(path: string, before: string, after: string): string {
+interface ReplacementEdit {
+  oldText: string;
+  newText: string;
+}
+
+/**
+ * 从工具入参里抽取 pi 风格的 edits 数组：`{ path, edits:[{oldText,newText}] }`。
+ *
+ * pi 的 edit 工具把多次替换嵌在 edits[] 里（而非顶层扁平 oldText/newText），且部分
+ * 模型（Opus / GLM 等）会把 edits 整体当 JSON 字符串发。这里兼容数组与 JSON 字符串，
+ * 并复用 OLD/NEW_TEXT_KEYS 容忍字段别名。无可识别 edits 时返回空数组。
+ */
+function extractEdits(record: Record<string, unknown> | null): ReplacementEdit[] {
+  if (!record) return [];
+  let raw: unknown =
+    record.edits ?? nestedRecord(record, NESTED_CONTAINER_KEYS)?.edits ?? undefined;
+  if (typeof raw === 'string' && raw.trim().startsWith('[')) {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(raw)) return [];
+  const edits: ReplacementEdit[] = [];
+  for (const entry of raw) {
+    const editRecord = recordValue(entry);
+    if (!editRecord) continue;
+    const oldText = pickString(editRecord, OLD_TEXT_KEYS);
+    const newText = pickString(editRecord, NEW_TEXT_KEYS);
+    if (oldText || newText) edits.push({ oldText, newText });
+  }
+  return edits;
+}
+
+/** 把一组 {oldText,newText} 替换合成单文件头、逐条 hunk 的 unified diff。 */
+function makeEditsDiff(path: string, edits: ReplacementEdit[]): string {
   // 用 jsdiff 的 structuredPatch 走真正的行级 LCS：
   //   - "开头加一行" 这类只改首行的场景，only 输出 "+新行" 一行的 hunk + 上下文，
   //     而不是把整段 before 标记 - / 整段 after 标记 +。
   //   - oldString/newString 同时为多行时只输出真实差异行，不再放大成整段替换。
-  const safeBefore = before ?? '';
-  const safeAfter = after ?? '';
-  // structuredPatch 对最后一行无换行的内容会写出 `\ No newline at end of file` 元行；
-  // 我们在序列化时统一吃掉，但 patch 算法本身仍按真实内容跑。
-  const patch = structuredPatch(path, path, safeBefore, safeAfter, '', '', { context: 3 });
-  if (!patch.hunks.length) return '';
-
-  const lines: string[] = [`--- a/${path}`, `+++ b/${path}`];
-  for (const hunk of patch.hunks) {
-    lines.push(`@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`);
-    for (const raw of hunk.lines) {
-      // 跳过 `\ No newline at end of file` 之类的元信息行，避免渲染层把它当 diff 行展示。
-      if (raw.startsWith('\\')) continue;
-      lines.push(raw);
+  //   - 多条 edits 时共用一个文件头，逐条追加 hunk（行号相对各自片段，与单条一致）。
+  const body: string[] = [];
+  for (const { oldText, newText } of edits) {
+    // structuredPatch 对最后一行无换行的内容会写出 `\ No newline at end of file` 元行；
+    // 我们在序列化时统一吃掉，但 patch 算法本身仍按真实内容跑。
+    const patch = structuredPatch(path, path, oldText ?? '', newText ?? '', '', '', { context: 3 });
+    for (const hunk of patch.hunks) {
+      body.push(`@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`);
+      for (const raw of hunk.lines) {
+        // 跳过 `\ No newline at end of file` 之类的元信息行，避免渲染层把它当 diff 行展示。
+        if (raw.startsWith('\\')) continue;
+        body.push(raw);
+      }
     }
   }
-  return lines.join('\n');
+  if (!body.length) return '';
+  return [`--- a/${path}`, `+++ b/${path}`, ...body].join('\n');
+}
+
+function makeReplacementDiff(path: string, before: string, after: string): string {
+  return makeEditsDiff(path, [{ oldText: before ?? '', newText: after ?? '' }]);
 }
 
 function shellContent(command: string, rawOutput?: string): string {
@@ -259,6 +299,8 @@ export function describeToolCallBlock(block: ToolCallBlockLike): ToolCallDescrip
   const content = pickNestedStringDeep(args, CONTENT_KEYS);
   const before = pickNestedStringDeep(args, OLD_TEXT_KEYS);
   const after = pickNestedStringDeep(args, NEW_TEXT_KEYS);
+  // pi 风格嵌套替换：{ path, edits:[{oldText,newText}] }（扁平 before/after 取不到时的主路径）。
+  const edits = extractEdits(args);
 
   if (command || toolName === 'bash' || kind === 'execute' || /(shell|terminal|command|exec|run)/.test(toolName)) {
     const timeout = pickNestedNumber(args, ['timeout', 'timeoutMs']);
@@ -277,8 +319,8 @@ export function describeToolCallBlock(block: ToolCallBlockLike): ToolCallDescrip
     };
   }
 
-  if (path && (before || after) && !/^(read|cat|view|open)/.test(toolName)) {
-    const diff = makeReplacementDiff(path, before, after);
+  if (path && (before || after || edits.length > 0) && !/^(read|cat|view|open)/.test(toolName)) {
+    const diff = edits.length > 0 ? makeEditsDiff(path, edits) : makeReplacementDiff(path, before, after);
     const stat = diffStats(diff);
     return {
       label: '编辑文件',
@@ -372,11 +414,13 @@ export function describeToolCallBlock(block: ToolCallBlockLike): ToolCallDescrip
     const editPath = pickNestedStringDeep(args, PATH_KEYS) || firstPathFromPatch(patch) || pathFromToolOutput(output);
     const editBefore = pickNestedStringDeep(args, OLD_TEXT_KEYS);
     const editAfter = pickNestedStringDeep(args, NEW_TEXT_KEYS);
-    const diff = editPath && (editBefore || editAfter)
-      ? makeReplacementDiff(editPath, editBefore, editAfter)
-      : looksLikeUnifiedDiff(output)
-        ? output
-        : patch;
+    const diff = editPath && edits.length > 0
+      ? makeEditsDiff(editPath, edits)
+      : editPath && (editBefore || editAfter)
+        ? makeReplacementDiff(editPath, editBefore, editAfter)
+        : looksLikeUnifiedDiff(output)
+          ? output
+          : patch;
     const stat = diffStats(diff);
     return {
       label: '编辑文件',
@@ -490,14 +534,19 @@ export function fileChangeFromToolCall(block: ToolCallBlockLike): FileChangeDesc
     if (!path) return null;
     const before = pickNestedStringDeep(args, OLD_TEXT_KEYS);
     const after = pickNestedStringDeep(args, NEW_TEXT_KEYS);
-    const diff = before || after
-      ? makeReplacementDiff(path, before, after)
-      : looksLikeUnifiedDiff(output) ? output : patch || undefined;
-    if (!before && !after && !diff) return null;
+    const edits = extractEdits(args);
+    const diff = edits.length > 0
+      ? makeEditsDiff(path, edits)
+      : before || after
+        ? makeReplacementDiff(path, before, after)
+        : looksLikeUnifiedDiff(output) ? output : patch || undefined;
+    if (!before && !after && edits.length === 0 && !diff) return null;
+    // edits[] 场景下扁平 before/after 取不到，用首条 edit 兜底 before/after 摘要。
+    const firstEdit = edits[0];
     return {
       path,
-      before: before || null,
-      after: after || '',
+      before: before || firstEdit?.oldText || null,
+      after: after || firstEdit?.newText || '',
       diff,
       operation: patchOperation(patch),
     };
