@@ -32,6 +32,43 @@ import {
 import type { AutoWorkflowParams } from '../../store/ai';
 import styles from './ImportScriptDialog.module.css';
 
+export interface ImportDialogSeedInput {
+  defaults: AutoWorkflowParams;
+  defaultModelBinding: AutoModeModelBinding | null;
+  initialContent?: string;
+  initialProjectName?: string;
+  initialParentDir?: string | null;
+  initialAutoMode?: boolean;
+  templateIdOverride?: string;
+}
+
+export interface ImportDialogSeed {
+  content: string;
+  projectName: string;
+  parentDir: string | null;
+  autoMode: boolean;
+  autoParams: AutoWorkflowParams;
+  modelBinding: AutoModeModelBinding | null;
+}
+
+/**
+ * 计算「导入文稿」弹窗打开时的初始状态种子。
+ * 纯函数（无 hooks），便于在 node 测试环境直接断言；模板覆盖逻辑集中于此。
+ */
+export function computeImportDialogSeed(input: ImportDialogSeedInput): ImportDialogSeed {
+  return {
+    content: input.initialContent ?? '',
+    projectName: input.initialProjectName ?? '',
+    parentDir: input.initialParentDir ?? null,
+    autoMode: input.initialAutoMode ?? false,
+    autoParams: {
+      ...input.defaults,
+      templateId: input.templateIdOverride ?? input.defaults.templateId,
+    },
+    modelBinding: input.defaultModelBinding,
+  };
+}
+
 const ALLOWED_EXTENSIONS = ['.md', '.txt', '.html', '.htm'] as const;
 const ALLOWED_LABEL = '.md / .txt / .html';
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB 上限，避免误拖音视频
