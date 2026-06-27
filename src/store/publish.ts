@@ -1,10 +1,13 @@
 import { create } from 'zustand';
-import type { PublishAccount, PublishPlatform } from '../lib/electron-api';
+import type { PublishAccount, PublishPlatform, PublishSettings } from '../lib/electron-api';
 import type { PublishShared, PublishTarget, PublishProgressPayload } from '../lib/electron-api';
 import { useTaskProgressStore } from './task-progress';
 
+/** 账号终态：进度计数与落盘历史据此判断「该账号本次已结束」。 */
+const TERMINAL_STATES = new Set(['success', 'failed', 'login-expired']);
+
 export interface PublishResult {
-  state: 'pending' | 'running' | 'success' | 'failed';
+  state: 'pending' | 'running' | 'success' | 'failed' | 'login-expired';
   percent?: number;
   message?: string;
   startedAt?: number;
@@ -22,11 +25,15 @@ interface PublishState {
   accounts: PublishAccount[];
   job: ActivePublishJob | null;
   results: Record<string, PublishResult>;
+  /** 发布全局设置（无头登录等）。 */
+  settings: PublishSettings;
   /** 编辑器最近一次成功导出的 MP4 路径；供发布选项卡联动预填视频文件。 */
   lastExportPath: string | null;
   setLastExportPath: (path: string | null) => void;
 
   loadAccounts: () => Promise<void>;
+  loadSettings: () => Promise<void>;
+  setHeadlessLogin: (headless: boolean) => Promise<void>;
   addAccount: (
     platform: PublishPlatform,
     accountName: string,
@@ -47,6 +54,7 @@ export const usePublishStore = create<PublishState>((set, get) => ({
   accounts: [],
   job: null,
   results: {},
+  settings: { headlessLogin: true },
   lastExportPath: null,
   setLastExportPath: (path) => set({ lastExportPath: path }),
 
@@ -55,8 +63,18 @@ export const usePublishStore = create<PublishState>((set, get) => ({
     set({ accounts });
   },
 
+  loadSettings: async () => {
+    const settings = await window.publishAPI.getSettings();
+    set({ settings });
+  },
+
+  setHeadlessLogin: async (headless) => {
+    const settings = await window.publishAPI.setSettings({ headlessLogin: headless });
+    set({ settings });
+  },
+
   addAccount: async (platform, accountName) => {
-    const res = await window.publishAPI.login(platform, accountName);
+    const res = await window.publishAPI.login(platform, accountName, get().settings.headlessLogin);
     await get().loadAccounts();
     return res;
   },
@@ -111,23 +129,22 @@ export const usePublishStore = create<PublishState>((set, get) => ({
               ? 'success'
               : payload.state === 'failed'
                 ? 'failed'
-                : payload.state === 'running'
-                  ? 'running'
-                  : prev.state,
+                : payload.state === 'login-expired'
+                  ? 'login-expired'
+                  : payload.state === 'running'
+                    ? 'running'
+                    : prev.state,
           percent: payload.percent,
           message: payload.message,
-          finishedAt:
-            payload.state === 'success' || payload.state === 'failed' ? now : prev.finishedAt,
+          finishedAt: TERMINAL_STATES.has(payload.state) ? now : prev.finishedAt,
         };
         return { results: { ...s.results, [payload.accountId]: next } };
       });
 
-      // Update unified progress bar phase
+      // Update unified progress bar phase（login-expired 同样视为该账号终态）
       const currentResults = { ...get().results, [payload.accountId]: { state: payload.state } };
       const total = targets.length;
-      const done = Object.values(currentResults).filter(
-        (r) => r.state === 'success' || r.state === 'failed',
-      ).length;
+      const done = Object.values(currentResults).filter((r) => TERMINAL_STATES.has(r.state)).length;
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
       useTaskProgressStore.getState().updateTask(taskId, {
         progress: pct,

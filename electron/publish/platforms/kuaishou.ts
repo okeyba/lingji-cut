@@ -358,7 +358,7 @@ export const kuaishou: PlatformModule = {
    * 有头浏览器，全新 context（无 storageState），等待用户快手 APP 扫码
    */
   async login(opts: LoginOptions): Promise<{ success: boolean; message: string }> {
-    return withContext({ headless: false }, async (ctx) => {
+    return withContext({ headless: opts.headless }, async (ctx) => {
       const page = await ctx.newPage();
       try {
         await page.goto(KUAISHOU_LOGIN_URL);

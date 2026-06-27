@@ -4,7 +4,7 @@
  * resolveVideo 与处理流水线（取流转录）共用，确保「未捕获/链接入库」的作品也能拿到无水印源。
  */
 import type { Video, VideoSource } from '@/domain/models';
-import { extractVideoSources } from '@/adapter/source-extractor';
+import { extractVideoSources, buildMuxedPlayApiSource } from '@/adapter/source-extractor';
 import { rankSources } from '@/resolver/source-ranker';
 import { resolveFromSharePage, type FetchText } from '@/resolver/share-resolver';
 import type { Repository } from './repository';
@@ -36,10 +36,11 @@ export interface EnsureSourcesDeps {
 export async function ensureVideoSources(
   deps: EnsureSourcesDeps,
   input: { awemeId?: string; shareUrl?: string; preferFresh?: boolean },
-): Promise<{ video: Video | null; sources: VideoSource[] }> {
+): Promise<{ video: Video | null; sources: VideoSource[]; rawVideo: unknown }> {
   const { repo, fetchPage, now } = deps;
   let video = input.awemeId ? await repo.getVideo(input.awemeId) : null;
   let sources = input.awemeId ? await getRepoSources(repo, input.awemeId) : [];
+  let rawVideo: unknown = input.awemeId ? await repo.getRawVideo(input.awemeId) : null;
 
   if (input.preferFresh || sources.length === 0) {
     const fromShare = await resolveFromSharePage({
@@ -56,15 +57,27 @@ export async function ensureVideoSources(
       await repo.cacheSources(fromShare.video.id, fromShare.sources);
       video = fromShare.video;
       sources = fromShare.sources;
+      rawVideo = fromShare.rawVideo;
     } else if (fromShare) {
       // 分享页解析到作品但没有视频源（如图文/动态作品）：补全元数据，保留已有缓存源。
       await repo.upsertCreator(fromShare.creator);
       await repo.upsertVideos([fromShare.video]);
       video = video ?? fromShare.video;
+      rawVideo = rawVideo ?? fromShare.rawVideo;
     }
   }
 
-  return { video, sources };
+  return { video, sources, rawVideo };
+}
+
+/**
+ * 把 snssdk play API 合流源置于候选首位（音视频分离作品里唯一稳定含音轨的源）。
+ * 拿不到 video_id 时原样返回；与既有源 URL 去重。供提音管线优先尝试。
+ */
+export function prependMuxedAudioSource(sources: VideoSource[], rawVideo: unknown): VideoSource[] {
+  const muxed = buildMuxedPlayApiSource(rawVideo);
+  if (!muxed) return sources;
+  return [muxed, ...sources.filter((s) => s.url !== muxed.url)];
 }
 
 /** 由一个 fetch 实现构造跟随跳转、返回文本与最终地址的 fetchPage。 */

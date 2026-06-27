@@ -39,6 +39,7 @@ import {
   createPipelineProgressBridge,
   type PipelineTaskSnapshot,
 } from './lib/pipeline-progress-bridge';
+import { attachTaskNotificationBridge } from './lib/task-notification-bridge';
 import { getRoleById } from './lib/script-templates';
 import { SCRIPT_TEMPLATE_SEEDS } from './lib/prompts/script-template-defaults';
 import { userPromptBindingKey } from './lib/prompts';
@@ -116,6 +117,9 @@ export default function App() {
     // 启动即加载口播模板分类，MCP / 写稿 / 抽屉都依赖这份缓存
     void loadUserPrompts('script-template');
   }, [loadUserPrompts]);
+
+  // 耗时任务完成 / 失败时弹系统通知，提醒用户回到软件继续下一步
+  useEffect(() => attachTaskNotificationBridge(), []);
 
   // --- MCP 只读型 Handler（全局注册，独立于 ScriptWorkbench 页面生命周期）---
   // 这些 handler 只依赖 Zustand store，不依赖 ScriptWorkbench 的 ref/回调，

@@ -27,6 +27,27 @@ export interface ProcessingDeps {
 /** 最多尝试的候选源数量（含纯视频 DASH 流被跳过的情况）。 */
 const MAX_SOURCE_ATTEMPTS = 4;
 
+/**
+ * 折叠尝试候选：抖音音视频分离时会下发多个同清晰度的纯视频 bit_rate 档位，直接占满尝试
+ * 窗口会把带音轨的 download_addr 挤出去。这里只折叠「已知且相同清晰度 × 同水印态」的重复
+ * 档位（无法判定重复的清晰度未知源全部保留），腾出窗口让真正含音频的源被尝试到。
+ */
+function foldAttemptCandidates(sources: VideoSource[]): VideoSource[] {
+  const seen = new Set<string>();
+  const out: VideoSource[] = [];
+  for (const s of sources) {
+    if (s.width === undefined && s.height === undefined) {
+      out.push(s);
+      continue;
+    }
+    const key = `${s.watermark === 'present' ? 'wm' : 'clean'}:${s.width ?? '?'}x${s.height ?? '?'}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(s);
+  }
+  return out;
+}
+
 /** 候选源的简短标签（主机 + 来源字段 + 清晰度），用于失败诊断，不含签名参数。 */
 function sourceLabel(source: VideoSource): string {
   let host = '?';
@@ -102,7 +123,7 @@ export function createProcessingService(deps: ProcessingDeps): ProcessingService
         await advance('fetching_media');
         let audio: Blob | null = null;
         const attempts: string[] = [];
-        for (const source of sources.slice(0, MAX_SOURCE_ATTEMPTS)) {
+        for (const source of foldAttemptCandidates(sources).slice(0, MAX_SOURCE_ATTEMPTS)) {
           try {
             const media = await deps.fetchMedia(source.url);
             await advance('extracting_audio');

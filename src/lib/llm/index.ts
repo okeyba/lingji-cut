@@ -36,6 +36,12 @@ function pickModel(settings: AISettings, binding?: ResolvedBinding) {
   return createChatModel(settings);
 }
 
+// 轻量请求日志：主进程跑时输出到 `npm run dev` 终端，渲染进程跑时进 DevTools。
+// 用于在卡片生成长时间无响应时判断是「等首字」还是「仍在持续输出」。
+function llmLog(message: string): void {
+  console.log(`[LLM ${new Date().toLocaleTimeString()}] ${message}`);
+}
+
 // 流式调用下不再用"总时长"做超时——只要 chunk（含 thinking 的 reasoning）
 // 持续到达，就认为模型还在工作。idle 即"两个 chunk 之间最长允许的间隔"。
 const STRUCTURED_IDLE_TIMEOUT_MS = 120_000;
@@ -98,7 +104,11 @@ async function streamCollectWithIdleTimeout(
   let timeoutError: Error | null = null;
   const startTs = Date.now();
   let firstChunkSeen = false;
+  let chunkCount = 0;
+  let lastBeatTs = startTs;
+  const HEARTBEAT_MS = 5000;
 
+  llmLog(`${label} 建立流式连接…（idle=${idleTimeoutMs}ms hard=${hardTimeoutMs}ms）`);
   const stream = await model.stream(messages);
   // 用 Async Iterator 接口拿到 return() 句柄，超时时主动关闭
   const iterator = (stream as AsyncIterable<unknown>)[Symbol.asyncIterator]();
@@ -119,11 +129,13 @@ async function streamCollectWithIdleTimeout(
   const armIdle = () => {
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
+      llmLog(`${label} ⏱ 空闲超时：${idleTimeoutMs}ms 内未收到新输出（已收 ${chunkCount} chunks / ${fullText.length} chars）`);
       abort(new Error(`${label} 空闲超时（${idleTimeoutMs}ms 内未收到任何输出）`));
     }, idleTimeoutMs);
   };
 
   hardTimer = setTimeout(() => {
+    llmLog(`${label} ⏱ 硬上限超时：总耗时超过 ${hardTimeoutMs}ms`);
     abort(new Error(`${label} 总耗时超过硬上限（${hardTimeoutMs}ms）`));
   }, hardTimeoutMs);
   armIdle();
@@ -134,18 +146,27 @@ async function streamCollectWithIdleTimeout(
       if (next.done) break;
       if (!firstChunkSeen) {
         firstChunkSeen = true;
-        onFirstChunk?.(Date.now() - startTs);
+        const latencyMs = Date.now() - startTs;
+        llmLog(`${label} ✓ 收到首个输出，首字延迟 ${latencyMs}ms`);
+        onFirstChunk?.(latencyMs);
       }
       armIdle(); // 任意 chunk 到达即重置 idle，含 reasoning chunk
+      chunkCount += 1;
       const chunk = next.value;
       const textChunk = extractTextContent((chunk as { content?: unknown })?.content);
       if (textChunk) fullText += textChunk;
+      const now = Date.now();
+      if (now - lastBeatTs >= HEARTBEAT_MS) {
+        llmLog(`${label} … 接收中：${chunkCount} chunks / ${fullText.length} chars（已 ${Math.round((now - startTs) / 1000)}s）`);
+        lastBeatTs = now;
+      }
     }
   } finally {
     cleanup();
   }
 
   if (timeoutError) throw timeoutError;
+  llmLog(`${label} ✔ 流式接收完成：${chunkCount} chunks / ${fullText.length} chars，耗时 ${Math.round((Date.now() - startTs) / 1000)}s`);
   return fullText;
 }
 
@@ -202,6 +223,12 @@ async function streamWithRetry<T>(
   for (let attempt = 0; attempt <= STRUCTURED_MAX_RETRIES; attempt++) {
     const promptForAttempt = attempt === 0 ? systemPrompt : `${systemPrompt}${retryHint}`;
     const callStart = Date.now();
+    llmLog(
+      `${label} 发起请求 attempt=${attempt}/${STRUCTURED_MAX_RETRIES} ` +
+        `model=${binding?.model ?? settings.llmModel ?? 'default'} ` +
+        `provider=${binding?.provider?.id ?? 'default'} thinking=${thinking} ` +
+        `sys=${promptForAttempt.length} user=${userMessage.length} chars`,
+    );
     tel?.emit('llm.start', {
       label: telemetryLabel,
       attempt,
@@ -228,6 +255,9 @@ async function streamWithRetry<T>(
       const parsed = await parse(content);
       // 解析成功后的运行时校验（如 Motion Card 冒烟渲染）；抛错走重试。
       if (validate) await validate(parsed);
+      llmLog(
+        `${label} ✔ 成功 attempt=${attempt} 耗时=${Date.now() - callStart}ms 输出=${fullText.length} chars`,
+      );
       tel?.emit('llm.end', {
         label: telemetryLabel,
         attempt,
@@ -239,6 +269,11 @@ async function streamWithRetry<T>(
       return parsed;
     } catch (error) {
       lastError = error;
+      const willRetry = attempt < STRUCTURED_MAX_RETRIES;
+      llmLog(
+        `${label} ✗ 失败 attempt=${attempt} 耗时=${Date.now() - callStart}ms ` +
+          `error=${error instanceof Error ? error.message : String(error)} willRetry=${willRetry}`,
+      );
       tel?.emit('llm.end', {
         label: telemetryLabel,
         attempt,
@@ -246,7 +281,7 @@ async function streamWithRetry<T>(
         ok: false,
         retry: attempt > 0,
         error: error instanceof Error ? error.message : String(error),
-        willRetry: attempt < STRUCTURED_MAX_RETRIES,
+        willRetry,
       });
       // 仅在还有重试次数时继续；否则抛出最后一次错误
       if (attempt >= STRUCTURED_MAX_RETRIES) break;
@@ -323,9 +358,12 @@ export async function streamText(
   onChunk: (chunk: string) => void,
   callbacks?: StreamCallbacks,
   binding?: ResolvedBinding,
+  signal?: AbortSignal,
 ): Promise<string> {
+  // signal 透传给底层 SDK fetch：用户取消时直接中断网络请求，而非仅停本地播放。
   const stream = await pickModel(settings, binding).stream(
     buildPromptMessages(systemPrompt, userMessage),
+    signal ? { signal } : undefined,
   );
   let fullText = '';
 

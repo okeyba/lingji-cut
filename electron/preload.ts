@@ -21,6 +21,8 @@ type PipelineTaskUpdate = PipelineTask & { bridgeId: string };
 
 contextBridge.exposeInMainWorld('electronAPI', {
   parseSrtFile: (filePath: string) => ipcRenderer.invoke('parse-srt-file', filePath),
+  showSystemNotification: (payload: { title: string; body: string }) =>
+    ipcRenderer.send('system-notification:show', payload),
   getAudioDuration: (filePath: string) => ipcRenderer.invoke('get-audio-duration', filePath),
   analyzeSrt: (args: {
     entries?: SrtEntry[];
@@ -735,9 +737,12 @@ contextBridge.exposeInMainWorld('scriptHistoryAPI', {
 contextBridge.exposeInMainWorld('publishAPI', {
   listAccounts: () => ipcRenderer.invoke('publish:list-accounts'),
   deleteAccount: (id: string) => ipcRenderer.invoke('publish:delete-account', id),
-  login: (platform: string, accountName: string) =>
-    ipcRenderer.invoke('publish:login', platform, accountName),
+  login: (platform: string, accountName: string, headless?: boolean) =>
+    ipcRenderer.invoke('publish:login', platform, accountName, headless),
   check: (id: string) => ipcRenderer.invoke('publish:check', id),
+  getSettings: () => ipcRenderer.invoke('publish:get-settings'),
+  setSettings: (patch: { headlessLogin?: boolean }) =>
+    ipcRenderer.invoke('publish:set-settings', patch),
   run: (job: import('../src/lib/electron-api').PublishJobInput, headless?: boolean) =>
     ipcRenderer.invoke('publish:run', job, headless),
   cancel: () => ipcRenderer.invoke('publish:cancel'),

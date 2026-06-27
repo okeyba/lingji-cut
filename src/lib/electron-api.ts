@@ -206,6 +206,8 @@ export interface RecentProjectEntry {
 
 export interface ElectronAPI {
   parseSrtFile: (filePath: string) => Promise<{ entries: SrtEntry[]; durationMs: number }>;
+  /** 弹出系统通知（mac 通知中心 / Windows 通知）。点击通知聚焦主窗口。 */
+  showSystemNotification: (payload: { title: string; body: string }) => void;
   getAudioDuration: (filePath: string) => Promise<number>;
   /** 返回文件的 mtime（毫秒整数）。文件不存在或读取失败时返回 null。 */
   getFileMtime: (filePath: string) => Promise<number | null>;
@@ -691,11 +693,23 @@ export interface PublishJobInput {
   targets: PublishTarget[];
 }
 
+/** 发布全局设置（持久化于 userData/publish/settings.json）。 */
+export interface PublishSettings {
+  /** 登录是否使用无头浏览器，默认 true。 */
+  headlessLogin: boolean;
+}
+
 export interface PublishAPI {
   listAccounts(): Promise<PublishAccount[]>;
   deleteAccount(id: string): Promise<void>;
-  login(platform: PublishPlatform, accountName: string): Promise<{ success: boolean; message: string }>;
+  login(
+    platform: PublishPlatform,
+    accountName: string,
+    headless?: boolean,
+  ): Promise<{ success: boolean; message: string }>;
   check(id: string): Promise<boolean>;
+  getSettings(): Promise<PublishSettings>;
+  setSettings(patch: Partial<PublishSettings>): Promise<PublishSettings>;
   run(job: PublishJobInput, headless?: boolean): Promise<void>;
   cancel(): Promise<void>;
   onQrcode(cb: (p: { platform: string; accountName: string; png: string }) => void): () => void;

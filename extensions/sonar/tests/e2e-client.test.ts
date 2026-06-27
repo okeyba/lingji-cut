@@ -63,6 +63,9 @@ function fakeServices(repo: Repository): Services {
         return null;
       },
     },
+    workflow: {
+      async run() {},
+    },
   };
 }
 
@@ -186,13 +189,13 @@ describe('e2e — export & workflow', () => {
     expect(task.status).toBe('completed');
   });
 
-  it('adds, lists and updates workflow items', async () => {
+  it('adds, lists and removes workflow items', async () => {
     const { client } = await setup();
     const item = await client.addToWorkflow({ videoId: VIDEO_ID, note: 'n' });
-    expect(item.status).toBe('todo');
+    expect(item.stage).toBe('collected');
     expect(await client.listWorkflowItems()).toHaveLength(1);
-    const done = await client.updateWorkflowItem({ id: item.id, status: 'done' });
-    expect(done.status).toBe('done');
+    expect(await client.removeWorkflowItem(item.id)).toBe(true);
+    expect(await client.listWorkflowItems()).toHaveLength(0);
   });
 });
 

@@ -14,13 +14,14 @@ import type {
   Video,
   VideoAnalysis,
   VideoSource,
+  ViralInsight,
   WorkflowItem,
+  WorkflowStage,
 } from '@/domain/models';
 import type {
   AddWorkflowItemInput,
   FollowCreatorInput,
   ListVideoOptions,
-  UpdateWorkflowItemInput,
   VideoPage,
 } from '@/domain/api-types';
 import { SonarException, makeError } from '@/domain/errors';
@@ -34,9 +35,17 @@ interface SonarDB extends DBSchema {
   rawVideos: { key: string; value: { videoId: string; raw: unknown } };
   transcripts: { key: string; value: TranscriptDocument };
   analyses: { key: string; value: VideoAnalysis };
+  insights: { key: string; value: ViralInsight };
   workflow: { key: string; value: WorkflowItem };
   downloads: { key: string; value: DownloadTask; indexes: { chromeDownloadId: number } };
   processings: { key: string; value: ProcessingTask };
+}
+
+/** 旧记录（手动看板 status，无 stage）读时降级为流水线阶段。 */
+function normalizeWorkflowItem(raw: WorkflowItem): WorkflowItem {
+  if (raw.stage) return raw;
+  const legacyStatus = (raw as unknown as { status?: string }).status;
+  return { ...raw, stage: legacyStatus === 'done' ? 'pushed' : 'collected' };
 }
 
 export interface IdbRepositoryDeps extends MemoryRepositoryDeps {
@@ -49,19 +58,25 @@ export function createIdbRepository(deps: IdbRepositoryDeps): Repository {
 
   function db(): Promise<IDBPDatabase<SonarDB>> {
     if (!dbPromise) {
-      dbPromise = openDB<SonarDB>(dbName, 1, {
-        upgrade(database) {
-          database.createObjectStore('creators', { keyPath: 'id' }).createIndex('secUid', 'secUid');
-          database.createObjectStore('subscriptions');
-          database.createObjectStore('videos', { keyPath: 'id' }).createIndex('creatorId', 'creatorId');
-          database.createObjectStore('sources', { keyPath: 'videoId' });
-          database.createObjectStore('rawVideos', { keyPath: 'videoId' });
-          database.createObjectStore('transcripts', { keyPath: 'videoId' });
-          database.createObjectStore('analyses', { keyPath: 'videoId' });
-          database.createObjectStore('workflow', { keyPath: 'id' });
-          const downloads = database.createObjectStore('downloads', { keyPath: 'id' });
-          downloads.createIndex('chromeDownloadId', 'chromeDownloadId');
-          database.createObjectStore('processings', { keyPath: 'id' });
+      dbPromise = openDB<SonarDB>(dbName, 2, {
+        upgrade(database, oldVersion) {
+          if (oldVersion < 1) {
+            database.createObjectStore('creators', { keyPath: 'id' }).createIndex('secUid', 'secUid');
+            database.createObjectStore('subscriptions');
+            database.createObjectStore('videos', { keyPath: 'id' }).createIndex('creatorId', 'creatorId');
+            database.createObjectStore('sources', { keyPath: 'videoId' });
+            database.createObjectStore('rawVideos', { keyPath: 'videoId' });
+            database.createObjectStore('transcripts', { keyPath: 'videoId' });
+            database.createObjectStore('analyses', { keyPath: 'videoId' });
+            database.createObjectStore('workflow', { keyPath: 'id' });
+            const downloads = database.createObjectStore('downloads', { keyPath: 'id' });
+            downloads.createIndex('chromeDownloadId', 'chromeDownloadId');
+            database.createObjectStore('processings', { keyPath: 'id' });
+          }
+          // v2：爆款拆解报告存储（工作流流水线）。
+          if (oldVersion < 2) {
+            database.createObjectStore('insights', { keyPath: 'videoId' });
+          }
         },
       });
     }
@@ -155,8 +170,18 @@ export function createIdbRepository(deps: IdbRepositoryDeps): Repository {
     async getAnalysis(videoId) {
       return (await (await db()).get('analyses', videoId)) ?? null;
     },
+    async listAnalyses() {
+      return (await db()).getAll('analyses');
+    },
     async putAnalysis(analysis) {
       await (await db()).put('analyses', analysis);
+    },
+
+    async getInsight(videoId) {
+      return (await (await db()).get('insights', videoId)) ?? null;
+    },
+    async putInsight(insight) {
+      await (await db()).put('insights', insight);
     },
 
     async addWorkflowItem(input: AddWorkflowItemInput) {
@@ -164,7 +189,7 @@ export function createIdbRepository(deps: IdbRepositoryDeps): Repository {
       const item: WorkflowItem = {
         id: deps.newId(),
         videoId: input.videoId,
-        status: 'todo',
+        stage: 'collected',
         note: input.note ?? '',
         createdAt: ts,
         updatedAt: ts,
@@ -173,22 +198,47 @@ export function createIdbRepository(deps: IdbRepositoryDeps): Repository {
       return item;
     },
     async listWorkflowItems() {
-      return (await db()).getAll('workflow');
-    },
-    async updateWorkflowItem(input: UpdateWorkflowItemInput) {
       const database = await db();
-      const existing = await database.get('workflow', input.id);
+      const items = await database.getAll('workflow');
+      return Promise.all(
+        items.map(async (raw) => {
+          const item = normalizeWorkflowItem(raw);
+          const insight = await database.get('insights', item.videoId);
+          return insight ? { ...item, insight } : item;
+        }),
+      );
+    },
+    async getWorkflowItem(id) {
+      const database = await db();
+      const raw = await database.get('workflow', id);
+      if (!raw) return null;
+      const item = normalizeWorkflowItem(raw);
+      const insight = await database.get('insights', item.videoId);
+      return insight ? { ...item, insight } : item;
+    },
+    async setWorkflowStage(id, stage: WorkflowStage, patch) {
+      const database = await db();
+      const existing = await database.get('workflow', id);
       if (!existing) {
-        throw new SonarException(makeError('PARSE_ERROR', `工作流条目不存在：${input.id}`));
+        throw new SonarException(makeError('PARSE_ERROR', `工作流条目不存在：${id}`));
       }
       const updated: WorkflowItem = {
-        ...existing,
-        ...(input.status !== undefined ? { status: input.status } : {}),
-        ...(input.note !== undefined ? { note: input.note } : {}),
+        ...normalizeWorkflowItem(existing),
+        stage,
+        ...(stage === 'failed' ? { error: patch?.error } : { error: undefined }),
         updatedAt: deps.now(),
       };
+      // 拆解不落工作流记录（按 videoId 单独存储），落库前剔除水合字段。
+      delete (updated as { insight?: unknown }).insight;
       await database.put('workflow', updated);
       return updated;
+    },
+    async removeWorkflowItem(id) {
+      const database = await db();
+      const existing = await database.get('workflow', id);
+      if (!existing) return false;
+      await database.delete('workflow', id);
+      return true;
     },
 
     async putDownloadTask(task) {

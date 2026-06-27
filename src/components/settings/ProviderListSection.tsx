@@ -48,6 +48,7 @@ const PROVIDER_TYPE_OPTIONS: SelectOption[] = [
   { value: 'lmstudio', label: 'LM Studio (本地)' },
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'minimax', label: 'MiniMax (Anthropic 端点)' },
+  { value: 'volcengine_ark', label: '火山引擎方舟' },
   { value: 'gemini', label: 'Google Gemini' },
   { value: 'claude_code_acp', label: 'Claude Code ACP' },
 ];
@@ -86,8 +87,32 @@ const PI_THINKING_FORMAT_OPTIONS: SelectOption[] = [
 
 const GEMINI_DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com';
 const MINIMAX_ANTHROPIC_DEFAULT_BASE_URL = 'https://api.minimaxi.com/anthropic';
+const VOLCENGINE_ARK_DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3';
 /** MiniMax 思考深度默认值（token），与 model.ts 下限保持一致 */
 const MINIMAX_DEFAULT_THINKING_BUDGET = 1024;
+
+/** 火山方舟深度思考模式选项 */
+const ARK_THINKING_MODE_OPTIONS: SelectOption[] = [
+  { value: 'enabled', label: '开启（强制思考）' },
+  { value: 'disabled', label: '关闭（直接回答）' },
+  { value: 'auto', label: '自动（模型自行判断）' },
+];
+/** 火山方舟思考力度选项；空值＝跟随 API 默认（medium），不下发 */
+const ARK_REASONING_EFFORT_OPTIONS: SelectOption[] = [
+  { value: '', label: '跟随默认（medium）' },
+  { value: 'minimal', label: 'minimal（关闭思考，直接回答）' },
+  { value: 'low', label: 'low（轻量思考，快速响应）' },
+  { value: 'medium', label: 'medium（均衡）' },
+  { value: 'high', label: 'high（深度分析）' },
+  { value: 'max', label: 'max（最高强度，仅部分模型）' },
+];
+/** 火山方舟在线推理模式选项；空值＝跟随 API 默认（auto），不下发 */
+const ARK_SERVICE_TIER_OPTIONS: SelectOption[] = [
+  { value: '', label: '跟随默认（auto）' },
+  { value: 'fast', label: 'fast（低延迟）' },
+  { value: 'auto', label: 'auto（TPM 保障包优先）' },
+  { value: 'default', label: 'default（常规）' },
+];
 const DEFAULT_PI_CONTEXT_WINDOW = 128000;
 const DEFAULT_PI_MAX_TOKENS = 8192;
 
@@ -225,6 +250,7 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
   const [modelTests, setModelTests] = useState<Record<string, ModelTestState>>({});
   const title = initial.name ? '编辑 Provider' : '添加 Provider';
   const isClaudeCodeAcp = form.type === 'claude_code_acp';
+  const isVolcengineArk = form.type === 'volcengine_ark';
   const selectedPreset = PI_PROVIDER_PRESETS.find((preset) => preset.id === presetId) ?? null;
   const isQuickPreset = Boolean(selectedPreset && selectedPreset.id !== CUSTOM_PROVIDER_PRESET_ID);
 
@@ -263,6 +289,22 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
     if (errorKey) {
       clearFieldError(errorKey);
     }
+  };
+
+  /** 更新火山方舟专属参数；value 为空串时删除该键（回落 API 默认）。 */
+  const setArk = <K extends keyof NonNullable<LLMProvider['volcengineArk']>>(
+    key: K,
+    value: NonNullable<LLMProvider['volcengineArk']>[K] | undefined,
+  ) => {
+    setForm((f) => {
+      const nextArk = { ...(f.volcengineArk ?? {}) };
+      if (value === undefined) {
+        delete nextArk[key];
+      } else {
+        nextArk[key] = value;
+      }
+      return { ...f, volcengineArk: Object.keys(nextArk).length > 0 ? nextArk : undefined };
+    });
   };
 
   const handlePresetChange = (value: string) => {
@@ -495,6 +537,9 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
                       if (nextType === 'minimax' && !next.baseUrl.trim()) {
                         next.baseUrl = MINIMAX_ANTHROPIC_DEFAULT_BASE_URL;
                       }
+                      if (nextType === 'volcengine_ark' && !next.baseUrl.trim()) {
+                        next.baseUrl = VOLCENGINE_ARK_DEFAULT_BASE_URL;
+                      }
                       if (nextType === 'claude_code_acp') {
                         next.baseUrl = '';
                         next.apiKey = '';
@@ -527,7 +572,9 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
                           ? `LM Studio 默认本地端点为 ${LMSTUDIO_DEFAULT_BASE_URL}`
                           : form.type === 'minimax'
                             ? `MiniMax Anthropic 兼容端点，留空用默认（${MINIMAX_ANTHROPIC_DEFAULT_BASE_URL}）`
-                            : undefined
+                            : form.type === 'volcengine_ark'
+                              ? `火山方舟标准 Chat 端点，留空用默认（${VOLCENGINE_ARK_DEFAULT_BASE_URL}）`
+                              : undefined
                     }
                   >
                     <Input
@@ -543,7 +590,9 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
                             ? LMSTUDIO_DEFAULT_BASE_URL
                             : form.type === 'minimax'
                               ? MINIMAX_ANTHROPIC_DEFAULT_BASE_URL
-                              : 'https://api.openai.com/v1'
+                              : form.type === 'volcengine_ark'
+                                ? VOLCENGINE_ARK_DEFAULT_BASE_URL
+                                : 'https://api.openai.com/v1'
                       }
                       size="sm"
                       aria-invalid={Boolean(errors.baseUrl)}
@@ -763,7 +812,7 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
             </Field>
           ) : null}
 
-          {!isClaudeCodeAcp ? (
+          {!isClaudeCodeAcp && !isVolcengineArk ? (
             <Field
               label="开启思考模式"
               hint={
@@ -798,6 +847,60 @@ function ProviderDialog({ initial, isDefault, onSave, onCancel }: DialogProps) {
                 size="sm"
               />
             </Field>
+          ) : null}
+
+          {isVolcengineArk ? (
+            <>
+              <Field
+                label="深度思考模式"
+                hint="映射到火山方舟请求体的 thinking.type；auto 让模型按问题难度自行决定是否思考。"
+              >
+                <Select
+                  value={form.volcengineArk?.thinkingMode ?? 'enabled'}
+                  options={ARK_THINKING_MODE_OPTIONS}
+                  onChange={(e) =>
+                    setArk(
+                      'thinkingMode',
+                      e.target.value as NonNullable<LLMProvider['volcengineArk']>['thinkingMode'],
+                    )
+                  }
+                />
+              </Field>
+
+              <Field
+                label="思考力度（reasoning_effort）"
+                hint="减少思考深度可提速、省 token。留空跟随 API 默认（medium）；max 仅部分模型生效。"
+              >
+                <Select
+                  value={form.volcengineArk?.reasoningEffort ?? ''}
+                  options={ARK_REASONING_EFFORT_OPTIONS}
+                  onChange={(e) =>
+                    setArk(
+                      'reasoningEffort',
+                      (e.target.value ||
+                        undefined) as NonNullable<LLMProvider['volcengineArk']>['reasoningEffort'],
+                    )
+                  }
+                />
+              </Field>
+
+              <Field
+                label="在线推理模式（service_tier）"
+                hint="fast 走低延迟额度，auto 优先 TPM 保障包，default 仅用常规模式。留空跟随 API 默认（auto）。"
+              >
+                <Select
+                  value={form.volcengineArk?.serviceTier ?? ''}
+                  options={ARK_SERVICE_TIER_OPTIONS}
+                  onChange={(e) =>
+                    setArk(
+                      'serviceTier',
+                      (e.target.value ||
+                        undefined) as NonNullable<LLMProvider['volcengineArk']>['serviceTier'],
+                    )
+                  }
+                />
+              </Field>
+            </>
           ) : null}
 
           {showAdvanced && !isClaudeCodeAcp && !isQuickPreset ? (

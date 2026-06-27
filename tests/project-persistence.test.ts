@@ -96,6 +96,30 @@ describe('project-persistence', () => {
     });
   });
 
+  it('publish.history 经合并与序列化无损保留；旧工程缺 history 视为 undefined', () => {
+    const publish: ProjectPublishMeta = {
+      ...DEFAULT_PUBLISH_META,
+      title: 't',
+      history: [
+        {
+          id: 'h1',
+          publishedAt: 1700000000000,
+          fileName: 'out.mp4',
+          filePath: '/p/out.mp4',
+          shared: { title: 't', desc: 'd', tags: ['a'], bilibiliTid: 21 },
+          targets: [{ accountId: 'douyin_a', platform: 'douyin', accountName: 'a' }],
+          results: { douyin_a: { state: 'failed', message: 'cookie 过期' } },
+          overallState: 'failed',
+        },
+      ],
+    };
+    const merged = mergeProjectSection(createDefaultProjectData(), 'publish', publish);
+    const roundTripped = JSON.parse(JSON.stringify(merged)) as ProjectData;
+    expect(roundTripped.publish?.history).toEqual(publish.history);
+    // 旧工程（无 history）读取后 history 为 undefined
+    expect(extractPublishSection(createDefaultProjectData()).history).toBeUndefined();
+  });
+
   it('旧工程缺 stylePresetId 字段时反序列化为 undefined', () => {
     const data = createDefaultProjectData();
     // 默认结构不写入 stylePresetId，模拟旧工程读取

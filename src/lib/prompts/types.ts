@@ -345,7 +345,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     kind: 'publish.metadata',
     label: '发布文案生成',
     description:
-      '发布选项卡「AI 一键生成」标题 / 简介 / 标签。一次调用同时产出三者，标题按爆款资讯标题统计标准校准。本提示词只写约束规则；【节目内容】与可选的【已有标题】由系统在请求时自动追加为内容消息，无需在此用变量占位。',
+      '发布选项卡「AI 一键生成」标题 / 简介 / 标签。一次调用同时产出三者，标题受平台 30 字上限约束、硬控在 25 字内（含标点）。本提示词只写约束规则；【节目内容】与可选的【已有标题】由系统在请求时自动追加为内容消息，无需在此用变量占位。',
     group: 'project',
     variables: [],
     lockedContract: {

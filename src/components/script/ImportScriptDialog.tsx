@@ -291,7 +291,7 @@ export function ImportScriptDialog({
         <DialogHeader>
           <DialogTitle>导入文稿</DialogTitle>
           <DialogDescription>
-            粘贴原稿、拖拽文件或选择 .md / .txt / .html 文件，导入后自动创建项目并开始 AI 写稿
+            粘贴原稿、拖拽文件或选择 .md / .txt / .html 文件；导入后创建项目，可勾选一键成稿，或进入工作台自选模型手动写稿
           </DialogDescription>
         </DialogHeader>
         <DialogBody>

@@ -19,6 +19,16 @@ export interface BridgeTranscriptSegment {
   endMs: number;
 }
 
+/** 爆款拆解报告（随转录稿一起送进待创作箱，供二创参考）。 */
+export interface BridgeInsight {
+  angle: string;
+  hook: string;
+  structure: string[];
+  highlights: string[];
+  dataPoints: string[];
+  remixSuggestions: string[];
+}
+
 export interface BridgePayload {
   source: 'douyin';
   awemeId: string;
@@ -34,6 +44,8 @@ export interface BridgePayload {
     srtText: string;
     segments: BridgeTranscriptSegment[];
   };
+  /** 可选：爆款拆解报告（工作流流水线产出）。 */
+  insight?: BridgeInsight;
 }
 
 export interface BridgePendingStore {

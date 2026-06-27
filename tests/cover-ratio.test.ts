@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  autoFillCovers,
   classifyRatio,
   groupCoverCandidatesByRatio,
 } from '../src/components/publish/useCoverStudio';
@@ -60,5 +61,35 @@ describe('groupCoverCandidatesByRatio', () => {
       'cover-scan:covers/cover-4x3.png',
     ]);
     expect(groups['16:9']).toEqual([]);
+  });
+});
+
+describe('autoFillCovers', () => {
+  const g = (paths: Partial<Record<'16:9' | '4:3' | '3:4', string>>) => ({
+    '16:9': paths['16:9'] ? [{ id: 'a', imageUrl: paths['16:9'], prompt: '', selected: false }] : [],
+    '4:3': paths['4:3'] ? [{ id: 'b', imageUrl: paths['4:3'], prompt: '', selected: false }] : [],
+    '3:4': paths['3:4'] ? [{ id: 'c', imageUrl: paths['3:4'], prompt: '', selected: false }] : [],
+  });
+
+  it('自动填补空缺的 4:3 / 3:4 槽', () => {
+    const out = autoFillCovers(g({ '4:3': '/h.png', '3:4': '/v.png' }), {});
+    expect(out['4:3']).toBe('/h.png');
+    expect(out['3:4']).toBe('/v.png');
+  });
+
+  it('不覆盖已选比例', () => {
+    const out = autoFillCovers(g({ '4:3': '/new.png' }), { '4:3': '/picked.png' });
+    expect(out['4:3']).toBe('/picked.png');
+  });
+
+  it('不触碰 16:9（由编辑器整期封面专属逻辑维护）', () => {
+    const out = autoFillCovers(g({ '16:9': '/wide.png' }), {});
+    expect(out['16:9']).toBeUndefined();
+  });
+
+  it('无可填补时返回原引用（避免无谓 setState）', () => {
+    const current = { '4:3': '/h.png', '3:4': '/v.png' };
+    expect(autoFillCovers(g({ '4:3': '/x.png' }), current)).toBe(current);
+    expect(autoFillCovers({ '16:9': [], '4:3': [], '3:4': [] }, {})).toEqual({});
   });
 });

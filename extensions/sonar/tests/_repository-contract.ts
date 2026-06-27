@@ -102,23 +102,52 @@ export function repositoryContract(label: string, makeRepo: () => Repository): v
     });
   });
 
-  describe(`${label} — workflow transitions`, () => {
-    it('adds as todo, moves through statuses and edits note', async () => {
+  describe(`${label} — workflow pipeline`, () => {
+    it('adds as collected, advances stages and removes', async () => {
       const repo = makeRepo();
       const item = await repo.addWorkflowItem({ videoId: 'v1', note: '初始' });
-      expect(item.status).toBe('todo');
-      const moved = await repo.updateWorkflowItem({ id: item.id, status: 'in_progress' });
-      expect(moved.status).toBe('in_progress');
-      const done = await repo.updateWorkflowItem({ id: item.id, status: 'done', note: '完成' });
-      expect(done.status).toBe('done');
-      expect(done.note).toBe('完成');
-      const all = await repo.listWorkflowItems();
-      expect(all).toHaveLength(1);
+      expect(item.stage).toBe('collected');
+      const moved = await repo.setWorkflowStage(item.id, 'preparing');
+      expect(moved.stage).toBe('preparing');
+      const ready = await repo.setWorkflowStage(item.id, 'ready');
+      expect(ready.stage).toBe('ready');
+      expect((await repo.getWorkflowItem(item.id))?.stage).toBe('ready');
+      expect(await repo.removeWorkflowItem(item.id)).toBe(true);
+      expect(await repo.listWorkflowItems()).toHaveLength(0);
     });
 
-    it('throws when updating a missing workflow item', async () => {
+    it('records error on failed stage and clears it when advancing', async () => {
       const repo = makeRepo();
-      await expect(repo.updateWorkflowItem({ id: 'nope', status: 'done' })).rejects.toBeTruthy();
+      const item = await repo.addWorkflowItem({ videoId: 'v1' });
+      const failed = await repo.setWorkflowStage(item.id, 'failed', { error: '转录失败' });
+      expect(failed.stage).toBe('failed');
+      expect(failed.error).toBe('转录失败');
+      const retried = await repo.setWorkflowStage(item.id, 'preparing');
+      expect(retried.error).toBeUndefined();
+    });
+
+    it('hydrates insight onto workflow items when present', async () => {
+      const repo = makeRepo();
+      const item = await repo.addWorkflowItem({ videoId: 'v1' });
+      await repo.putInsight({
+        videoId: 'v1',
+        angle: '反常识',
+        hook: '开头一句',
+        structure: ['一', '二'],
+        highlights: [],
+        dataPoints: [],
+        remixSuggestions: ['换案例'],
+        model: 'm',
+        createdAt: 1,
+      });
+      const hydrated = await repo.getWorkflowItem(item.id);
+      expect(hydrated?.insight?.angle).toBe('反常识');
+      expect((await repo.listWorkflowItems())[0]?.insight?.hook).toBe('开头一句');
+    });
+
+    it('throws when advancing a missing workflow item', async () => {
+      const repo = makeRepo();
+      await expect(repo.setWorkflowStage('nope', 'ready')).rejects.toBeTruthy();
     });
   });
 
@@ -159,6 +188,19 @@ export function repositoryContract(label: string, makeRepo: () => Repository): v
         createdAt: now(),
       });
       expect((await repo.getAnalysis('v1'))?.summary).toBe('s');
+    });
+
+    it('lists all analyses in one call', async () => {
+      const repo = makeRepo();
+      expect(await repo.listAnalyses()).toEqual([]);
+      await repo.putAnalysis({
+        videoId: 'v1', category: '深度分析', summary: 's1', keyPoints: [], tags: [], model: 'm', createdAt: now(),
+      });
+      await repo.putAnalysis({
+        videoId: 'v2', category: '深度分析', summary: 's2', keyPoints: [], tags: [], model: 'm', createdAt: now(),
+      });
+      const all = await repo.listAnalyses();
+      expect(all.map((a) => a.videoId).sort()).toEqual(['v1', 'v2']);
     });
   });
 }

@@ -12,12 +12,14 @@
 import type { ProcessingTask } from '@/domain/models';
 import type { ProcessVideoOptions } from '@/domain/api-types';
 import { SonarException, makeError } from '@/domain/errors';
-import { ensureVideoSources, createFetchPage } from './resolve-sources';
+import { ensureVideoSources, createFetchPage, prependMuxedAudioSource } from './resolve-sources';
 import { fetchMediaBlob } from '@/offscreen/download-blob';
 import { createBcutAsrProvider } from '@/processing/bcut-asr-provider';
 import { createSummaryProvider } from '@/processing/summary-provider';
+import { createInsightProvider, type InsightProvider } from '@/processing/insight-provider';
 import { createProcessingService } from '@/processing/processing-service';
 import { createProcessingQueue } from './processing-queue';
+import { createWorkflowRunner } from './workflow-runner';
 import type { AudioExtractor } from '@/processing/audio-extractor';
 import { createChromeOffscreenAudioExtractor } from '@/processing/offscreen-audio-extractor';
 import type { Repository } from './repository';
@@ -56,9 +58,15 @@ function createConfiguredProcessingService(deps: BuildServicesDeps): ProcessingS
   const fetchPage = createFetchPage(fetchImpl);
   const extractor = deps.audioExtractor ?? createChromeOffscreenAudioExtractor();
   // 取流前现解析新鲜源：CDN 签名地址会过期，复用缓存会取到 403 html（与下载同因）。
-  const resolveSources = async (videoId: string) =>
-    (await ensureVideoSources({ repo: deps.repo, fetchPage, now: deps.now }, { awemeId: videoId, preferFresh: true }))
-      .sources;
+  // 再把 snssdk play API 合流源置顶：音视频分离作品的 bit_rate 档位是纯视频流（提音得空），
+  // 唯有该合流源稳定含音轨，优先尝试即可一次命中。
+  const resolveSources = async (videoId: string) => {
+    const { sources, rawVideo } = await ensureVideoSources(
+      { repo: deps.repo, fetchPage, now: deps.now },
+      { awemeId: videoId, preferFresh: true },
+    );
+    return prependMuxedAudioSource(sources, rawVideo);
+  };
 
   // 取流复用下载路径的护栏（Range / credentials / content-type 拦截），避免两条路径再次漂移：
   // CDN 签名过期会返回 200 + HTML，旧实现把 HTML 喂给解码器只报笼统「音频提取失败」。
@@ -136,6 +144,25 @@ export function buildServices(deps: BuildServicesDeps): BuiltServices {
   const processing = createConfiguredProcessingService(deps);
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
 
+  // 爆款拆解 Provider：按当前设置（同摘要的默认 LLM Provider）重建，未配置则返回 null。
+  async function buildInsightProvider(): Promise<InsightProvider | null> {
+    const s = await deps.settings.getAiSettings();
+    const provider = resolveDefaultProvider(s.llm);
+    const model = s.llm.defaultModel || provider?.models[0];
+    if (!provider || !provider.baseUrl || !model) return null;
+    return createInsightProvider(
+      {
+        baseUrl: provider.baseUrl,
+        apiKey: provider.apiKey ?? '',
+        model,
+        ...(provider.protocol ? { protocol: provider.protocol } : {}),
+        ...(s.llm.temperature !== undefined ? { temperature: s.llm.temperature } : {}),
+      },
+      { fetchImpl },
+    );
+  }
+  const workflowRunner = createWorkflowRunner({ repo: deps.repo, processing, buildInsightProvider });
+
   // 桥：发现并转录后把转录稿+元数据推到灵机剪影「待创作箱」。
   const bridgeSettings = deps.bridgeSettings ?? createMemoryBridgeSettingsStore();
   const bridgeClient: BridgeClient = createBridgeClient({
@@ -175,6 +202,7 @@ export function buildServices(deps: BuildServicesDeps): BuiltServices {
       collectCreatorFully: (input) => collectRunner.collectCreatorFully(input),
       getProgress: (secUid) => collectHub.get(secUid),
     },
+    workflow: workflowRunner,
   };
   return {
     services,

@@ -1,5 +1,5 @@
 import chokidar from 'chokidar';
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, Notification, shell } from 'electron';
 import { createWriteStream, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -511,6 +511,24 @@ async function readProjectMetadata(projectDir: string): Promise<ProjectMetadata>
     createdAtMs,
   };
 }
+
+// 系统通知：后台/长耗时任务完成时提醒用户回到软件（点击聚焦主窗口）
+ipcMain.on('system-notification:show', (_event, payload: { title: string; body: string }) => {
+  if (!Notification.isSupported() || !payload?.title) return;
+  const iconPath = resolveAppIconPath();
+  const notification = new Notification({
+    title: payload.title,
+    body: payload.body ?? '',
+    ...(iconPath ? { icon: iconPath } : {}),
+  });
+  notification.on('click', () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+  notification.show();
+});
 
 ipcMain.handle('parse-srt-file', async (_event, filePath: string) => {
   const content = await fs.readFile(filePath, 'utf-8');

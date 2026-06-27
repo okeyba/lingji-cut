@@ -3,6 +3,7 @@ import {
   sanitizeProjectName,
   deriveProjectName,
   inboxItemToOriginalMarkdown,
+  insightToReferenceMarkdown,
   canDraftInboxItem,
   type SonarInboxItem,
 } from '../src/lib/sonar-inbox';
@@ -38,8 +39,36 @@ describe('sonar-inbox helpers', () => {
     expect(deriveProjectName({ creatorName: '老王', title: '' })).toBe('老王');
   });
 
-  it('inboxItemToOriginalMarkdown 取转录全文并 trim', () => {
+  it('inboxItemToOriginalMarkdown 无 insight 时取转录全文并 trim', () => {
     expect(inboxItemToOriginalMarkdown(item())).toBe('转录全文');
+  });
+
+  it('inboxItemToOriginalMarkdown 有 insight 时前置创作参考再接转录', () => {
+    const out = inboxItemToOriginalMarkdown(
+      item({
+        insight: {
+          angle: '反常识',
+          hook: '开头钩子',
+          structure: ['先抛结论', '再给案例'],
+          highlights: [],
+          dataPoints: [],
+          remixSuggestions: ['换成自己的领域'],
+        },
+      }),
+    );
+    expect(out).toContain('# 创作参考（爆款拆解）');
+    expect(out).toContain('选题角度：反常识');
+    expect(out).toContain('1. 先抛结论');
+    expect(out).toContain('换成自己的领域');
+    // 转录在分隔线之后。
+    expect(out.indexOf('---')).toBeLessThan(out.indexOf('转录全文'));
+  });
+
+  it('insightToReferenceMarkdown 无有效内容返回空串', () => {
+    expect(insightToReferenceMarkdown(undefined)).toBe('');
+    expect(
+      insightToReferenceMarkdown({ angle: '', hook: '', structure: [], highlights: [], dataPoints: [], remixSuggestions: [] }),
+    ).toBe('');
   });
 
   it('canDraftInboxItem 依据转录是否非空', () => {

@@ -13,13 +13,14 @@ import type {
   Video,
   VideoAnalysis,
   VideoSource,
+  ViralInsight,
   WorkflowItem,
+  WorkflowStage,
 } from '@/domain/models';
 import type {
   AddWorkflowItemInput,
   FollowCreatorInput,
   ListVideoOptions,
-  UpdateWorkflowItemInput,
   VideoPage,
 } from '@/domain/api-types';
 import { SonarException, makeError } from '@/domain/errors';
@@ -57,11 +58,21 @@ export interface Repository {
   getTranscript(videoId: string): Promise<TranscriptDocument | null>;
   putTranscript(doc: TranscriptDocument): Promise<void>;
   getAnalysis(videoId: string): Promise<VideoAnalysis | null>;
+  /** 全部分析，单次取回供视频库批量水合（避免逐条 IPC 往返）。 */
+  listAnalyses(): Promise<VideoAnalysis[]>;
   putAnalysis(analysis: VideoAnalysis): Promise<void>;
 
+  /** 爆款拆解报告（按 videoId 索引，与 analyses 同构），工作流卡片水合 + 桥 payload 复用。 */
+  getInsight(videoId: string): Promise<ViralInsight | null>;
+  putInsight(insight: ViralInsight): Promise<void>;
+
   addWorkflowItem(input: AddWorkflowItemInput): Promise<WorkflowItem>;
+  /** 列出工作流条目，水合各自的 insight（若已生成）。 */
   listWorkflowItems(): Promise<WorkflowItem[]>;
-  updateWorkflowItem(input: UpdateWorkflowItemInput): Promise<WorkflowItem>;
+  getWorkflowItem(id: string): Promise<WorkflowItem | null>;
+  /** 推进/置失败某条流水线阶段；不存在则抛 PARSE_ERROR。 */
+  setWorkflowStage(id: string, stage: WorkflowStage, patch?: { error?: string }): Promise<WorkflowItem>;
+  removeWorkflowItem(id: string): Promise<boolean>;
 
   putDownloadTask(task: DownloadTask): Promise<void>;
   getDownloadTask(id: string): Promise<DownloadTask | null>;
@@ -85,6 +96,7 @@ export function createMemoryRepository(deps: MemoryRepositoryDeps): Repository {
   const rawVideoCache = new Map<string, unknown>();
   const transcripts = new Map<string, TranscriptDocument>();
   const analyses = new Map<string, VideoAnalysis>();
+  const insights = new Map<string, ViralInsight>();
   const workflow = new Map<string, WorkflowItem>();
   const downloads = new Map<string, DownloadTask>();
   const processings = new Map<string, ProcessingTask>();
@@ -173,8 +185,18 @@ export function createMemoryRepository(deps: MemoryRepositoryDeps): Repository {
     async getAnalysis(videoId) {
       return analyses.get(videoId) ?? null;
     },
+    async listAnalyses() {
+      return Array.from(analyses.values());
+    },
     async putAnalysis(analysis) {
       analyses.set(analysis.videoId, analysis);
+    },
+
+    async getInsight(videoId) {
+      return insights.get(videoId) ?? null;
+    },
+    async putInsight(insight) {
+      insights.set(insight.videoId, insight);
     },
 
     async addWorkflowItem(input) {
@@ -182,7 +204,7 @@ export function createMemoryRepository(deps: MemoryRepositoryDeps): Repository {
       const item: WorkflowItem = {
         id: deps.newId(),
         videoId: input.videoId,
-        status: 'todo',
+        stage: 'collected',
         note: input.note ?? '',
         createdAt: ts,
         updatedAt: ts,
@@ -191,21 +213,34 @@ export function createMemoryRepository(deps: MemoryRepositoryDeps): Repository {
       return item;
     },
     async listWorkflowItems() {
-      return [...workflow.values()];
+      return [...workflow.values()].map((item) => {
+        const insight = insights.get(item.videoId);
+        return insight ? { ...item, insight } : item;
+      });
     },
-    async updateWorkflowItem(input) {
-      const existing = workflow.get(input.id);
+    async getWorkflowItem(id) {
+      const item = workflow.get(id);
+      if (!item) return null;
+      const insight = insights.get(item.videoId);
+      return insight ? { ...item, insight } : item;
+    },
+    async setWorkflowStage(id, stage, patch) {
+      const existing = workflow.get(id);
       if (!existing) {
-        throw new SonarException(makeError('PARSE_ERROR', `工作流条目不存在：${input.id}`));
+        throw new SonarException(makeError('PARSE_ERROR', `工作流条目不存在：${id}`));
       }
       const updated: WorkflowItem = {
         ...existing,
-        ...(input.status !== undefined ? { status: input.status } : {}),
-        ...(input.note !== undefined ? { note: input.note } : {}),
+        stage,
+        // 失败才带 error；推进到其它阶段清掉旧 error。
+        ...(stage === 'failed' ? { error: patch?.error } : { error: undefined }),
         updatedAt: deps.now(),
       };
-      workflow.set(updated.id, updated);
+      workflow.set(id, updated);
       return updated;
+    },
+    async removeWorkflowItem(id) {
+      return workflow.delete(id);
     },
 
     async putDownloadTask(task) {

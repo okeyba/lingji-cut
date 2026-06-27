@@ -64,6 +64,24 @@ export function groupCoverCandidatesByRatio(
   return out;
 }
 
+/** 需自动预填的比例：16:9 由编辑器整期封面专属逻辑填充，此处只补抖音/视频号所需的横竖比例。 */
+const AUTO_FILL_RATIOS: ImageAspectRatio[] = ['4:3', '3:4'];
+
+/** 为尚未选中的比例自动挑该比例第一张可用封面（groups 已按 createdAt 降序）。
+ *  只填补空槽，已选比例保持不变；无可填补时返回原引用（便于 setState 跳过更新）。 */
+export function autoFillCovers(
+  groups: Record<string, CoverCandidate[]>,
+  current: Record<string, string>,
+): Record<string, string> {
+  let next = current;
+  for (const ratio of AUTO_FILL_RATIOS) {
+    if (next[ratio]) continue;
+    const first = groups[ratio]?.find((c) => c.imageUrl)?.imageUrl;
+    if (first) next = next === current ? { ...current, [ratio]: first } : { ...next, [ratio]: first };
+  }
+  return next;
+}
+
 /** 发布选项卡展示的三种封面比例（编辑器封面为 16:9）。 */
 export const PUBLISH_RATIOS: { ratio: ImageAspectRatio; label: string; hint: string }[] = [
   { ratio: '16:9', label: '16:9 横版', hint: '视频号 / B站 / 横屏（编辑器封面）' },

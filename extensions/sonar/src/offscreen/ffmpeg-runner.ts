@@ -78,6 +78,17 @@ async function withTimeout<T>(work: Promise<T>, ms: number, message: string): Pr
   }
 }
 
+/**
+ * 判断异常是否为 wasm 运行时崩溃（越界 / abort）。这类崩溃会把 Emscripten 实例置为
+ * ABORT=true 永久毒化——`reset()` 救不回——故必须丢弃整个 core 实例重建。
+ * 我们自己抛的「ffmpeg 退出码 N」是干净的非零退出，core 仍可用，不在此列。
+ */
+function isWasmCrash(err: unknown): boolean {
+  if (typeof WebAssembly !== 'undefined' && err instanceof WebAssembly.RuntimeError) return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /memory access out of bounds|out of bounds|\bAborted\b|abort\(/i.test(msg);
+}
+
 /** 从日志尾部挑出最可能解释失败的一行（优先含错误关键字的行）。 */
 function diagnosticFromLogs(logs: string[]): string {
   const meaningful = logs.filter(Boolean);
@@ -118,6 +129,7 @@ export function createFfmpegRunner(deps: FfmpegRunnerDeps): FfmpegRunner {
     async transcodeToWav16kMono(input: Uint8Array): Promise<Uint8Array<ArrayBuffer>> {
       const core = await ensureCore();
       logTail.length = 0; // 只保留本次 exec 的日志，便于定位本次失败原因。
+      let crashed = false;
       try {
         core.FS.writeFile(INPUT_NAME, input);
         core.setTimeout?.(-1);
@@ -129,10 +141,21 @@ export function createFfmpegRunner(deps: FfmpegRunnerDeps): FfmpegRunner {
         const out = core.FS.readFile(OUTPUT_NAME);
         // 复制出独立缓冲，避免持有 ffmpeg FS 内部视图。
         return new Uint8Array(out);
+      } catch (error) {
+        // wasm 崩溃会毒化整个实例：丢弃缓存，下次调用重建干净 core，
+        // 否则后续候选源会全部复用死掉的 core、重抛同一句 out of bounds。
+        if (isWasmCrash(error)) {
+          crashed = true;
+          corePromise = null;
+        }
+        throw error;
       } finally {
-        try { core.reset(); } catch { /* ignore */ }
-        try { core.FS.unlink(INPUT_NAME); } catch { /* ignore */ }
-        try { core.FS.unlink(OUTPUT_NAME); } catch { /* ignore */ }
+        // 已崩溃的实例不再触碰（reset/unlink 只会再抛 ABORT）。
+        if (!crashed) {
+          try { core.reset(); } catch { /* ignore */ }
+          try { core.FS.unlink(INPUT_NAME); } catch { /* ignore */ }
+          try { core.FS.unlink(OUTPUT_NAME); } catch { /* ignore */ }
+        }
       }
     },
   };

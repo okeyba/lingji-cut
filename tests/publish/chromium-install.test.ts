@@ -12,6 +12,7 @@ vi.mock('electron', () => ({
 import {
   getChromiumRoot,
   findChromiumExecutable,
+  isChromiumInstalled,
   resolvePlaywrightCli,
   parseInstallProgress,
 } from '../../electron/publish/chromium-install';
@@ -58,6 +59,54 @@ describe('findChromiumExecutable', () => {
       fs.writeFileSync(exe, 'x');
     }
     expect(findChromiumExecutable(root, 'darwin')).toContain('chromium-1300');
+  });
+
+  it('darwin: 命中 Chrome for Testing 新布局（chrome-mac-arm64）', () => {
+    const exe = join(
+      root, 'chromium-1228', 'chrome-mac-arm64',
+      'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing',
+    );
+    fs.mkdirSync(join(exe, '..'), { recursive: true });
+    fs.writeFileSync(exe, 'x');
+    expect(findChromiumExecutable(root, 'darwin')).toBe(exe);
+  });
+
+  it('win32: 命中 chrome-win64/chrome.exe（CfT 新布局）', () => {
+    const exe = join(root, 'chromium-1228', 'chrome-win64', 'chrome.exe');
+    fs.mkdirSync(join(exe, '..'), { recursive: true });
+    fs.writeFileSync(exe, 'x');
+    expect(findChromiumExecutable(root, 'win32')).toBe(exe);
+  });
+});
+
+describe('isChromiumInstalled', () => {
+  let root: string;
+  beforeEach(() => {
+    root = fs.mkdtempSync(join(os.tmpdir(), 'chromium-mark-'));
+  });
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('有 INSTALLATION_COMPLETE 标记 → 已安装（不依赖可执行布局）', () => {
+    fs.mkdirSync(join(root, 'chromium-1228'), { recursive: true });
+    fs.writeFileSync(join(root, 'chromium-1228', 'INSTALLATION_COMPLETE'), '');
+    expect(isChromiumInstalled(root)).toBe(true);
+  });
+
+  it('仅有 chromium 目录但无标记 → 未完成', () => {
+    fs.mkdirSync(join(root, 'chromium-1228', 'chrome-mac-arm64'), { recursive: true });
+    expect(isChromiumInstalled(root)).toBe(false);
+  });
+
+  it('仅 headless_shell 带标记 → 不算 chromium 已装', () => {
+    fs.mkdirSync(join(root, 'chromium_headless_shell-1228'), { recursive: true });
+    fs.writeFileSync(join(root, 'chromium_headless_shell-1228', 'INSTALLATION_COMPLETE'), '');
+    expect(isChromiumInstalled(root)).toBe(false);
+  });
+
+  it('目录不存在 → false', () => {
+    expect(isChromiumInstalled('/no/such/dir')).toBe(false);
   });
 });
 

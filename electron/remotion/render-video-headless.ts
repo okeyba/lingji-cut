@@ -72,6 +72,84 @@ export async function createRenderPublicDir(
   };
 }
 
+/**
+ * 打包态复用构建期预打包的 Remotion 产物（dist-remotion）。
+ * 运行时 webpack 既无法 chdir 进 app.asar 也无法穿透 asar 解析模块，故不再运行时 bundle；
+ * 改为把只读的预打包站点 copy 到可写临时目录，再把本次导出 materialize 的素材注入其
+ * public/（staticFile 解析根），返回该目录作为 Remotion serveUrl。调用方负责清理返回目录。
+ *
+ * dist-remotion 经 asar-unpack 落在 app.asar.unpacked（真实目录），这里用真实路径 copy：
+ * Electron 的 asar 透明层不支持对目录做递归 copy，走 app.asar 虚拟路径会 ENOENT。
+ */
+async function prepareServeUrlFromPrebuilt(publicDir: string): Promise<string> {
+  const prebuiltDir = path.join(process.resourcesPath, 'app.asar.unpacked', 'dist-remotion');
+  const serveDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lingjijianying-serve-'));
+  await fs.cp(prebuiltDir, serveDir, { recursive: true });
+  await fs.cp(publicDir, path.join(serveDir, 'public'), { recursive: true });
+  return serveDir;
+}
+
+/**
+ * 打包态 compositor 二进制包名（@remotion/compositor-<platform>-<arch>）。
+ * 仅覆盖打包目标 macOS / Windows；其它平台返回 null，回退 Remotion 默认解析。
+ */
+function compositorPackageName(): string | null {
+  if (process.platform === 'darwin') {
+    return process.arch === 'arm64'
+      ? '@remotion/compositor-darwin-arm64'
+      : '@remotion/compositor-darwin-x64';
+  }
+  if (process.platform === 'win32' && process.arch === 'x64') {
+    return '@remotion/compositor-win32-x64-msvc';
+  }
+  return null;
+}
+
+/**
+ * 打包态把 Remotion 二进制目录指向 app.asar.unpacked 真实路径，绕过 asar 的 chmod ENOTDIR。
+ * dev 态返回 undefined，沿用 Remotion 默认（真实 node_modules 内的 compositor 包）。
+ */
+function resolveRemotionBinariesDirectory(): string | undefined {
+  if (!app.isPackaged) return undefined;
+  const pkg = compositorPackageName();
+  if (!pkg) return undefined;
+  return path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', ...pkg.split('/'));
+}
+
+/**
+ * 准备 Remotion 浏览器下载缓存目录，并返回 chdir 进入的工作目录。
+ *
+ * 背景：Remotion 内部 `getDownloadsCacheDir()` 会从 `process.cwd()` 向上查找
+ * 第一个含 `package.json` 的目录，命中后用 `<dir>/node_modules/.remotion`；
+ * 找不到（DMG 启动时 cwd 多为 `/`）则 fallback 到 `path.resolve(cwd, ".remotion")`
+ * = `/.remotion`，随后 `mkdir` 因根目录不可写而抛 `ENOENT: no such file or
+ * directory, mkdir '/.remotion'`（macOS 上 mkdir 在 `/` 下被禁，会以 ENOENT 报错）。
+ *
+ * dev 态 cwd 是工程根、有 package.json，所以没问题；打包态必须显式给一个可写根。
+ *
+ * 方案：在 `<userData>/remotion-cache` 下写一份最小 `package.json`，让 Remotion
+ * 把缓存落到 `<userData>/remotion-cache/node_modules/.remotion`，整路径都可写。
+ * 调用方在 finally 里 restore 原 cwd，避免长尾影响其他主进程逻辑。
+ */
+async function prepareRemotionCwd(): Promise<{ cwd: string } | null> {
+  if (!app.isPackaged) return null;
+  const cacheRoot = path.join(app.getPath('userData'), 'remotion-cache');
+  await fs.mkdir(cacheRoot, { recursive: true });
+  const pkgPath = path.join(cacheRoot, 'package.json');
+  try {
+    await fs.access(pkgPath);
+  } catch {
+    await fs.writeFile(
+      pkgPath,
+      JSON.stringify({ name: 'lingjijianying-remotion-cache', private: true, version: '0.0.0' }, null, 2),
+    );
+  }
+  // node_modules 目录也提前创建，Remotion 内部会直接拼 node_modules/.remotion/...，
+  // 父目录不存在的话首次 mkdir 仍会 ENOENT（其内部用的不是 recursive）。
+  await fs.mkdir(path.join(cacheRoot, 'node_modules'), { recursive: true });
+  return { cwd: cacheRoot };
+}
+
 export interface RenderVideoArgs {
   timeline: string;
   outputPath: string;
@@ -161,6 +239,12 @@ export async function renderVideoHeadless(
   const projectPrepStart = assetsStart;
   // materialize 资源到临时 publicDir，并把 timeline 内绝对素材路径改写为 assets/... 相对路径。
   const { timeline: renderTimeline, publicDir } = await createRenderPublicDir(timelineData);
+  // 打包态复用预打包 Remotion 产物时会 copy 出可写临时站点目录，导出后在 finally 清理。
+  let prebuiltServeDir: string | undefined;
+  // 打包态需要把 cwd 切到可写目录，让 Remotion 的浏览器缓存落点不是 `/.remotion`。
+  // 在 finally 中恢复，避免影响后续主进程逻辑（譬如其它 IPC 的相对路径解析）。
+  const originalCwd = process.cwd();
+  const remotionCwd = await prepareRemotionCwd();
   // 防御性 hydrate：若上游传来的是磁盘态（只有 tsxPath 没有内存 tsx），读回源码，保证 collectMotionCards 能拿到卡片。
   const projectDir = inferProjectDirFromTimeline(timelineData);
   const hydratedTimeline = await hydrateTimelineCards(renderTimeline, {
@@ -227,8 +311,6 @@ export async function renderVideoHeadless(
       total: cardSources.length,
       compiled: Object.keys(compiledCards).length,
     });
-    const remotionEntry = path.join(app.getAppPath(), 'src', 'remotion', 'index.ts');
-
     if (isDev) {
       console.log(
         `${renderLogPrefix} 资源准备完成 耗时=${(
@@ -242,7 +324,15 @@ export async function renderVideoHeadless(
     tel.emit('stage.start', { stage: 'export.bundle' });
     let serveUrl: string;
     try {
-      serveUrl = await getRemotionBundle(remotionEntry, publicDir);
+      if (isDev) {
+        // 开发态：源码在真实磁盘，运行时 bundle src/remotion。
+        const remotionEntry = path.join(app.getAppPath(), 'src', 'remotion', 'index.ts');
+        serveUrl = await getRemotionBundle(remotionEntry, publicDir);
+      } else {
+        // 打包态：复用构建期预打包产物，避开 app.asar 内运行时 webpack。
+        prebuiltServeDir = await prepareServeUrlFromPrebuilt(publicDir);
+        serveUrl = prebuiltServeDir;
+      }
       tel.emit('stage.end', {
         stage: 'export.bundle',
         durationMs: Date.now() - bundleStart,
@@ -266,6 +356,20 @@ export async function renderVideoHeadless(
       hardwareAcceleration: 'if-possible',
     });
     onProgress(0.05);
+    // 关键：进入 Remotion 渲染前切到可写 cwd，让浏览器缓存解析到
+    // `<userData>/remotion-cache/node_modules/.remotion` 而不是根目录下的 `/.remotion`。
+    // selectComposition / renderMedia 内部触发 ensureBrowser → getDownloadsCacheDir，
+    // 该函数只看 process.cwd() 向上找 package.json，没有任何环境变量可覆盖（核对
+    // @remotion/renderer 4.x 源码：get-download-destination.ts）。
+    if (remotionCwd) {
+      try {
+        process.chdir(remotionCwd.cwd);
+      } catch (err) {
+        if (isDev) {
+          console.warn(`${renderLogPrefix} chdir 失败，继续走默认逻辑`, err);
+        }
+      }
+    }
     try {
       await renderRemotionVideo({
         serveUrl,
@@ -280,6 +384,7 @@ export async function renderVideoHeadless(
         audioBitrate: renderConfig.audioBitrate,
         concurrency: explicitConcurrency,
         hardwareAcceleration: 'if-possible',
+        binariesDirectory: resolveRemotionBinariesDirectory(),
         onProgress: (ratio) => onProgress(Math.max(0.05, Math.min(0.98, ratio))),
       });
       onProgress(1);
@@ -311,6 +416,17 @@ export async function renderVideoHeadless(
     }
     throw err;
   } finally {
+    // 恢复原 cwd，再做磁盘清理（rm 路径都是绝对的，不依赖 cwd）。
+    if (remotionCwd) {
+      try {
+        process.chdir(originalCwd);
+      } catch {
+        /* ignore */
+      }
+    }
     await fs.rm(publicDir, { recursive: true, force: true });
+    if (prebuiltServeDir) {
+      await fs.rm(prebuiltServeDir, { recursive: true, force: true });
+    }
   }
 }

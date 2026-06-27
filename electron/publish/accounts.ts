@@ -1,7 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, copyFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { PublishAccount, PublishPlatform } from './types';
+import type { PublishAccount, PublishPlatform, PublishSettings } from './types';
 import { buildAccountId } from './account-id';
+
+const DEFAULT_SETTINGS: PublishSettings = { headlessLogin: true };
 
 interface RegistryEntry {
   platform: PublishPlatform;
@@ -13,11 +15,29 @@ interface RegistryEntry {
 export class AccountStore {
   private readonly accountsDir: string;
   private readonly registryPath: string;
+  private readonly settingsPath: string;
 
   constructor(private readonly root: string) {
     this.accountsDir = join(root, 'accounts');
     this.registryPath = join(root, 'registry.json');
+    this.settingsPath = join(root, 'settings.json');
     mkdirSync(this.accountsDir, { recursive: true });
+  }
+
+  getSettings(): PublishSettings {
+    if (!existsSync(this.settingsPath)) return { ...DEFAULT_SETTINGS };
+    try {
+      const parsed = JSON.parse(readFileSync(this.settingsPath, 'utf-8')) as Partial<PublishSettings>;
+      return { ...DEFAULT_SETTINGS, ...parsed };
+    } catch {
+      return { ...DEFAULT_SETTINGS };
+    }
+  }
+
+  setSettings(patch: Partial<PublishSettings>): PublishSettings {
+    const next = { ...this.getSettings(), ...patch };
+    writeFileSync(this.settingsPath, JSON.stringify(next, null, 2), 'utf-8');
+    return next;
   }
 
   storageStatePath(platform: PublishPlatform, accountName: string): string {

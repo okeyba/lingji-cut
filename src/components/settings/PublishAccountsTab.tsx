@@ -9,18 +9,18 @@ import {
   Input,
   Select,
   SettingsPageHeader,
+  Switch,
 } from '../../ui';
 import type { SelectOption } from '../../ui';
 import { Spinner } from '../../ui/primitives/Spinner';
 import { usePublishStore } from '../../store/publish';
 import { useTaskProgressStore } from '../../store/task-progress';
 import type { PublishAccount, PublishPlatform } from '../../lib/electron-api';
+import { CHROMIUM_PLATFORMS } from '../../lib/publish/chromium-platforms';
 import styles from './PublishAccountsTab.module.css';
 
 const BILIUP_TASK_ID = 'biliup-download';
 const CHROMIUM_TASK_ID = 'chromium-download';
-// 需要 Chromium 自动化的平台（B 站走 biliup，不在此列）
-const CHROMIUM_PLATFORMS = new Set<PublishPlatform>(['douyin', 'tencent', 'xiaohongshu', 'kuaishou']);
 
 function formatMB(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -91,6 +91,9 @@ function formatLastChecked(ts?: number): string {
 
 export function PublishAccountsTab() {
   const { accounts, loadAccounts, addAccount, checkAccount, removeAccount } = usePublishStore();
+  const settings = usePublishStore((s) => s.settings);
+  const loadSettings = usePublishStore((s) => s.loadSettings);
+  const setHeadlessLogin = usePublishStore((s) => s.setHeadlessLogin);
 
   const [platform, setPlatform] = useState<PublishPlatform>('douyin');
   const [accountName, setAccountName] = useState('');
@@ -114,6 +117,7 @@ export function PublishAccountsTab() {
 
   useEffect(() => {
     void loadAccounts();
+    void loadSettings();
     return () => {
       unsubQrcodeRef.current?.();
       unsubQrcodeRef.current = null;
@@ -270,7 +274,12 @@ export function PublishAccountsTab() {
       return;
     }
     setLoginBusy(true);
-    setLoginMsg({ text: '正在打开浏览器，请在弹出的窗口中扫码登录…', isError: false });
+    setLoginMsg({
+      text: settings.headlessLogin
+        ? '正在准备登录，请稍候，二维码将显示在下方，请扫码登录…'
+        : '正在打开浏览器，请在弹出的窗口中扫码登录…',
+      isError: false,
+    });
     setQrcodePng(null);
     subscribeQrcode();
     try {
@@ -418,6 +427,19 @@ export function PublishAccountsTab() {
         </div>
       )}
 
+      {/* ── Login mode ── */}
+      <Divider label="登录设置" />
+      <div className={styles.loginModeRow}>
+        <Switch
+          checked={!settings.headlessLogin}
+          onChange={(checked) => void setHeadlessLogin(!checked)}
+          label="登录使用有头浏览器"
+        />
+        <span className={styles.loginModeHint}>
+          默认无头模式，二维码直接显示在应用内扫码。无头登录失败（如抖音被反爬拦截）时打开此项改用弹窗浏览器登录。
+        </span>
+      </div>
+
       {/* ── Add account ── */}
       <Divider label="添加账号" />
 
@@ -514,7 +536,11 @@ export function PublishAccountsTab() {
 
         {qrcodePng ? (
           <div className={styles.qrcodeWrap}>
-            <span className={styles.qrcodeLabel}>二维码（备用，建议直接在弹出的浏览器中扫码）</span>
+            <span className={styles.qrcodeLabel}>
+              {settings.headlessLogin
+                ? '请使用 App 扫描二维码登录'
+                : '二维码（备用，建议直接在弹出的浏览器中扫码）'}
+            </span>
             <img
               src={`file://${qrcodePng}`}
               alt="登录二维码"

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildBridgePayload } from '@/bridge/payload-builder';
-import type { Creator, Video, TranscriptDocument } from '@/domain/models';
+import type { Creator, Video, TranscriptDocument, ViralInsight } from '@/domain/models';
 
 const video: Video = {
   id: 'aweme-9',
@@ -68,5 +68,32 @@ describe('buildBridgePayload', () => {
     const p = buildBridgePayload(bare, creator, transcript)!;
     expect('coverUrl' in p).toBe(false);
     expect('durationMs' in p).toBe(false);
+  });
+
+  it('带 insight 时附爆款拆解（剔除内部字段）', () => {
+    const insight: ViralInsight = {
+      videoId: 'aweme-9',
+      angle: '反常识',
+      hook: '开头钩子',
+      structure: ['一', '二'],
+      highlights: ['金句'],
+      dataPoints: [],
+      remixSuggestions: ['换案例'],
+      model: 'm',
+      createdAt: 9,
+    };
+    const p = buildBridgePayload(video, creator, transcript, insight)!;
+    expect(p.insight).toEqual({
+      angle: '反常识',
+      hook: '开头钩子',
+      structure: ['一', '二'],
+      highlights: ['金句'],
+      dataPoints: [],
+      remixSuggestions: ['换案例'],
+    });
+  });
+
+  it('无 insight 时省略该字段', () => {
+    expect('insight' in buildBridgePayload(video, creator, transcript)!).toBe(false);
   });
 });

@@ -15,7 +15,7 @@ describe('package runtime dependencies', () => {
     expect(packageJson.dependencies?.esbuild).toBeTruthy();
     expect(packageJson.dependencies?.['@ffmpeg-installer/ffmpeg']).toBeTruthy();
     expect(packageJson.dependencies?.['ffmpeg-static']).toBeTruthy();
-    expect(packageJson.dependencies?.['ffprobe-static']).toBeTruthy();
+    expect(packageJson.dependencies?.['@ffprobe-installer/ffprobe']).toBeTruthy();
     // HyperFrames 已移除
     expect(packageJson.dependencies?.hyperframes).toBeUndefined();
     expect(packageJson.dependencies?.['@hyperframes/player']).toBeUndefined();

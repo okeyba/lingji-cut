@@ -25,6 +25,13 @@ export interface RemotionRenderParams {
    * 'disable' 强制软编；'required' 拿不到 GPU 时直接报错。
    */
   hardwareAcceleration: 'disable' | 'if-possible' | 'required';
+  /**
+   * 打包态：Remotion 的 compositor / ffmpeg / ffprobe 二进制经 asar-unpack 落在
+   * app.asar.unpacked，但 Remotion 默认用 require('@remotion/compositor-*').dir 得到
+   * app.asar 逻辑路径，启动时 chmod 该路径会 ENOTDIR（asar 是文件非目录、未被重定向）。
+   * 显式指向 unpacked 真实目录绕过 asar；dev 态为 undefined，沿用 Remotion 默认。
+   */
+  binariesDirectory?: string;
   onProgress?: (ratio: number) => void;
 }
 
@@ -41,6 +48,7 @@ export async function renderRemotionVideo(params: RemotionRenderParams): Promise
     serveUrl: params.serveUrl,
     id: COMPOSITION_ID,
     inputProps,
+    binariesDirectory: params.binariesDirectory ?? null,
   });
 
   await renderMedia({
@@ -57,6 +65,7 @@ export async function renderRemotionVideo(params: RemotionRenderParams): Promise
     videoBitrate: params.videoBitrate as `${number}k`,
     audioBitrate: params.audioBitrate as `${number}k`,
     hardwareAcceleration: params.hardwareAcceleration,
+    binariesDirectory: params.binariesDirectory ?? null,
     chromiumOptions: { ignoreCertificateErrors: false },
     onProgress: ({ progress }) => params.onProgress?.(progress),
   });

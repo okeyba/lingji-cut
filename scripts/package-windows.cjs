@@ -23,6 +23,8 @@ const buildOutputs = [
   path.join(rootDir, 'dist', 'index.html'),
   path.join(rootDir, 'dist-electron', 'main.js'),
   path.join(rootDir, 'dist-electron', 'preload.js'),
+  // 导出复用的 Remotion 预打包产物（npm run bundle:remotion）。
+  path.join(rootDir, 'dist-remotion', 'index.html'),
 ];
 
 const supportedArch = new Set(['x64', 'ia32']);

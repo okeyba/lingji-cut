@@ -19,10 +19,8 @@ describe('runtime binary resolution', () => {
     const ffprobePath = path.join(
       '/app/Contents/Resources/app.asar.unpacked',
       'node_modules',
-      'ffprobe-static',
-      'bin',
-      'darwin',
-      'arm64',
+      '@ffprobe-installer',
+      'darwin-arm64',
       'ffprobe',
     );
     const options = {
@@ -108,10 +106,8 @@ describe('runtime binary resolution', () => {
     const ffprobePath = path.join(
       'C:/app/resources/app.asar.unpacked',
       'node_modules',
-      'ffprobe-static',
-      'bin',
-      'win32',
-      'x64',
+      '@ffprobe-installer',
+      'win32-x64',
       'ffprobe.exe',
     );
 
@@ -132,14 +128,14 @@ describe('runtime binary resolution', () => {
     const nextPath = buildPathWithRuntimeBinaries('/usr/bin', [
       '/runtime/ffmpeg-static/ffmpeg',
       '/runtime/ffmpeg-static/ffmpeg',
-      '/runtime/ffprobe-static/bin/darwin/arm64/ffprobe',
+      '/runtime/@ffprobe-installer/darwin-arm64/ffprobe',
       null,
     ]);
 
     expect(nextPath).toBe(
       [
         '/runtime/ffmpeg-static',
-        '/runtime/ffprobe-static/bin/darwin/arm64',
+        '/runtime/@ffprobe-installer/darwin-arm64',
         '/usr/bin',
       ].join(path.delimiter),
     );

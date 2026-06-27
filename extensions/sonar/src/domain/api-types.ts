@@ -10,7 +10,6 @@ import type {
   PageDetectionResult,
   Video,
   VideoSource,
-  WorkflowStatus,
 } from './models';
 
 // —— 采集 ——
@@ -117,16 +116,15 @@ export interface ExportTask {
   error?: SonarError;
 }
 
-// —— 工作流 ——
+// —— 工作流（创作流水线）——
 export interface AddWorkflowItemInput {
   videoId: string;
   note?: string;
 }
 
-export interface UpdateWorkflowItemInput {
+/** 按 id 操作单条工作流条目（重试 / 移除 / 送二创）。 */
+export interface WorkflowItemRef {
   id: string;
-  status?: WorkflowStatus;
-  note?: string;
 }
 
 // —— 博主收藏 ——

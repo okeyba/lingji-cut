@@ -7,6 +7,8 @@ import { ClaudeCodeAcpChatModel } from './claude-code-acp-model';
 
 /** MiniMax Anthropic 兼容端点默认地址（SDK 会在其后拼 /v1/messages）。 */
 export const MINIMAX_ANTHROPIC_DEFAULT_BASE_URL = 'https://api.minimaxi.com/anthropic';
+/** 火山方舟标准 Chat 端点（ChatOpenAI 会在其后拼 /chat/completions）。 */
+export const VOLCENGINE_ARK_DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3';
 /** Anthropic 扩展思考的最小 budget_tokens（小于此值接口会报错）。 */
 const MINIMAX_MIN_THINKING_BUDGET = 1024;
 /** 正文 token 预算：thinking 之外留给真正回答（TSX 卡片）的空间，过小会截断成黑屏。 */
@@ -127,6 +129,42 @@ function createMiniMaxChatModel(
   }) as unknown as BaseChatModel;
 }
 
+/**
+ * 火山引擎方舟专用适配：火山是 OpenAI 兼容端点（/api/v3/chat/completions），
+ * 底层复用 ChatOpenAI，火山特有参数（thinking / reasoning_effort / service_tier）经 modelKwargs 透传。
+ * 思考门控：master gate（options/provider.enableThinking===false）→ 强制 thinking.type='disabled'；
+ * 否则用 volcengineArk.thinkingMode（缺省 enabled）。保持「流水线步骤强制关思考」的调用约定。
+ */
+function createVolcengineArkChatModel(
+  provider: LLMProvider,
+  model: string,
+  options?: { enableThinking?: boolean },
+): BaseChatModel {
+  const ark = provider.volcengineArk ?? {};
+  const gateOpen = resolveEnableThinking(provider, options);
+  const thinkingType = gateOpen ? (ark.thinkingMode ?? 'enabled') : 'disabled';
+
+  const modelKwargs: Record<string, unknown> = {
+    thinking: { type: thinkingType },
+  };
+  if (ark.reasoningEffort) modelKwargs.reasoning_effort = ark.reasoningEffort;
+  if (ark.serviceTier) modelKwargs.service_tier = ark.serviceTier;
+
+  const apiKey = provider.apiKey;
+  const baseURL = normalizeBaseUrl(provider.baseUrl?.trim() || VOLCENGINE_ARK_DEFAULT_BASE_URL);
+
+  return new ChatOpenAI({
+    apiKey,
+    model,
+    temperature: 0.3,
+    configuration: {
+      apiKey,
+      baseURL,
+    },
+    modelKwargs,
+  });
+}
+
 export function createChatModelFromProvider(
   provider: LLMProvider,
   model: string,
@@ -144,6 +182,10 @@ export function createChatModelFromProvider(
 
   if (provider.type === 'minimax') {
     return createMiniMaxChatModel(provider, model, options);
+  }
+
+  if (provider.type === 'volcengine_ark') {
+    return createVolcengineArkChatModel(provider, model, options);
   }
 
   const enableThinking = resolveEnableThinking(provider, options);

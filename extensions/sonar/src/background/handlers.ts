@@ -20,7 +20,7 @@ import type {
   ResolvedVideo,
   TestAiProviderInput,
   UpdateAiSettingsInput,
-  UpdateWorkflowItemInput,
+  WorkflowItemRef,
 } from '@/domain/api-types';
 import type { PageDetectionResult } from '@/domain/models';
 import type { HandlerMap } from './router';
@@ -236,6 +236,10 @@ export function createHandlers(ctx: HandlerContext): HandlerMap {
       return ctx.repo.getAnalysis(requireString(params, 'videoId'));
     },
 
+    async listAnalyses() {
+      return ctx.repo.listAnalyses();
+    },
+
     async regenerateAnalysis(params) {
       const videoId = requireString(params, 'videoId');
       return startProcessing(videoId, { force: true, onlySummary: true });
@@ -246,15 +250,40 @@ export function createHandlers(ctx: HandlerContext): HandlerMap {
     },
 
     async addToWorkflow(params) {
-      return ctx.repo.addWorkflowItem(asObject(params) as unknown as AddWorkflowItemInput);
+      const item = await ctx.repo.addWorkflowItem(asObject(params) as unknown as AddWorkflowItemInput);
+      // 拉入即自动跑流水线（准备素材 → 爆款拆解），后台推进，UI 轮询阶段。
+      void ctx.services.workflow.run(item.id);
+      return item;
     },
 
     async listWorkflowItems() {
       return ctx.repo.listWorkflowItems();
     },
 
-    async updateWorkflowItem(params) {
-      return ctx.repo.updateWorkflowItem(asObject(params) as unknown as UpdateWorkflowItemInput);
+    async retryWorkflowItem(params) {
+      const { id } = asObject(params) as unknown as WorkflowItemRef;
+      const item = await ctx.repo.getWorkflowItem(id);
+      if (!item) throw new SonarException(makeError('PARSE_ERROR', '工作流条目不存在'));
+      void ctx.services.workflow.run(id);
+      return item;
+    },
+
+    async removeWorkflowItem(params) {
+      const { id } = asObject(params) as unknown as WorkflowItemRef;
+      return ctx.repo.removeWorkflowItem(id);
+    },
+
+    async pushWorkflowItem(params) {
+      const { id } = asObject(params) as unknown as WorkflowItemRef;
+      const item = await ctx.repo.getWorkflowItem(id);
+      if (!item) throw new SonarException(makeError('PARSE_ERROR', '工作流条目不存在'));
+      // 复用桥：force（忽略开关）+ refresh（命中已有则刷新为待创作）。拆解报告随 payload 一并送出。
+      const result = await ctx.bridge.push(item.videoId, { force: true, refresh: true });
+      // 已送达或已暂存待补推（离线）均视为「已送二创」；未授权/未配置保持 ready 让用户去修配置。
+      if (result.pushed && (result.outcome.status === 'sent' || result.outcome.status === 'queued')) {
+        await ctx.repo.setWorkflowStage(id, 'pushed');
+      }
+      return result;
     },
 
     async getAiSettings() {

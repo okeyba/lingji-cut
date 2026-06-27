@@ -4,7 +4,7 @@
  * 处理队列成功转录某作品后调用：读 settings/video/creator/transcript，组装负载并入队到桥。
  * 桥未启用、作品/转录缺失则静默跳过。纯逻辑（repo/client/settings 注入），可单测。
  */
-import type { Creator, TranscriptDocument, Video } from '@/domain/models';
+import type { Creator, TranscriptDocument, Video, ViralInsight } from '@/domain/models';
 import type { BridgeClient, BridgeConfig, EnqueueOutcome } from './bridge-client';
 import type { BridgeSettingsStore } from './bridge-settings';
 import { buildBridgePayload } from './payload-builder';
@@ -14,6 +14,7 @@ export interface PushOnProcessedDeps {
     getVideo(id: string): Promise<Video | null>;
     getCreator(id: string): Promise<Creator | null>;
     getTranscript(videoId: string): Promise<TranscriptDocument | null>;
+    getInsight(videoId: string): Promise<ViralInsight | null>;
   };
   bridgeSettings: BridgeSettingsStore;
   bridgeClient: Pick<BridgeClient, 'enqueue'>;
@@ -40,11 +41,12 @@ export function createPushOnProcessed(deps: PushOnProcessedDeps) {
     const video = await deps.repo.getVideo(videoId);
     if (!video) return { pushed: false, reason: 'no-video' };
 
-    const [creator, transcript] = await Promise.all([
+    const [creator, transcript, insight] = await Promise.all([
       deps.repo.getCreator(video.creatorId),
       deps.repo.getTranscript(videoId),
+      deps.repo.getInsight(videoId),
     ]);
-    const payload = buildBridgePayload(video, creator, transcript);
+    const payload = buildBridgePayload(video, creator, transcript, insight);
     if (!payload) return { pushed: false, reason: 'no-payload' };
 
     const outcome = await deps.bridgeClient.enqueue(config, payload, { refresh: opts?.refresh });

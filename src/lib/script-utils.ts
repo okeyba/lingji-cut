@@ -171,6 +171,7 @@ export async function generateScriptDraftStream(
   onChunk: (chunk: string) => void,
   options?: {
     onReasoningChunk?: (chunk: string) => void;
+    signal?: AbortSignal;
   },
 ): Promise<string> {
   const { systemPrompt, userPrompt } = buildScriptDraftPrompt(originalText, templateId, roleId);
@@ -179,7 +180,7 @@ export async function generateScriptDraftStream(
   if (!settings) throw new Error('请先在 AI 设置中配置 LLM');
 
   const binding = resolveTemplateBinding(settings, templateId);
-  return streamText(settings, systemPrompt, userPrompt, onChunk, options, binding);
+  return streamText(settings, systemPrompt, userPrompt, onChunk, options, binding, options?.signal);
 }
 
 // --- AI 审查 ---

@@ -20,6 +20,45 @@ it('upload 参数含 -u/upload/--tid/--tag 且顺序匹配源', () => {
   );
 });
 
+it('covers 16:9 优先作为 --cover', () => {
+  const args = buildBiliupUploadArgs('/c/bili.json', {
+    storageStatePath: '/c/bili.json',
+    filePath: '/v.mp4',
+    title: 'T',
+    desc: 'D',
+    tags: [],
+    tid: 21,
+    headless: true,
+    covers: { '16:9': '/cover-wide.png', '4:3': '/cover-43.png' },
+    thumbnail: '/thumb.png',
+  } as any);
+  const idx = args.indexOf('--cover');
+  expect(idx).toBeGreaterThan(-1);
+  expect(args[idx + 1]).toBe('/cover-wide.png');
+});
+
+it('缺 16:9 时回退 4:3，再回退 thumbnail', () => {
+  const only43 = buildBiliupUploadArgs('/c/bili.json', {
+    storageStatePath: '/c/bili.json', filePath: '/v.mp4', title: 'T', desc: 'D',
+    tags: [], tid: 21, headless: true, covers: { '4:3': '/cover-43.png' },
+  } as any);
+  expect(only43[only43.indexOf('--cover') + 1]).toBe('/cover-43.png');
+
+  const onlyThumb = buildBiliupUploadArgs('/c/bili.json', {
+    storageStatePath: '/c/bili.json', filePath: '/v.mp4', title: 'T', desc: 'D',
+    tags: [], tid: 21, headless: true, thumbnail: '/thumb.png',
+  } as any);
+  expect(onlyThumb[onlyThumb.indexOf('--cover') + 1]).toBe('/thumb.png');
+});
+
+it('无封面时不含 --cover', () => {
+  const args = buildBiliupUploadArgs('/c/bili.json', {
+    storageStatePath: '/c/bili.json', filePath: '/v.mp4', title: 'T', desc: 'D',
+    tags: [], tid: 21, headless: true,
+  } as any);
+  expect(args).not.toContain('--cover');
+});
+
 it('无 tags 时不含 --tag', () => {
   const args = buildBiliupUploadArgs('/c/bili.json', {
     storageStatePath: '/c/bili.json',

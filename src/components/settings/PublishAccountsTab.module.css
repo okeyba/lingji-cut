@@ -59,6 +59,19 @@
   gap: var(--space-3);
 }
 
+.loginModeRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.loginModeHint {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
 .addRow {
   display: flex;
   align-items: flex-end;

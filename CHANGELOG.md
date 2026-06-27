@@ -4,6 +4,37 @@
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-06-27
+
+本版本完善火山引擎方舟（Volcengine Ark）LLM Provider，并围绕「发布」与「声呐采风」两条链路做了大量增强与修复：发布侧把 Chromium / biliup 改为运行时按需下载（安装包瘦身），新增发布历史、失败账号就地重登、多比例封面与 B 站分区推荐；声呐侧把采风工作流重做为「爆款拆解」创作流水线，并修复音视频分离提音、主页采集去重等问题；打包侧修复 macOS Intel 架构不兼容警告。
+
+### Added
+- **火山引擎方舟（Volcengine Ark）独立 LLM Provider**：AI 设置新增 `volcengine_ark` Provider 类型，内置默认端点 `https://ark.cn-beijing.volces.com/api/v3`，支持深度思考模式（`thinkingMode`）、思考力度（`reasoningEffort`）、在线推理模式（`serviceTier`）三个火山特有参数，并沿用「流水线步骤强制关思考」的调用约定（`src/lib/llm/model.ts`、`src/types/ai.ts`）。同时新增 `openai_responses` Provider 类型（走 OpenAI `/v1/responses` 协议）。
+- **Provider 默认模型**：每个 LLM Provider 可单独设置默认模型（`defaultModel`），切换默认 Provider 时自动回填全局默认模型。
+- **出卡前生成逐拍动画指导**：Motion 卡片在生成前可由 AI 先产出一份「逐拍动画脚本」（`cards.animation` 提示词）指导出卡节奏与形变；卡片 Inspector 新增手动生成 / 编辑动画指导入口，可在 AI 设置中开关自动生成（`autoAnimationDirection`）。
+- **发布：Chromium 运行时按需下载**：抖音 / 视频号 / 小红书 / 快手所需的自动化浏览器组件不再随安装包内置，改为在「发布账号」首次选中相关平台时按需下载到用户目录（`<userData>/publish/chromium`），下载进度接入底部统一任务进度；组件缺失时禁用登录并引导先下载（`electron/publish/chromium-install.ts`）。
+- **发布：B 站投稿分区选择 + AI 智能推荐**：发布工作台内置 B 站全量投稿分区清单，可手动选择分区，并支持根据标题 / 描述由 AI 推荐最贴合的分区 tid（`publish.partition` 提示词，返回值经服务端二次校验）。
+- **发布：多比例封面与发布元数据**：发布共享数据支持按 16:9 / 4:3 / 3:4 提供多张封面，各平台按需取用；新增按平台生成发布标题 / 简介 / 标签的元数据能力（`src/lib/publish-metadata.ts`）。
+- **发布：发布历史 + 失败账号就地重登**：发布工作台记录每次发布任务的历史（含各账号最终结果与重发字段，最多保留 20 条）；发布过程中检测到某账号登录态失效会弹窗确认并就地重新登录后继续（`src/components/publish/PublishWorkbench.tsx`）。
+- **发布：无头登录开关**：发布登录默认使用应用内二维码的无头模式；可在发布设置中关闭改用弹出浏览器窗口扫码（兜底被反爬拦截场景），设置持久化于 `userData/publish/settings.json`。
+- **声呐采风：创作流水线工作流**：「工作流」重做为创作流水线工作台——每条拉入的视频自动「准备素材（抓无水印源 + 转录）→ 爆款拆解」并停在「待确认」，拆解报告含选题角度、开头钩子、内容结构、亮点、数据点与二创建议，确认后一键送进灵机剪影待创作箱（`extensions/sonar/src/background/workflow-runner.ts`、`extensions/sonar/src/processing/insight-provider.ts`）。
+- **耗时任务完成系统通知**：导出 / TTS / 导入 / AI 分析 / 封面 / 卡片等顶层耗时任务（≥1.5 秒）完成或失败时弹出系统通知，点击聚焦主窗口（`src/lib/task-notification-bridge.ts`）。
+
+### Changed
+- **打包不再随包内置 Chromium 与 biliup 二进制**：macOS / Windows 打包流程移除随包安装 Playwright Chromium 与下载 biliup 的步骤，二者改为运行时按需下载到用户目录，签名安装包体积减小（`scripts/package-mac.cjs`、`scripts/package-windows.cjs`）。
+- **B 站登录改造**：适配 biliup 1.x 交互式 TUI 登录，通过伪终端（node-pty）驱动菜单选「扫码登录」并轮询二维码回传 UI（`electron/publish/platforms/bilibili.ts`）。
+- **Remotion 导出产物改为构建期预打包**：新增 `npm run bundle:remotion`，构建期把 Remotion 合成工程预打包到 `dist-remotion/`，打包态运行时复用静态产物并注入素材，规避 asar 内无法 bundle 的问题（`scripts/bundle-remotion.cjs`）。
+- **声呐采风：抖音主页采集与去重**：同一 secUid 的 Creator 在 DOM 采集与 API 两条捕获路径间收敛为单一记录，作品统一重挂，避免重复 Creator 导致主页采不到视频（`extensions/sonar/src/background/ingest.ts`）；视频库列表改用虚拟化渲染并配套批量查询接口，提升大量数据下的性能（`extensions/sonar/src/workbench/Library.tsx`）。
+
+### Fixed
+- **声呐采风：音视频分离作品提音失败**：抖音对部分作品采用音视频分离（DASH）下发，纯视频流提音得到空音轨；现优先以 `video_id` 现取「音视频合一」的 snssdk 播放流作为提音源（`extensions/sonar/src/adapter/source-extractor.ts`）。
+- **声呐采风：ffmpeg.wasm 崩溃毒化整批转码**：wasm 运行时崩溃会永久毒化 ffmpeg 实例致后续候选源连环失败；现检测到崩溃即丢弃并重建干净实例（`extensions/sonar/src/offscreen/ffmpeg-runner.ts`）。
+- **视频号「未找到上传框」**：视频号 session 被服务端吊销（即使本地 cookie 未到期）后会被重定向到扫码登录页；现据 DOM 特征识别登录态失效并给出提示，同时逐 frame 查找上传框以覆盖主框架与子 iframe 两种渲染形态（`electron/publish/platforms/tencent.ts`）。
+- **macOS「Intel 组件不兼容」警告**：ffprobe 二进制由仅含 x86_64 的 `ffprobe-static` 换为按平台架构发布原生二进制的 `@ffprobe-installer/ffprobe`，并在打包时剔除非目标架构原生产物，单架构 .app 不再混入 Intel 二进制（`scripts/package-mac-helpers.cjs`）。
+
+### Removed
+- **随包内置的发布运行时二进制**：移除打包阶段随包内置的 Playwright Chromium 与 biliup 二进制（含 `scripts/fetch-biliup.cjs`），改由运行时按需下载（见 Changed）。
+
 ## [1.3.0] - 2026-06-22
 
 本版本把 AI 对话 agent 收敛为内置、开箱即用的 **Pi**，底层重构为多协议 runtime，并打通「AI 改文件 → 编辑器实时热重载」的 file-first 闭环；同时新增发布视频选项卡的多画幅封面工作台与待创作箱清空等创作链路改进，并修复工作区标签页互切偶发空白。
@@ -123,6 +154,7 @@
 ### Build / Packaging
 - macOS 多架构（arm64 + x64）DMG，Windows x64 zip 通过 GitHub Actions 自动构建并发布。
 
+[1.3.1]: https://github.com/yoqu/lingji-cut/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/yoqu/lingji-cut/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/yoqu/lingji-cut/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/yoqu/lingji-cut/compare/v1.0.1...v1.1.0

@@ -6,7 +6,7 @@
  * 仅 loopback（由 server 绑定保证）+ x-sonar-token 比对。
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { SonarInboxStore, SonarEnqueueInput } from './inbox-store';
+import type { SonarInboxStore, SonarEnqueueInput, SonarInsight } from './inbox-store';
 
 export interface SonarRequest {
   method: string;
@@ -42,6 +42,29 @@ function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.length > 0;
 }
 
+/** 容错读取字符串数组（过滤空串），用于可选的拆解字段。 */
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0).map((v) => v.trim());
+}
+
+/** 归一化可选拆解报告：缺 angle/hook 视为无效（返回 undefined），不污染存储。 */
+function sanitizeInsight(value: unknown): SonarInsight | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const i = value as Record<string, unknown>;
+  const angle = typeof i.angle === 'string' ? i.angle.trim() : '';
+  const hook = typeof i.hook === 'string' ? i.hook.trim() : '';
+  if (!angle || !hook) return undefined;
+  return {
+    angle,
+    hook,
+    structure: toStringArray(i.structure),
+    highlights: toStringArray(i.highlights),
+    dataPoints: toStringArray(i.dataPoints),
+    remixSuggestions: toStringArray(i.remixSuggestions),
+  };
+}
+
 function validateEnqueue(body: unknown): { ok: true; input: SonarEnqueueInput } | { ok: false; message: string } {
   if (!body || typeof body !== 'object') return { ok: false, message: 'body 必须是对象' };
   const b = body as Record<string, unknown>;
@@ -54,7 +77,8 @@ function validateEnqueue(body: unknown): { ok: true; input: SonarEnqueueInput } 
   if (!isNonEmptyString(t.fullText)) return { ok: false, message: 'transcript.fullText 缺失' };
   if (typeof t.srtText !== 'string') return { ok: false, message: 'transcript.srtText 缺失' };
   if (!Array.isArray(t.segments)) return { ok: false, message: 'transcript.segments 缺失' };
-  return { ok: true, input: body as SonarEnqueueInput };
+  const insight = sanitizeInsight(b.insight);
+  return { ok: true, input: { ...(body as SonarEnqueueInput), ...(insight ? { insight } : { insight: undefined }) } };
 }
 
 export async function handleSonarRequest(

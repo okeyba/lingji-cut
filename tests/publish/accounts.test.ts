@@ -71,4 +71,15 @@ describe('AccountStore', () => {
     expect(store.list()).toHaveLength(1);
     expect(store.list()[0].status).toBe('valid');
   });
+
+  it('getSettings 缺省返回无头登录默认值', () => {
+    expect(store.getSettings()).toEqual({ headlessLogin: true });
+  });
+
+  it('setSettings 写入后可回读，且合并已有字段', () => {
+    expect(store.setSettings({ headlessLogin: false })).toEqual({ headlessLogin: false });
+    expect(store.getSettings()).toEqual({ headlessLogin: false });
+    // 再次部分写入仍合并默认/已有键
+    expect(store.setSettings({})).toEqual({ headlessLogin: false });
+  });
 });

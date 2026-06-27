@@ -9,6 +9,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { BrowserContext, Locator, Page } from 'playwright';
 import { withContext } from '../engine';
+import { LoginExpiredError } from '../errors';
 import type { LoginOptions, PlatformModule, UploadVideoOptions } from '../types';
 
 // ─── URLs ─────────────────────────────────────────────────────────────────────
@@ -489,7 +490,7 @@ async function _openTencentCreatePage(page: Page): Promise<void> {
   await page.goto(TENCENT_HOME_URL, { waitUntil: 'domcontentloaded', timeout: 120_000 });
 
   // 登录态失效会被重定向到扫码登录页：尽早抛出可操作错误，避免空等 120s 后误报「未找到上传框」
-  if (_isTencentLoginPage(page)) throw new Error(TENCENT_LOGIN_EXPIRED_MESSAGE);
+  if (_isTencentLoginPage(page)) throw new LoginExpiredError(TENCENT_LOGIN_EXPIRED_MESSAGE);
 
   // 深链偶尔仍能直接渲染上传框 → 直接复用
   if (await _findFileInput(page)) return;
@@ -498,7 +499,7 @@ async function _openTencentCreatePage(page: Page): Promise<void> {
   const entryDeadline = Date.now() + 60_000;
   while (Date.now() < entryDeadline) {
     if (await _clickPublishEntry(page)) break;
-    if (_isTencentLoginPage(page)) throw new Error(TENCENT_LOGIN_EXPIRED_MESSAGE);
+    if (_isTencentLoginPage(page)) throw new LoginExpiredError(TENCENT_LOGIN_EXPIRED_MESSAGE);
     await sleep(1_000);
   }
 
@@ -506,7 +507,7 @@ async function _openTencentCreatePage(page: Page): Promise<void> {
   const formDeadline = Date.now() + 60_000;
   while (Date.now() < formDeadline) {
     if (await _findFileInput(page)) return;
-    if (_isTencentLoginPage(page)) throw new Error(TENCENT_LOGIN_EXPIRED_MESSAGE);
+    if (_isTencentLoginPage(page)) throw new LoginExpiredError(TENCENT_LOGIN_EXPIRED_MESSAGE);
     await sleep(1_000);
   }
 }
@@ -528,7 +529,7 @@ async function _uploadVideoFile(page: Page, filePath: string): Promise<void> {
   }
   if (!fi) {
     // 区分「登录失效」与「页面结构变化」两类成因，给出对应可操作提示
-    if (_isTencentLoginPage(page)) throw new Error(TENCENT_LOGIN_EXPIRED_MESSAGE);
+    if (_isTencentLoginPage(page)) throw new LoginExpiredError(TENCENT_LOGIN_EXPIRED_MESSAGE);
     throw new Error('未找到视频号文件上传框（页面结构可能已变化，或上传表单未渲染）');
   }
   await fi.setInputFiles(filePath);
@@ -985,7 +986,7 @@ export const tencent: PlatformModule = {
    * 有头浏览器，全新 context（无 storageState），等待用户微信扫码
    */
   async login(opts: LoginOptions): Promise<{ success: boolean; message: string }> {
-    return withContext({ headless: false }, async (ctx) => {
+    return withContext({ headless: opts.headless }, async (ctx) => {
       const page = await ctx.newPage();
       try {
         await page.goto(TENCENT_LOGIN_URL);

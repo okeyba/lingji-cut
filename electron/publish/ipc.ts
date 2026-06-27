@@ -6,7 +6,7 @@ import { parseAccountId } from './account-id';
 import { runPublishJob } from './runner';
 import { getBiliupStatus, downloadBiliup } from './biliup-install';
 import { getChromiumStatus, downloadChromium } from './chromium-install';
-import type { PublishJob, PublishPlatform } from './types';
+import type { PublishJob, PublishPlatform, PublishSettings } from './types';
 
 let store: AccountStore | null = null;
 function getStore(): AccountStore {
@@ -22,16 +22,24 @@ export function registerPublishIpc(): void {
   ipcMain.handle('publish:delete-account', (_e, id: string) => {
     getStore().remove(id);
   });
-  ipcMain.handle('publish:login', async (e, platform: PublishPlatform, accountName: string) => {
-    const s = getStore();
-    const sp = s.storageStatePath(platform, accountName);
-    const res = await getPlatform(platform).login({
-      storageStatePath: sp,
-      onQrcode: (png) => e.sender.send('publish:qrcode', { platform, accountName, png }),
-    });
-    if (res.success) s.upsert({ platform, accountName, status: 'valid' });
-    return res;
-  });
+  ipcMain.handle(
+    'publish:login',
+    async (e, platform: PublishPlatform, accountName: string, headless?: boolean) => {
+      const s = getStore();
+      const sp = s.storageStatePath(platform, accountName);
+      const res = await getPlatform(platform).login({
+        storageStatePath: sp,
+        headless: headless ?? s.getSettings().headlessLogin,
+        onQrcode: (png) => e.sender.send('publish:qrcode', { platform, accountName, png }),
+      });
+      if (res.success) s.upsert({ platform, accountName, status: 'valid' });
+      return res;
+    },
+  );
+  ipcMain.handle('publish:get-settings', () => getStore().getSettings());
+  ipcMain.handle('publish:set-settings', (_e, patch: Partial<PublishSettings>) =>
+    getStore().setSettings(patch),
+  );
   ipcMain.handle('publish:check', async (_e, id: string) => {
     const s = getStore();
     const { platform } = parseAccountId(id);

@@ -61,6 +61,12 @@ export interface CollectService {
   getProgress(secUid: string): CollectProgressInfo | null;
 }
 
+/** 工作流流水线：拉入后自动「准备素材 → 爆款拆解」，停在 ready。 */
+export interface WorkflowService {
+  /** 后台运行/重跑某条流水线（fire-and-forget，阶段写 repo 供 UI 轮询）。 */
+  run(itemId: string): Promise<void>;
+}
+
 export interface Services {
   download: DownloadService;
   processing: ProcessingService;
@@ -68,6 +74,7 @@ export interface Services {
   export: ExportService;
   aiTester: AiProviderTester;
   collect: CollectService;
+  workflow: WorkflowService;
 }
 
 /**
@@ -129,6 +136,11 @@ export function createStubServices(): Services {
       },
       getProgress() {
         return null;
+      },
+    },
+    workflow: {
+      async run() {
+        /* 子系统未接入：no-op（阶段保持，不崩溃） */
       },
     },
   };

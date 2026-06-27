@@ -1,5 +1,5 @@
 /** 完整工作台外壳：1:1 还原原型（含 macOS 交通灯标题栏），桌面 → 窗口 → 标题栏 + 侧栏 + 视图。 */
-import { useState } from 'react';
+import { useDeferredValue, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useClient } from '@/ui/useClient';
 import { useVideoStatus, statusOf } from '@/ui/video-status';
@@ -38,6 +38,8 @@ export function Workbench() {
   const [sort, setSort] = useState<Sort>('time');
   const [libFilter, setLibFilter] = useState<LibFilter>('all');
   const [query, setQuery] = useState('');
+  // 输入框保持即时；视频库过滤用延迟值，快速输入时 React 可打断重过滤，避免逐字符卡顿。
+  const deferredQuery = useDeferredValue(query);
   const [showAdd, setShowAdd] = useState(false);
   const [addTab, setAddTab] = useState<'blogger' | 'link'>('blogger');
   const [syncing, setSyncing] = useState(false);
@@ -79,7 +81,7 @@ export function Workbench() {
     }
     if (view === 'library') return `${data.videos.length} 条已归档`;
     if (view === 'bloggers') return `${data.creatorList.length} 位博主`;
-    if (view === 'workflow') return '本地看板';
+    if (view === 'workflow') return '创作流水线';
     return 'Provider 与数据';
   })();
 
@@ -141,7 +143,7 @@ export function Workbench() {
               <Feed client={client} data={data} status={status} processing={processing} creatorIds={filter} onCreatorIdsChange={setFilter} selVid={selVid} onSelect={selectVideo} sort={sort} onSort={setSort} show={show} onNavigateSettings={() => setView('settings')} />
             )}
             {view === 'library' && (
-              <Library data={data} status={status} processing={processing} query={query} filter={libFilter} onFilter={setLibFilter} onSelect={selectVideo} />
+              <Library data={data} status={status} processing={processing} query={deferredQuery} filter={libFilter} onFilter={setLibFilter} onSelect={selectVideo} />
             )}
             {view === 'bloggers' && <Bloggers client={client} data={data} status={status} onAdd={() => { setAddTab('blogger'); setShowAdd(true); }} show={show} />}
             {view === 'workflow' && <WorkflowBoard client={client} data={data} onOpen={selectVideo} show={show} />}

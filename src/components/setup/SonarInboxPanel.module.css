@@ -227,6 +227,19 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.insight {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--color-system-blue, var(--color-primary));
+  overflow: hidden;
+}
+.insight span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .badge {
   font-size: 11px;

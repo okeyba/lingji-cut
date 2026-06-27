@@ -29,6 +29,33 @@ function isVideoShape(value: unknown): value is Video {
 }
 
 /**
+ * 同一 secUid 复用已有 Creator 的 id，避免 DOM 与 API 两条捕获路径各用一套主键
+ * （DOM 只有 secUid；API 用内部 uid）而产生重复 Creator。优先沿用订阅里的 id，使作品
+ * 始终挂在用户实际关注的那条上。返回已存在的 Creator（供合并字段）与规整后的 id。
+ */
+async function canonicalCreatorIdentity(
+  repo: Repository,
+  creator: Creator,
+): Promise<{ existing: Creator | undefined; creatorId: string }> {
+  const subscribed = (await repo.listSubscriptions()).find((sub) => sub.creator.secUid === creator.secUid)?.creator;
+  const existing = subscribed ?? (await repo.getCreatorBySecUid(creator.secUid)) ?? undefined;
+  return { existing, creatorId: existing?.id ?? creator.id };
+}
+
+/** upsert Creator 并把其作品统一重挂到规整后的 creatorId（幂等，跨捕获路径收敛到单一记录）。 */
+async function upsertCanonicalCreator(
+  repo: Repository,
+  creator: Creator,
+  videos: Video[],
+): Promise<{ videoIds: string[]; creatorId: string }> {
+  const { existing, creatorId } = await canonicalCreatorIdentity(repo, creator);
+  await repo.upsertCreator({ ...existing, ...creator, id: creatorId });
+  const canonicalVideos = videos.map((video) => ({ ...video, creatorId }));
+  if (canonicalVideos.length > 0) await repo.upsertVideos(canonicalVideos);
+  return { videoIds: canonicalVideos.map((v) => v.id), creatorId };
+}
+
+/**
  * 载入「主动提取」的博主主页结果（DOM/SSR fallback，详见 content/dom-extractor.ts）。
  * 入参已是规整后的稳定模型；这里只做最小结构校验并入库（与 ingestCapture 行为对齐：
  * upsert 博主与作品，幂等）。DOM 提取拿不到 raw video 对象，故不写 cacheRawVideo——
@@ -41,16 +68,7 @@ export async function ingestDomCreatorPage(
 ): Promise<IngestResult> {
   if (!isCreatorShape(creator)) return { videoIds: [] };
   const list = Array.isArray(videos) ? videos.filter(isVideoShape) : [];
-  // API 捕获可能先以内部 uid 建过 Creator/Subscription；DOM fallback 只有 secUid。
-  // 同一个 secUid 必须复用已有 id，否则作品会挂到第二个 Creator 上，工作台按订阅 id 过滤后显示 0 条。
-  const subscribed = (await repo.listSubscriptions()).find((sub) => sub.creator.secUid === creator.secUid)?.creator;
-  const existing = subscribed ?? (await repo.getCreatorBySecUid(creator.secUid));
-  const creatorId = existing?.id ?? creator.id;
-  const canonicalCreator: Creator = { ...existing, ...creator, id: creatorId };
-  const canonicalVideos = list.map((video) => ({ ...video, creatorId }));
-  await repo.upsertCreator(canonicalCreator);
-  if (canonicalVideos.length > 0) await repo.upsertVideos(canonicalVideos);
-  return { videoIds: canonicalVideos.map((v) => v.id), creatorId };
+  return upsertCanonicalCreator(repo, creator, list);
 }
 
 export async function ingestCapture(
@@ -62,17 +80,17 @@ export async function ingestCapture(
   if (category === 'video_detail') {
     const adapted = adaptAwemeDetail(payload, now());
     if (!adapted) return { videoIds: [] };
-    await repo.upsertCreator(adapted.creator);
-    await repo.upsertVideos([adapted.video]);
+    const { creatorId } = await upsertCanonicalCreator(repo, adapted.creator, [adapted.video]);
     const rawVideo = pick(pick(payload, ['aweme_detail', 'awemeDetail']), ['video']);
     if (rawVideo) await repo.cacheRawVideo(adapted.video.id, rawVideo);
-    return { videoIds: [adapted.video.id], creatorId: adapted.creator.id };
+    return { videoIds: [adapted.video.id], creatorId };
   }
 
   if (category === 'creator_videos') {
     const { videos, creator } = adaptAwemePostList(payload, now());
-    if (creator) await repo.upsertCreator(creator);
-    await repo.upsertVideos(videos);
+    const result = creator
+      ? await upsertCanonicalCreator(repo, creator, videos)
+      : (await repo.upsertVideos(videos), { videoIds: videos.map((v) => v.id), creatorId: undefined });
     const list = pick(payload, ['aweme_list', 'awemeList']);
     if (Array.isArray(list)) {
       for (const item of list) {
@@ -82,16 +100,16 @@ export async function ingestCapture(
       }
     }
     return {
-      videoIds: videos.map((v) => v.id),
-      ...(creator ? { creatorId: creator.id } : {}),
+      videoIds: result.videoIds,
+      ...(result.creatorId ? { creatorId: result.creatorId } : {}),
     };
   }
 
   if (category === 'creator_profile') {
     const creator = adaptCreator(pick(payload, ['user']), now());
     if (!creator) return { videoIds: [] };
-    await repo.upsertCreator(creator);
-    return { videoIds: [], creatorId: creator.id };
+    const { creatorId } = await upsertCanonicalCreator(repo, creator, []);
+    return { videoIds: [], creatorId };
   }
 
   return { videoIds: [] };

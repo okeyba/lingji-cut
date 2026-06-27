@@ -439,13 +439,13 @@ export function VideoDetail({
           onClick={async () => {
             try {
               await client.addToWorkflow({ videoId: video.id });
-              show('已加入工作流待办');
+              show('已拉入工作流，开始自动转录与爆款拆解');
             } catch (e) {
               show(errText(e));
             }
           }}
         >
-          <span style={{ fontSize: 14 }}>＋</span> 加入工作流
+          <span style={{ fontSize: 14 }}>＋</span> 拉入工作流
         </Hover>
         <Hover
           base={

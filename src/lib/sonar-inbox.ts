@@ -14,6 +14,16 @@ export interface SonarInboxTranscriptSegment {
   endMs: number;
 }
 
+/** 爆款拆解报告（工作流流水线产出，可选）。 */
+export interface SonarInboxInsight {
+  angle: string;
+  hook: string;
+  structure: string[];
+  highlights: string[];
+  dataPoints: string[];
+  remixSuggestions: string[];
+}
+
 export interface SonarInboxItem {
   id: string;
   source: string;
@@ -30,6 +40,7 @@ export interface SonarInboxItem {
     srtText: string;
     segments: SonarInboxTranscriptSegment[];
   };
+  insight?: SonarInboxInsight;
   status: SonarInboxStatus;
   projectPath?: string;
   error?: string;
@@ -59,12 +70,33 @@ export function deriveProjectName(item: Pick<SonarInboxItem, 'creatorName' | 'ti
   return sanitizeProjectName(combined);
 }
 
+/** 把爆款拆解报告渲染为「创作参考」Markdown 段（无有效内容则返回空串）。 */
+export function insightToReferenceMarkdown(insight?: SonarInboxInsight): string {
+  if (!insight || (!insight.angle && !insight.hook)) return '';
+  const lines: string[] = ['# 创作参考（爆款拆解）', ''];
+  if (insight.angle) lines.push(`- 选题角度：${insight.angle}`);
+  if (insight.hook) lines.push(`- 开头钩子：${insight.hook}`);
+  const block = (label: string, items: string[], ordered = false) => {
+    if (!items?.length) return;
+    lines.push(`- ${label}：`);
+    items.forEach((t, i) => lines.push(`  ${ordered ? `${i + 1}.` : '-'} ${t}`));
+  };
+  block('内容骨架', insight.structure, true);
+  block('记忆点 / 金句', insight.highlights);
+  block('数据 / 论据', insight.dataPoints);
+  block('二创建议', insight.remixSuggestions);
+  return lines.join('\n').trim();
+}
+
 /**
  * 组装 original.md 内容：二创素材就是转录稿全文。
- * 保持纯净（不加 frontmatter），因 AI 写稿模板以整段 original.md 作为 {{rawText}}。
+ * 有爆款拆解时在前面加一段清晰标记的「创作参考」，供 AI 二创模板（{{rawText}}）吸收选题角度/结构/改造方向；
+ * 无拆解则保持纯转录（向后兼容）。
  */
 export function inboxItemToOriginalMarkdown(item: SonarInboxItem): string {
-  return (item.transcript?.fullText ?? '').trim();
+  const transcript = (item.transcript?.fullText ?? '').trim();
+  const reference = insightToReferenceMarkdown(item.insight);
+  return reference ? `${reference}\n\n---\n\n${transcript}` : transcript;
 }
 
 /** 收件项是否可生成初稿（有非空转录）。 */

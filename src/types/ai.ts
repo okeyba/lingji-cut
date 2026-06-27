@@ -294,7 +294,8 @@ export interface LLMProvider {
     | 'minimax'
     | 'gemini'
     | 'lmstudio'
-    | 'claude_code_acp';
+    | 'claude_code_acp'
+    | 'volcengine_ark';
   baseUrl: string;
   apiKey: string;
   models: string[];
@@ -312,8 +313,23 @@ export interface LLMProvider {
    * enableThinking=false 时忽略本字段（直接 thinking.type='disabled'）。
    */
   thinkingBudgetTokens?: number;
+  /** type='volcengine_ark' 专属参数；其它 Provider 类型忽略本字段 */
+  volcengineArk?: VolcengineArkParams;
   /** 内置 pi agent 的 provider / model 投影参数，不影响当前 LangChain 调用路径 */
   pi?: PiProviderProjectionOptions;
+}
+
+/**
+ * 火山引擎方舟（type='volcengine_ark'）专属请求参数。
+ * 火山方舟是 OpenAI 兼容端点，但额外支持以下火山特有字段，经 modelKwargs 透传进请求体。
+ */
+export interface VolcengineArkParams {
+  /** 深度思考模式，映射到请求体 thinking.type；缺省 enabled */
+  thinkingMode?: 'enabled' | 'disabled' | 'auto';
+  /** 思考力度，映射到 reasoning_effort；缺省不下发（走 API 默认 medium） */
+  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'max';
+  /** 在线推理模式，映射到 service_tier；缺省不下发（走 API 默认 auto） */
+  serviceTier?: 'fast' | 'auto' | 'default';
 }
 
 export type TTSProviderType = 'minimax' | 'xiaomi_mimo' | 'custom_openai_audio';

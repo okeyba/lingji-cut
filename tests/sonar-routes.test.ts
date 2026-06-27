@@ -150,6 +150,36 @@ describe('handleSonarRequest', () => {
     expect(onInboxChanged).toHaveBeenCalledTimes(2);
   });
 
+  it('POST /sonar/enqueue 携带合法 insight 时透传入库', async () => {
+    const body = {
+      ...validBody(),
+      insight: {
+        angle: '反常识',
+        hook: '开头钩子',
+        structure: ['一', 2, '二'],
+        highlights: [],
+        dataPoints: ['30%'],
+        remixSuggestions: ['换案例'],
+      },
+    };
+    await handleSonarRequest({ method: 'POST', path: '/sonar/enqueue', token: TOKEN, body }, d);
+    const stored = (await d.store.list())[0]!;
+    expect(stored.insight).toEqual({
+      angle: '反常识',
+      hook: '开头钩子',
+      structure: ['一', '二'],
+      highlights: [],
+      dataPoints: ['30%'],
+      remixSuggestions: ['换案例'],
+    });
+  });
+
+  it('POST /sonar/enqueue insight 缺 angle/hook 视为无效，不入库', async () => {
+    const body = { ...validBody(), insight: { structure: ['一'] } };
+    await handleSonarRequest({ method: 'POST', path: '/sonar/enqueue', token: TOKEN, body }, d);
+    expect((await d.store.list())[0]!.insight).toBeUndefined();
+  });
+
   it('未知 /sonar 路径 → 404', async () => {
     const res = await handleSonarRequest({ method: 'GET', path: '/sonar/nope' }, d);
     expect(res.status).toBe(404);

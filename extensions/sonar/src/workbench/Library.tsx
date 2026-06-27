@@ -1,6 +1,7 @@
 /** 视频库：3 列网格 + 全部/未读/重点/已归档/处理中/失败 筛选 + 全局搜索过滤。 */
-import { useMemo } from 'react';
+import { memo, useMemo, useRef } from 'react';
 import type { CSSProperties } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Video } from '@/domain/models';
 import { S } from '@/ui/theme';
 import { Avatar, StanceBadge, Thumb, useHover } from '@/ui/kit';
@@ -38,6 +39,7 @@ export function Library({
   onFilter: (f: LibFilter) => void;
   onSelect: (id: string) => void;
 }) {
+  const COLS = 3;
   const q = query.trim().toLowerCase();
   const list = useMemo(() => {
     return data.videos.filter((v) => {
@@ -64,9 +66,23 @@ export function Library({
     });
   }, [data, status.map, processing.map, filter, q]);
 
+  // 行虚拟化：把列表切成每行 COLS 张卡，只挂载视口内的行（7000 条时杜绝一次性渲染与封面洪峰）。
+  const rows = useMemo(() => {
+    const out: Video[][] = [];
+    for (let i = 0; i < list.length; i += COLS) out.push(list.slice(i, i + COLS));
+    return out;
+  }, [list]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 312,
+    overscan: 4,
+  });
+
   return (
-    <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', background: S.shell }}>
-      <div style={{ maxWidth: 1080, margin: '0 auto', padding: '22px 32px 60px' }}>
+    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: S.shell }}>
+      <div style={{ maxWidth: 1080, width: '100%', margin: '0 auto', padding: '22px 32px 10px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, marginBottom: 8 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 21, fontWeight: 700, color: S.white, letterSpacing: '-.2px' }}>视频库</div>
@@ -98,26 +114,44 @@ export function Library({
             })}
           </div>
         </div>
+      </div>
 
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto' }}>
         {list.length === 0 ? (
-          <div style={{ padding: '60px 0', textAlign: 'center', color: S.faint, fontSize: 13, lineHeight: 1.8 }}>
+          <div style={{ maxWidth: 1080, margin: '0 auto', padding: '60px 32px', textAlign: 'center', color: S.faint, fontSize: 13, lineHeight: 1.8 }}>
             {q ? '没有匹配的视频。' : '视频库为空。监听博主后，其作品会在这里归档；也可在「添加」里粘贴视频链接入库。'}
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, marginTop: 18 }}>
-            {list.map((v) => (
-              <Card
-                key={v.id}
-                video={v}
-                isNew={isNew(status.map, v.id)}
-                flagged={statusOf(status.map, v.id).flagged}
-                creatorName={data.creators.get(v.creatorId)?.nickname ?? '未知博主'}
-                creatorSeed={v.creatorId}
-                creatorInitial={(data.creators.get(v.creatorId)?.initial) ?? '?'}
-                category={data.analyses[v.id]?.category}
-                onClick={() => onSelect(v.id)}
-              />
-            ))}
+          <div style={{ maxWidth: 1080, margin: '0 auto', padding: '8px 32px 60px' }}>
+            <div style={{ position: 'relative', height: virtualizer.getTotalSize() }}>
+              {virtualizer.getVirtualItems().map((vr) => {
+                const row = rows[vr.index];
+                return (
+                  <div
+                    key={vr.key}
+                    data-index={vr.index}
+                    ref={virtualizer.measureElement}
+                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vr.start}px)`, paddingBottom: 16 }}
+                  >
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16 }}>
+                      {row.map((v) => (
+                        <Card
+                          key={v.id}
+                          video={v}
+                          isNew={isNew(status.map, v.id)}
+                          flagged={statusOf(status.map, v.id).flagged}
+                          creatorName={data.creators.get(v.creatorId)?.nickname ?? '未知博主'}
+                          creatorSeed={v.creatorId}
+                          creatorInitial={(data.creators.get(v.creatorId)?.initial) ?? '?'}
+                          category={data.analyses[v.id]?.category}
+                          onSelect={onSelect}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -135,7 +169,7 @@ const cardBase: CSSProperties = {
   flexDirection: 'column',
 };
 
-function Card({
+const Card = memo(function Card({
   video,
   isNew: isNewFlag,
   flagged,
@@ -143,7 +177,7 @@ function Card({
   creatorSeed,
   creatorInitial,
   category,
-  onClick,
+  onSelect,
 }: {
   video: Video;
   isNew: boolean;
@@ -152,13 +186,13 @@ function Card({
   creatorSeed: string;
   creatorInitial: string;
   category?: string;
-  onClick: () => void;
+  onSelect: (id: string) => void;
 }) {
   const [h, bind] = useHover();
   const stats = video.statistics ?? {};
   return (
     <div
-      onClick={onClick}
+      onClick={() => onSelect(video.id)}
       {...bind}
       style={{
         ...cardBase,
@@ -204,6 +238,6 @@ function Card({
       </div>
     </div>
   );
-}
+});
 
 export type { LibFilter };

@@ -77,6 +77,38 @@ describe('createProcessingService', () => {
     expect((await deps.repo.getTranscript('v1'))?.fullText).toBe('全文');
   });
 
+  it('folds duplicate-resolution video-only gears so a later audio-bearing source still gets tried', async () => {
+    // 抖音音视频分离时，多个同分辨率纯视频 bit_rate 档位会占满尝试窗口，把带音轨的
+    // download_addr 挤出去。折叠同分辨率候选后，download_addr 必须能被尝试到。
+    const gear = (u: string): VideoSource => ({ ...source, url: u, width: 1280, height: 720 });
+    const downloadAddr: VideoSource = {
+      url: 'https://v3-web.douyinvod.com/dl/download.mp4',
+      watermark: 'present',
+      watermarkConfidence: 'medium',
+      watermarkEvidence: [],
+      width: 1280,
+      height: 720,
+    };
+    const ranked = [gear('g1'), gear('g2'), gear('g3'), gear('g4'), gear('g5'), downloadAddr];
+    const extractAudio = vi.fn(async (media: Blob) => {
+      const tag = await media.text();
+      if (tag === 'download.mp4') return new Blob(['audio']);
+      throw Object.assign(new Error('no stream'), { error: { code: 'AUDIO_EXTRACTION_FAILED' } });
+    });
+    const deps = makeDeps({
+      resolveSources: vi.fn(async () => ranked),
+      fetchMedia: vi.fn(async (url: string) => new Blob([url.split('/').at(-1) ?? ''])),
+      extractAudio,
+    });
+    const svc = createProcessingService(deps as never);
+    const task = await svc.process('v1');
+
+    expect(task.stage).toBe('completed');
+    // 5 个同分辨率纯视频档位折叠成 1 个，download_addr 得以进入窗口被尝试。
+    expect(extractAudio).toHaveBeenCalledTimes(2);
+    expect((await deps.repo.getTranscript('v1'))?.fullText).toBe('全文');
+  });
+
   it('fails with the per-candidate reasons when every source lacks audio', async () => {
     const a: VideoSource = { ...source, url: 'https://v5.douyinvod.com/dash/a.mp4' };
     const b: VideoSource = { ...source, url: 'https://v9.douyinvod.com/dash/b.mp4' };

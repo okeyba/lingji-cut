@@ -33,7 +33,6 @@ import type {
   ResolvedVideo,
   TestAiProviderInput,
   UpdateAiSettingsInput,
-  UpdateWorkflowItemInput,
   VideoPage,
 } from '@/domain/api-types';
 import type { MethodName } from '@/protocol/methods';
@@ -75,12 +74,21 @@ export interface DouyinClient {
   getTranscript(videoId: string): Promise<TranscriptDocument | null>;
   regenerateTranscript(videoId: string): Promise<ProcessingTask>;
   getAnalysis(videoId: string): Promise<VideoAnalysis | null>;
+  /** 全部分析，单次取回供视频库批量水合。 */
+  listAnalyses(): Promise<VideoAnalysis[]>;
   regenerateAnalysis(videoId: string): Promise<ProcessingTask>;
 
   exportMarkdown(input: MarkdownExportInput): Promise<ExportTask>;
+  /** 把视频拉入创作流水线（自动开始准备素材 → 爆款拆解）。 */
   addToWorkflow(input: AddWorkflowItemInput): Promise<WorkflowItem>;
+  /** 列出流水线条目（已水合各自 insight）。 */
   listWorkflowItems(): Promise<WorkflowItem[]>;
-  updateWorkflowItem(input: UpdateWorkflowItemInput): Promise<WorkflowItem>;
+  /** 重跑某条流水线（失败后重试）。 */
+  retryWorkflowItem(id: string): Promise<WorkflowItem>;
+  /** 从流水线移除某条。 */
+  removeWorkflowItem(id: string): Promise<boolean>;
+  /** 确认送二创：把该条（含拆解报告）推送到灵机剪影待创作箱并标记 pushed。 */
+  pushWorkflowItem(id: string): Promise<PushResult>;
 
   getAiSettings(): Promise<AiSettingsView>;
   updateAiSettings(input: UpdateAiSettingsInput): Promise<void>;
@@ -137,11 +145,14 @@ export function createDouyinClient(transport: Transport): DouyinClient {
     getTranscript: (videoId) => call('getTranscript', { videoId }),
     regenerateTranscript: (videoId) => call('regenerateTranscript', { videoId }),
     getAnalysis: (videoId) => call('getAnalysis', { videoId }),
+    listAnalyses: () => call('listAnalyses', undefined),
     regenerateAnalysis: (videoId) => call('regenerateAnalysis', { videoId }),
     exportMarkdown: (input) => call('exportMarkdown', input),
     addToWorkflow: (input) => call('addToWorkflow', input),
     listWorkflowItems: () => call('listWorkflowItems', undefined),
-    updateWorkflowItem: (input) => call('updateWorkflowItem', input),
+    retryWorkflowItem: (id) => call('retryWorkflowItem', { id }),
+    removeWorkflowItem: (id) => call('removeWorkflowItem', { id }),
+    pushWorkflowItem: (id) => call('pushWorkflowItem', { id }),
     getAiSettings: () => call('getAiSettings', undefined),
     updateAiSettings: async (input) => {
       await call('updateAiSettings', input);

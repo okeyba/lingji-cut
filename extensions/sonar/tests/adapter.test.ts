@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { adaptAwemeDetail, adaptAwemePostList } from '@/adapter/video-adapter';
-import { extractVideoSources } from '@/adapter/source-extractor';
+import {
+  extractVideoSources,
+  extractVideoId,
+  buildMuxedPlayApiUrl,
+  buildMuxedPlayApiSource,
+} from '@/adapter/source-extractor';
 import detailFixture from './fixtures/aweme-detail.json';
 import camelFixture from './fixtures/aweme-detail.camel.json';
 import postListFixture from './fixtures/aweme-post-list.json';
@@ -107,5 +112,36 @@ describe('extractVideoSources', () => {
 
   it('returns an empty array when no video sources exist', () => {
     expect(extractVideoSources({})).toEqual([]);
+  });
+});
+
+describe('muxed play API source (音视频分离作品的合流提音源)', () => {
+  const video = (detailFixture as { aweme_detail: { video: unknown } }).aweme_detail.video;
+
+  it('reads video_id from play_addr.uri', () => {
+    expect(extractVideoId(video)).toBe('v0300fake0001');
+  });
+
+  it('falls back to the first bit_rate gear uri when play_addr.uri is absent', () => {
+    expect(extractVideoId({ bit_rate: [{ play_addr: { uri: 'gearVid' } }] })).toBe('gearVid');
+    expect(extractVideoId({})).toBeUndefined();
+  });
+
+  it('builds the snssdk play API muxed url with video_id and ratio', () => {
+    expect(buildMuxedPlayApiUrl('abc', '720p')).toBe(
+      'https://aweme.snssdk.com/aweme/v1/play/?video_id=abc&ratio=720p&line=0',
+    );
+  });
+
+  it('builds a no-watermark muxed VideoSource carrying the play API url', () => {
+    const muxed = buildMuxedPlayApiSource(video)!;
+    expect(muxed.url).toContain('aweme.snssdk.com/aweme/v1/play/');
+    expect(muxed.url).toContain('video_id=v0300fake0001');
+    expect(muxed.watermark).toBe('none');
+    expect(muxed.mimeType).toBe('video/mp4');
+  });
+
+  it('returns null when no video_id can be derived', () => {
+    expect(buildMuxedPlayApiSource({})).toBeNull();
   });
 });

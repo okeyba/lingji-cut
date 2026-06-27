@@ -140,6 +140,9 @@ export async function fetchProviderModels(provider: LLMProvider): Promise<string
       break;
     case 'openai_compatible':
     case 'openai_responses':
+    case 'volcengine_ark':
+      // 火山方舟为 OpenAI 兼容端点，模型列表按 {baseUrl}/models 拉取；
+      // 端点不支持时调用方会拿到报错、用户手动填模型名即可。
       if (!baseUrl) throw new Error('请先填写 Base URL');
       models = await fetchOpenAICompatibleModels(baseUrl, apiKey);
       break;

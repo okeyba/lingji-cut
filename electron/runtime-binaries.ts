@@ -31,15 +31,11 @@ function ffmpegRelativePaths(platform: NodeJS.Platform, arch: string): string[] 
   return [path.join('node_modules', 'ffmpeg-static', 'ffmpeg')];
 }
 
-function ffprobeRelativePath(platform: NodeJS.Platform, arch: string): string {
-  return path.join(
-    'node_modules',
-    'ffprobe-static',
-    'bin',
-    platform,
-    arch,
-    platform === 'win32' ? 'ffprobe.exe' : 'ffprobe',
-  );
+function ffprobeRelativePaths(platform: NodeJS.Platform, arch: string): string[] {
+  // @ffprobe-installer 按 <platform>-<arch> 发布真原生二进制（含 darwin-arm64），
+  // 与 @ffmpeg-installer 同系列布局；取代仅含 x86_64 的 ffprobe-static。
+  const binary = platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+  return [path.join('node_modules', '@ffprobe-installer', `${platform}-${arch}`, binary)];
 }
 
 function gsapRelativePath(): string {
@@ -89,7 +85,7 @@ export function resolveFfmpegPath(options: RuntimeBinaryResolutionOptions): stri
 export function resolveFfprobePath(options: RuntimeBinaryResolutionOptions): string | null {
   const platform = options.platform ?? process.platform;
   const arch = options.arch ?? process.arch;
-  return findFirstExisting(ffprobeRelativePath(platform, arch), options);
+  return findFirstExistingFromList(ffprobeRelativePaths(platform, arch), options);
 }
 
 export function resolveGsapPath(options: RuntimeBinaryResolutionOptions): string | null {

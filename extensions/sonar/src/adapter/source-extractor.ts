@@ -4,8 +4,64 @@
  * 收集 play_addr、download_addr 与每个 bit_rate gear 的 play_addr。此处不判断水印、
  * 不去重、不排序——仅尽可能完整地收集候选与其元数据。
  */
+import type { VideoSource } from '@/domain/models';
 import { asNumber, asString, firstUrl, isRecord, pick } from './field';
 import type { RawVideoSource, SourceField } from './types';
+
+/**
+ * snssdk 移动播放 API：以 video_id 现取「音视频合一」的无水印流。
+ *
+ * 抖音对部分作品采用音视频分离（DASH）下发——`bit_rate` 档位是纯视频流，提取音频时
+ * ffmpeg `-vn` 后无任何流；网页端靠 MSE 合并独立音轨播放。该 play API 端点则始终回包含
+ * AAC 音轨的合流 mp4（实测含 aac+h264），且与 UA 无关、仅需 Referer（已由 DNR 规则补足），
+ * 是音视频分离作品唯一稳定可提音的源，故作为首选候选。
+ */
+const MUXED_PLAY_API = 'https://aweme.snssdk.com/aweme/v1/play/';
+
+/** 从作品 video 对象取 video_id（play_addr.uri，回退首个 bit_rate gear 的 play_addr.uri）。 */
+export function extractVideoId(video: unknown): string | undefined {
+  if (!isRecord(video)) return undefined;
+  const fromPlay = asString(pick(pick(video, ['play_addr', 'playAddr']), ['uri']));
+  if (fromPlay) return fromPlay;
+  const gears = pick(video, ['bit_rate', 'bitRate']);
+  if (Array.isArray(gears)) {
+    for (const gear of gears) {
+      const uri = asString(pick(pick(gear, ['play_addr', 'playAddr']), ['uri']));
+      if (uri) return uri;
+    }
+  }
+  return undefined;
+}
+
+/** 按短边清晰度挑 ratio 档位（play API 的画质提示，未知则取最高）。 */
+function muxedRatio(video: unknown): string {
+  const short = Math.min(asNumber(pick(video, ['width'])) ?? 0, asNumber(pick(video, ['height'])) ?? 0);
+  if (short >= 1080 || short === 0) return '1080p';
+  if (short >= 720) return '720p';
+  return '540p';
+}
+
+/** 构造 snssdk play API 合流地址（音视频合一、无水印、稳定含音轨）。 */
+export function buildMuxedPlayApiUrl(videoId: string, ratio = '1080p'): string {
+  return `${MUXED_PLAY_API}?video_id=${encodeURIComponent(videoId)}&ratio=${ratio}&line=0`;
+}
+
+/** 由作品 video 对象构造合流播放源（拿不到 video_id 时返回 null）。 */
+export function buildMuxedPlayApiSource(video: unknown): VideoSource | null {
+  const vid = extractVideoId(video);
+  if (!vid) return null;
+  const width = asNumber(pick(video, ['width']));
+  const height = asNumber(pick(video, ['height']));
+  return {
+    url: buildMuxedPlayApiUrl(vid, muxedRatio(video)),
+    mimeType: 'video/mp4',
+    watermark: 'none',
+    watermarkConfidence: 'high',
+    watermarkEvidence: ['snssdk play API 合流源（音视频合一、无水印，稳定含音轨）'],
+    ...(width !== undefined ? { width } : {}),
+    ...(height !== undefined ? { height } : {}),
+  };
+}
 
 /**
  * 规范化媒体 URL：抖音 url_list 常见协议相对地址（//host/…）与裸 http；

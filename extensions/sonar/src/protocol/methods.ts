@@ -30,12 +30,15 @@ export const METHOD_NAMES = [
   'getTranscript',
   'regenerateTranscript',
   'getAnalysis',
+  'listAnalyses',
   'regenerateAnalysis',
-  // 导出与工作流
+  // 导出与工作流（创作流水线）
   'exportMarkdown',
   'addToWorkflow',
   'listWorkflowItems',
-  'updateWorkflowItem',
+  'retryWorkflowItem',
+  'removeWorkflowItem',
+  'pushWorkflowItem',
   // AI 设置
   'getAiSettings',
   'updateAiSettings',

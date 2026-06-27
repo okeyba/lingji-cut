@@ -23,6 +23,16 @@ export interface SonarTranscript {
   segments: SonarTranscriptSegment[];
 }
 
+/** 爆款拆解报告（工作流流水线产出，随转录稿一并送入待创作箱）。 */
+export interface SonarInsight {
+  angle: string;
+  hook: string;
+  structure: string[];
+  highlights: string[];
+  dataPoints: string[];
+  remixSuggestions: string[];
+}
+
 /** 扩展推送的入队负载（/sonar/enqueue body）。 */
 export interface SonarEnqueueInput {
   source: string;
@@ -35,6 +45,8 @@ export interface SonarEnqueueInput {
   publishedAt: number;
   durationMs?: number;
   transcript: SonarTranscript;
+  /** 可选：爆款拆解报告。 */
+  insight?: SonarInsight;
 }
 
 export type SonarInboxStatus = 'pending' | 'creating' | 'drafted' | 'failed';

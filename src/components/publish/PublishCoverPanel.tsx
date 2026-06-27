@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Check, RefreshCw, Sparkles, Loader2, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react';
 import type { CoverCandidate, ImageAspectRatio } from '../../types/ai';
 import { toFileSrc } from '../../lib/utils';
-import { PUBLISH_RATIOS, useCoverStudio } from './useCoverStudio';
+import { PUBLISH_RATIOS, type CoverStudio } from './useCoverStudio';
 
 const RATIO_CSS: Record<string, string> = { '16:9': '16 / 9', '4:3': '4 / 3', '3:4': '3 / 4' };
 
@@ -137,17 +137,17 @@ function CoverThumb({
 }
 
 export function PublishCoverPanel({
-  projectDir,
+  studio,
   selectedByRatio,
   onSelectRatio,
 }: {
-  projectDir: string | null;
+  /** 由父级持有的封面工作台（单一数据源，便于父级按比例自动预填）。 */
+  studio: CoverStudio;
   /** 每个比例当前选中的封面路径（视频号 4:3+3:4，抖音 3:4+16:9）。 */
   selectedByRatio: Partial<Record<ImageAspectRatio, string>>;
   /** 点选某比例的封面：同图再点为取消该比例。 */
   onSelectRatio: (ratio: ImageAspectRatio, path: string) => void;
 }) {
-  const studio = useCoverStudio(projectDir);
   const [expandedPrompt, setExpandedPrompt] = useState<Record<string, boolean>>({});
   const anyBusy = studio.busyRatios.length > 0 || studio.busyCandidateIds.length > 0;
   // 没有封面提示词时仍展示已存在的封面（含磁盘扫描结果），仅禁用 AI 生成相关按钮。

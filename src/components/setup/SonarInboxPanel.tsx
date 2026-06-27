@@ -71,6 +71,12 @@ const InboxRow = memo(function InboxRow({ item, onDraft, onRemove }: InboxRowPro
         </span>
       </div>
       <div className={styles.itemTitle}>{item.title}</div>
+      {item.insight ? (
+        <div className={styles.insight} title={item.insight.hook}>
+          <Sparkles size={11} />
+          <span>{item.insight.angle}</span>
+        </div>
+      ) : null}
       <div className={styles.transcript}>{item.transcript.fullText.slice(0, 90)}</div>
       <div className={styles.itemActions}>
         <Button

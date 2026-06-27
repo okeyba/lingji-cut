@@ -43,9 +43,9 @@ describe('buildPublishMetadataMessages', () => {
     const { systemPrompt, userMessage } = buildPublishMetadataMessages(TEMPLATE, {
       sourceText: '内容X',
     });
-    // 约束（含统计校准）+ 锁定 JSON 契约都在 system 位
+    // 约束（含标题 ≤25 字硬限）+ 锁定 JSON 契约都在 system 位
     expect(systemPrompt).toContain('标题要求');
-    expect(systemPrompt).toContain('26–38');
+    expect(systemPrompt).toContain('不得超过 25 个字');
     expect(systemPrompt).toContain('【系统契约 · 不可修改】');
     // 数据在 user 位
     expect(userMessage).toContain('内容X');

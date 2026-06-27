@@ -70,7 +70,15 @@ export interface UploadVideoOptions {
 
 export interface LoginOptions {
   storageStatePath: string;
+  /** 浏览器无头模式。默认无头，可在发布设置中切换有头（兜底反爬登录）。 */
+  headless: boolean;
   onQrcode?: (pngPath: string) => void;
+}
+
+/** 发布全局设置，持久化于 userData/publish/settings.json。 */
+export interface PublishSettings {
+  /** 登录是否使用无头浏览器，默认 true。关闭则有头（设置页可切换）。 */
+  headlessLogin: boolean;
 }
 
 export interface PlatformModule {

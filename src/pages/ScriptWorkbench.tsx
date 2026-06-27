@@ -861,6 +861,8 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor, setPage }: ScriptW
       replyChannel?: string;
     }) => {
       const streamId = `mcp-generate-${Date.now()}`;
+      // 中断控制器：取消时既停本地打字机，也 abort 底层 LLM 网络请求。
+      const abortController = new AbortController();
       try {
         const state = useScriptStore.getState();
         const streamKind = operationType === 'rewrite' ? 'rewrite' : 'generate';
@@ -905,9 +907,14 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor, setPage }: ScriptW
           phase: '准备中',
           level: 2,
           canCancel: canInterrupt,
-          // 工作台的生成流不是 ACP 会话，而是内部 LLM 流。取消时只能停止本地
-          // 的打字机播放器；底层网络请求没有 AbortController，会继续跑到结束。
-          onCancel: canInterrupt ? () => stopActivePlayback() : undefined,
+          // 工作台的生成流不是 ACP 会话，而是内部 LLM 流。取消时同时停止本地
+          // 打字机播放器并 abort 底层网络请求，避免请求继续跑到结束。
+          onCancel: canInterrupt
+            ? () => {
+                abortController.abort();
+                stopActivePlayback();
+              }
+            : undefined,
         });
 
         stopActivePlayback();
@@ -975,6 +982,7 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor, setPage }: ScriptW
               if (!chunk) return;
               setThinkingText((prev) => prev + chunk);
             },
+            signal: abortController.signal,
           },
         );
 
@@ -1064,6 +1072,25 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor, setPage }: ScriptW
         liveStreamingRef.current = null;
         loadingFileRef.current = false;
         const currentState = useScriptStore.getState();
+
+        // 用户主动取消：保留已生成的部分内容，安静收尾（不弹错误、不标红任务）。
+        const aborted =
+          abortController.signal.aborted ||
+          err?.name === 'AbortError' ||
+          /abort/i.test(err?.message ?? '');
+        if (aborted) {
+          currentState.setActiveStream({ phase: 'stopped' });
+          currentState.stopAgentOperation({ resetStream: false });
+          useTaskProgressStore.getState().completeTask(streamId);
+          if (editorViewRef.current) {
+            editorViewRef.current.dispatch({ effects: clearVirtualCursor.of(null) });
+          }
+          if (replyChannel) {
+            window.mcpAPI!.reply(replyChannel, { success: false, error: '已取消生成' });
+          }
+          return;
+        }
+
         currentState.stopAgentOperation({
           resetStream: currentState.activeStream.phase === 'stopped' ? false : true,
         });
@@ -1443,7 +1470,8 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor, setPage }: ScriptW
     void handleImportMediaSource(source);
   }, [pendingMediaImport, setPendingMediaImport, handleImportMediaSource]);
 
-  // ── 从欢迎页带入的导入文稿：写入 original.md 后自动起飞 AI 写稿 ──
+  // ── 从欢迎页带入的导入文稿：仅写入 original.md 并落地工作台 ──
+  // 不自动起飞 AI 写稿——一键成稿走 auto-run；普通导入由用户在工作台自选模型后手动生成。
   useEffect(() => {
     if (!pendingImportedScript) return;
     const payload = pendingImportedScript;
@@ -1457,12 +1485,10 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor, setPage }: ScriptW
         setOriginalText(payload.content);
         setWorkspaceFiles({ hasOriginalFile: true });
         await refreshFileTree(dir);
-        openFileTab('script.md');
-        // 等编辑器挂好再起飞，避免首字符落空
-        await waitForEditorViewReady();
-        await handleFirstGenerate();
+        // 打开原稿，让用户先确认内容，再在顶部操作栏选模型/角色后手动生成口播稿
+        openFileTab('original.md');
       } catch (err) {
-        console.error('[ImportScript] 写入 original.md 或起飞 AI 写稿失败', err);
+        console.error('[ImportScript] 写入 original.md 失败', err);
       }
     })();
   }, [
@@ -1472,8 +1498,6 @@ export function ScriptWorkbench({ onBack, onNavigateToEditor, setPage }: ScriptW
     setWorkspaceFiles,
     refreshFileTree,
     openFileTab,
-    waitForEditorViewReady,
-    handleFirstGenerate,
   ]);
 
   // 后台化操作已移除：用户点击编辑器区域不再中断 AI 流式输出。

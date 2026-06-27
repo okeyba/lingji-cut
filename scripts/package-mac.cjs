@@ -7,6 +7,7 @@ const {
   RENDER_RUNTIME_ASAR_UNPACK_DIRS,
   RUNTIME_ROOT_PACKAGES,
   buildReleaseManifest,
+  listForeignArchPrunePaths,
   shouldStageProjectPath,
 } = require('./package-mac-helpers.cjs');
 
@@ -22,6 +23,8 @@ const buildOutputs = [
   path.join(rootDir, 'dist', 'index.html'),
   path.join(rootDir, 'dist-electron', 'main.js'),
   path.join(rootDir, 'dist-electron', 'preload.js'),
+  // 导出复用的 Remotion 预打包产物（npm run bundle:remotion）。
+  path.join(rootDir, 'dist-remotion', 'index.html'),
 ];
 
 const supportedArch = new Set(['arm64', 'x64']);
@@ -129,11 +132,26 @@ function ensureNodePtySpawnHelperExecutable(stageDir) {
   }
 }
 
+// 剔除非目标架构的原生产物（prebuilds/<plat-arch> 与 os/cpu 不符的平台专属包），
+// 否则单架构 .app 仍含 x86_64 二进制，macOS 会弹「Intel 组件不兼容」警告。
+function pruneForeignArchBinaries(stageDir) {
+  const nodeModulesDir = path.join(stageDir, 'node_modules');
+  const targets = listForeignArchPrunePaths(nodeModulesDir, 'darwin', arch);
+  for (const target of targets) {
+    fs.rmSync(target, { recursive: true, force: true });
+  }
+  if (targets.length > 0) {
+    console.log(`已剔除 ${targets.length} 个非 darwin-${arch} 架构原生产物：`);
+    targets.forEach((target) => console.log(`- ${path.relative(stageDir, target)}`));
+  }
+}
+
 async function createStageDirectory(stageDir) {
   await resetDirectory(stageDir);
   await writeStageManifest(stageDir);
   await stageProjectFiles(stageDir);
   await stageNodeModules(stageDir);
+  pruneForeignArchBinaries(stageDir);
   ensureNodePtySpawnHelperExecutable(stageDir);
 }
 

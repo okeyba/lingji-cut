@@ -97,17 +97,13 @@ export function useWorkbenchData(client: DouyinClient): WorkbenchData {
       const vs = all.filter((v) => followed.has(v.creatorId));
       setVideos(vs);
       setSubs(cs);
-      // 已采集视频的分析按需缓存：并行拉取（个人量级可接受）。
-      const entries = await Promise.all(
-        vs.map(async (v) => {
-          try {
-            return [v.id, await client.getAnalysis(v.id)] as const;
-          } catch {
-            return [v.id, null] as const;
-          }
-        }),
-      );
-      setAnalyses(Object.fromEntries(entries));
+      // 分析数据单次批量取回再按列表视频过滤，避免逐条 IPC 往返（7000 条时为启动冻结主因）。
+      const wanted = new Set(vs.map((v) => v.id));
+      const map: Record<string, VideoAnalysis | null> = {};
+      for (const a of await client.listAnalyses()) {
+        if (wanted.has(a.videoId)) map[a.videoId] = a;
+      }
+      setAnalyses(map);
     } catch (e) {
       setError(errText(e));
     } finally {
@@ -164,5 +160,8 @@ export function useWorkbenchData(client: DouyinClient): WorkbenchData {
 
   const creatorList = useMemo(() => Array.from(creators.values()), [creators]);
 
-  return { videos, creators, creatorList, analyses, collectProgress, loading, error, reload, loadAnalysis };
+  return useMemo(
+    () => ({ videos, creators, creatorList, analyses, collectProgress, loading, error, reload, loadAnalysis }),
+    [videos, creators, creatorList, analyses, collectProgress, loading, error, reload, loadAnalysis],
+  );
 }

@@ -3,14 +3,17 @@
  *
  * Chromium 不再随安装包内置，改为运行时用捆绑的 playwright `cli.js install chromium`
  * 下载到用户可写目录 `<userData>/publish/chromium`（= PLAYWRIGHT_BROWSERS_PATH），
- * 走 npmmirror 镜像加速；与发布账号同处 userData，不触碰签名包。
+ * 与发布账号同处 userData，不触碰签名包。
+ *
+ * 下载源：使用 playwright 官方 CDN（cdn.playwright.dev，自带微软 prss 回退）。
+ * 不再注入 npmmirror 镜像——playwright 1.61 起 chromium 改为 Chrome for Testing
+ * 布局（builds/cft/...），npmmirror 不托管该路径会 404，且自定义 DOWNLOAD_HOST
+ * 会同时禁用官方回退源。如需镜像，由使用方通过 PLAYWRIGHT_DOWNLOAD_HOST 环境变量覆盖。
  */
 import { app } from 'electron';
 import { join } from 'node:path';
 import * as fs from 'node:fs';
 import { spawn } from 'node:child_process';
-
-const MIRROR = 'https://cdn.npmmirror.com/binaries/playwright';
 
 export type ChromiumDownloadPhase = 'resolve' | 'download' | 'install';
 
@@ -37,37 +40,73 @@ export function getChromiumRoot(): string {
   return join(app.getPath('userData'), 'publish', 'chromium');
 }
 
-/** 各平台 chromium-<rev> 目录内的可执行相对路径。 */
-function execRelPath(platform: NodeJS.Platform): string {
-  if (platform === 'win32') return join('chrome-win', 'chrome.exe');
-  if (platform === 'darwin') return join('chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium');
-  return join('chrome-linux', 'chrome');
+/**
+ * 某个 chrome-xxx 子目录内的可执行相对路径（Chrome for Testing 布局，arch 由目录名携带）。
+ * - win:   chrome-win64 内 chrome.exe（旧布局 chrome-win 也兼容）
+ * - mac:   chrome-mac-arm64 / chrome-mac-x64 内 "Google Chrome for Testing.app"（旧布局 Chromium.app 也兼容）
+ * - linux: chrome-linux64 内 chrome
+ */
+function execCandidates(chromeDir: string, platform: NodeJS.Platform): string[] {
+  if (platform === 'win32') return [join(chromeDir, 'chrome.exe')];
+  if (platform === 'darwin') {
+    return [
+      join(chromeDir, 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'),
+      join(chromeDir, 'Chromium.app', 'Contents', 'MacOS', 'Chromium'),
+    ];
+  }
+  return [join(chromeDir, 'chrome')];
+}
+
+/** 列出 root 下已安装的 chromium-<rev> 目录，按 revision 从高到低。 */
+function listChromiumRevDirs(root: string): string[] {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(root);
+  } catch {
+    return [];
+  }
+  return entries
+    .map((name) => /^chromium-(\d+)$/.exec(name))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+    .map((m) => m[0]);
 }
 
 /**
  * 在 root 下定位已安装的完整 Chromium 可执行文件（排除 headless_shell）。
+ * 适配 Chrome for Testing 布局：扫描 chromium-<rev> 下 chrome-xxx 子目录内的可执行文件。
  * 多版本取最高 revision；未命中返回 null（纯函数，便于单测）。
  */
 export function findChromiumExecutable(
   root: string,
   platform: NodeJS.Platform = process.platform,
 ): string | null {
-  let entries: string[];
-  try {
-    entries = fs.readdirSync(root);
-  } catch {
-    return null;
-  }
-  const dirs = entries
-    .map((name) => /^chromium-(\d+)$/.exec(name))
-    .filter((m): m is RegExpExecArray => m !== null)
-    .sort((a, b) => Number(b[1]) - Number(a[1]));
-  const rel = execRelPath(platform);
-  for (const m of dirs) {
-    const exe = join(root, m[0], rel);
-    if (fs.existsSync(exe)) return exe;
+  for (const revDir of listChromiumRevDirs(root)) {
+    const revPath = join(root, revDir);
+    let children: string[];
+    try {
+      children = fs.readdirSync(revPath);
+    } catch {
+      continue;
+    }
+    for (const child of children) {
+      if (!child.startsWith('chrome-')) continue;
+      for (const exe of execCandidates(join(revPath, child), platform)) {
+        if (fs.existsSync(exe)) return exe;
+      }
+    }
   }
   return null;
+}
+
+/**
+ * 判断 root 下是否有“安装完成”的 chromium——以 playwright 写入的 INSTALLATION_COMPLETE
+ * 标记为准（与 playwright 自身判定一致，跨平台/架构/布局变更稳定）。
+ */
+export function isChromiumInstalled(root: string): boolean {
+  return listChromiumRevDirs(root).some((revDir) =>
+    fs.existsSync(join(root, revDir, 'INSTALLATION_COMPLETE')),
+  );
 }
 
 /** 定位捆绑的 playwright cli.js：packaged 用 app.asar.unpacked，否则 require.resolve。 */
@@ -98,11 +137,14 @@ export function parseInstallProgress(line: string): ChromiumDownloadProgress | n
   return null;
 }
 
-/** 查询 Chromium 是否已安装到用户目录。 */
+/** 查询 Chromium 是否已安装到用户目录（以 INSTALLATION_COMPLETE 标记为准）。 */
 export function getChromiumStatus(): ChromiumStatus {
   const root = getChromiumRoot();
-  const executablePath = findChromiumExecutable(root) ?? undefined;
-  return { installed: executablePath != null, path: root, executablePath };
+  return {
+    installed: isChromiumInstalled(root),
+    path: root,
+    executablePath: findChromiumExecutable(root) ?? undefined,
+  };
 }
 
 /**
@@ -134,8 +176,6 @@ export function downloadChromium(
         ...process.env,
         ELECTRON_RUN_AS_NODE: '1',
         PLAYWRIGHT_BROWSERS_PATH: root,
-        PLAYWRIGHT_DOWNLOAD_HOST: MIRROR,
-        PLAYWRIGHT_DOWNLOAD_BASE_URL: MIRROR,
       },
     });
 
@@ -172,7 +212,7 @@ export function downloadChromium(
         resolve({ success: false, error: '已取消' });
         return;
       }
-      if (code === 0 && findChromiumExecutable(root)) {
+      if (code === 0 && isChromiumInstalled(root)) {
         onProgress?.({ phase: 'install', percent: 100 });
         resolve({ success: true });
       } else {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createPushOnProcessed } from '@/bridge/push-on-processed';
 import { createMemoryBridgeSettingsStore } from '@/bridge/bridge-settings';
-import type { Creator, TranscriptDocument, Video } from '@/domain/models';
+import type { Creator, TranscriptDocument, Video, ViralInsight } from '@/domain/models';
 
 const video: Video = {
   id: 'v1',
@@ -21,11 +21,19 @@ const transcript: TranscriptDocument = {
   createdAt: 0,
 };
 
-function repo(over: Partial<{ video: Video | null; creator: Creator | null; transcript: TranscriptDocument | null }> = {}) {
+function repo(
+  over: Partial<{
+    video: Video | null;
+    creator: Creator | null;
+    transcript: TranscriptDocument | null;
+    insight: ViralInsight | null;
+  }> = {},
+) {
   return {
     getVideo: vi.fn(async () => (over.video !== undefined ? over.video : video)),
     getCreator: vi.fn(async () => (over.creator !== undefined ? over.creator : creator)),
     getTranscript: vi.fn(async () => (over.transcript !== undefined ? over.transcript : transcript)),
+    getInsight: vi.fn(async () => (over.insight !== undefined ? over.insight : null)),
   };
 }
 

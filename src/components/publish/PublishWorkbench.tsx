@@ -1,22 +1,47 @@
 import { useEffect, useRef, useState } from 'react';
-import { Upload, Film, Image as ImageIcon, Tag, Check, X, Loader2, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
-import { Button, Checkbox, Field, Input, Select } from '../../ui';
+import { Upload, Film, Image as ImageIcon, Tag, Check, X, Loader2, ChevronDown, ChevronRight, Sparkles, Download, History, RotateCcw, LogIn } from 'lucide-react';
+import { Button, Checkbox, ConfirmDialog, Field, Input, Select } from '../../ui';
 import {
   BILIBILI_PARTITIONS,
   findPartition,
 } from '../../lib/publish/bilibili-partitions';
+import { CHROMIUM_PLATFORMS } from '../../lib/publish/chromium-platforms';
 import { Spinner } from '../../ui/primitives/Spinner';
-import { usePublishStore } from '../../store/publish';
+import { usePublishStore, type PublishResult } from '../../store/publish';
+import { useTaskProgressStore } from '../../store/task-progress';
 import { loadAISettings, useAIStore } from '../../store/ai';
 import { useTimelineStore } from '../../store/timeline';
-import type { PublishAccount, PublishTarget } from '../../lib/electron-api';
+import type { PublishAccount, PublishShared, PublishTarget } from '../../lib/electron-api';
 import type { AIAnalysisResult } from '../../types/ai';
 import {
   extractPublishSection,
+  PUBLISH_HISTORY_MAX,
   type ProjectData,
   type ProjectPublishMeta,
+  type PublishHistoryEntry,
+  type PublishHistoryResult,
+  type PublishHistoryTarget,
 } from '../../lib/project-persistence';
 import { PublishCoverPanel } from './PublishCoverPanel';
+import { autoFillCovers, useCoverStudio } from './useCoverStudio';
+import { isInsideDir } from '../../lib/publish/resolve-video-file';
+
+/** 渲染层 basename：避免引入 node:path。 */
+function baseName(p: string): string {
+  return p.split(/[\\/]/).pop() || p;
+}
+
+/** 相对时间展示（与 PublishAccountsTab 同口径）。 */
+function formatRelativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return `${mins} 分钟前`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  return `${days} 天前`;
+}
 
 /** 拼接 AI 分析摘要 / 关键词 / 段落，兜底用字幕原文，作为发布文案生成素材。 */
 function buildMetadataSource(analysis: AIAnalysisResult | null, srtText: string): string {
@@ -37,6 +62,8 @@ function buildMetadataSource(analysis: AIAnalysisResult | null, srtText: string)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const CHROMIUM_TASK_ID = 'chromium-download';
 
 const PLATFORM_LABEL: Record<string, string> = {
   douyin: '抖音',
@@ -84,6 +111,8 @@ function ResultRow({
       <Check size={14} style={{ color: 'var(--color-success, #22c55e)' }} />
     ) : state === 'failed' ? (
       <X size={14} style={{ color: 'var(--color-error, #ef4444)' }} />
+    ) : state === 'login-expired' ? (
+      <LogIn size={14} style={{ color: 'var(--color-warning, #f59e0b)' }} />
     ) : state === 'running' ? (
       <Loader2 size={14} style={{ animation: 'spin 1s linear infinite', color: 'var(--color-system-blue)' }} />
     ) : null;
@@ -138,7 +167,9 @@ function ResultRow({
               ? 'var(--color-success, #22c55e)'
               : state === 'failed'
                 ? 'var(--color-error, #ef4444)'
-                : 'var(--color-text-secondary)',
+                : state === 'login-expired'
+                  ? 'var(--color-warning, #f59e0b)'
+                  : 'var(--color-text-secondary)',
           minWidth: 60,
           textAlign: 'right',
         }}
@@ -147,10 +178,178 @@ function ResultRow({
           ? '成功'
           : state === 'failed'
             ? message ?? '失败'
-            : state === 'running'
-              ? `上传中${pctStr}`
-              : '等待中'}
+            : state === 'login-expired'
+              ? '登录已过期'
+              : state === 'running'
+                ? `上传中${pctStr}`
+                : '等待中'}
       </span>
+    </div>
+  );
+}
+
+const OVERALL_CONFIG: Record<
+  PublishHistoryEntry['overallState'],
+  { label: string; color: string }
+> = {
+  success: { label: '全部成功', color: 'var(--color-success, #22c55e)' },
+  partial: { label: '部分成功', color: 'var(--color-warning, #f59e0b)' },
+  failed: { label: '全部失败', color: 'var(--color-error, #ef4444)' },
+};
+
+/** 一条发布历史记录：可展开查看各账号结果，失败账号支持就地重登。 */
+function HistoryEntryCard({
+  entry,
+  disabled,
+  reloginBusyId,
+  onRepublish,
+  onRelogin,
+}: {
+  entry: PublishHistoryEntry;
+  disabled: boolean;
+  reloginBusyId: string | null;
+  onRepublish: (entry: PublishHistoryEntry) => void;
+  onRelogin: (target: PublishHistoryTarget) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const overall = OVERALL_CONFIG[entry.overallState];
+  return (
+    <div
+      style={{
+        border: '1px solid var(--color-border-subtle, rgba(0,0,0,0.08))',
+        borderRadius: 8,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '8px 12px',
+          background: 'var(--color-bg-elevated)',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            flex: 1,
+            minWidth: 0,
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+            textAlign: 'left',
+          }}
+        >
+          {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          <span
+            style={{
+              fontSize: 13,
+              color: 'var(--color-text-primary)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {entry.fileName}
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', flexShrink: 0 }}>
+            {formatRelativeTime(entry.publishedAt)} · {entry.targets.length} 个账号
+          </span>
+        </button>
+        <span
+          style={{
+            fontSize: 11,
+            padding: '2px 6px',
+            borderRadius: 4,
+            background: `color-mix(in srgb, ${overall.color} 15%, transparent)`,
+            color: overall.color,
+            fontWeight: 500,
+            flexShrink: 0,
+          }}
+        >
+          {overall.label}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onRepublish(entry)}
+          disabled={disabled}
+          style={{ flexShrink: 0 }}
+        >
+          <RotateCcw size={12} style={{ marginRight: 4 }} />
+          重新发布
+        </Button>
+      </div>
+      {expanded && (
+        <div style={{ padding: '4px 12px 8px' }}>
+          {entry.targets.map((t) => {
+            const result = entry.results[t.accountId];
+            const failed = result?.state === 'failed';
+            const isRelogging = reloginBusyId === t.accountId;
+            return (
+              <div
+                key={t.accountId}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 0',
+                  fontSize: 13,
+                  borderBottom: '1px solid var(--color-border-subtle, rgba(0,0,0,0.06))',
+                }}
+              >
+                <span style={{ minWidth: 16 }}>
+                  {failed ? (
+                    <X size={14} style={{ color: 'var(--color-error, #ef4444)' }} />
+                  ) : (
+                    <Check size={14} style={{ color: 'var(--color-success, #22c55e)' }} />
+                  )}
+                </span>
+                <span style={{ flex: 1, minWidth: 0, color: 'var(--color-text-primary)' }}>
+                  {PLATFORM_LABEL[t.platform] ?? t.platform}{' '}
+                  <span style={{ color: 'var(--color-text-secondary)' }}>{t.accountName}</span>
+                </span>
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: failed ? 'var(--color-error, #ef4444)' : 'var(--color-success, #22c55e)',
+                    textAlign: 'right',
+                    maxWidth: 200,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={failed ? result?.message : undefined}
+                >
+                  {failed ? result?.message ?? '失败' : '成功'}
+                </span>
+                {failed && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => onRelogin(t)}
+                    disabled={disabled || isRelogging}
+                    style={{ flexShrink: 0 }}
+                  >
+                    {isRelogging ? (
+                      <Spinner size={11} />
+                    ) : (
+                      <LogIn size={12} style={{ marginRight: 4 }} />
+                    )}
+                    <span style={{ marginLeft: isRelogging ? 4 : 0 }}>重新登录</span>
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -158,7 +357,9 @@ function ResultRow({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function PublishWorkbench({ projectDir }: { projectDir: string | null }) {
-  const { accounts, job, results, loadAccounts, startPublish, cancelPublish } = usePublishStore();
+  const { accounts, job, results, loadAccounts, startPublish, cancelPublish, addAccount, loadSettings } =
+    usePublishStore();
+  const settings = usePublishStore((s) => s.settings);
   const lastExportPath = usePublishStore((s) => s.lastExportPath);
 
   // Form state
@@ -182,38 +383,151 @@ export function PublishWorkbench({ projectDir }: { projectDir: string | null }) 
   const [metaError, setMetaError] = useState<string | null>(null);
   // 封面联动面板展开
   const [showCoverPanel, setShowCoverPanel] = useState(true);
+  // 文案/封面回填完成标记（状态版，驱动封面自动预填 effect）
+  const [hydrated, setHydrated] = useState(false);
+  // 封面工作台（父级持有，单一数据源）：扫描 covers/ + AI 候选，按比例分组
+  const coverStudio = useCoverStudio(projectDir);
 
   // Multi-select: set of checked account IDs
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  // Chromium 自动化组件安装状态：null=未知/检测中
+  const [chromiumInstalled, setChromiumInstalled] = useState<boolean | null>(null);
+  const [chromiumDownloading, setChromiumDownloading] = useState(false);
+
+  // 发布历史（随项目持久化，新→旧）
+  const [historyEntries, setHistoryEntries] = useState<PublishHistoryEntry[]>([]);
+  // 就地重登：二维码 / 进行中账号 / 提示
+  const [qrcodePng, setQrcodePng] = useState<string | null>(null);
+  const [reloginBusyId, setReloginBusyId] = useState<string | null>(null);
+  const [reloginMsg, setReloginMsg] = useState<{ text: string; isError: boolean } | null>(null);
+  const unsubQrcodeRef = useRef<(() => void) | null>(null);
+  // 发布中检测到登录态失效 → 弹窗确认重登（promise 桥，等待用户决策）
+  const [loginPrompt, setLoginPrompt] = useState<PublishHistoryTarget | null>(null);
+  const loginPromptResolveRef = useRef<((ok: boolean) => void) | null>(null);
+
+  const askRelogin = (target: PublishHistoryTarget): Promise<boolean> =>
+    new Promise((resolve) => {
+      loginPromptResolveRef.current = resolve;
+      setLoginPrompt(target);
+    });
+
+  // 关闭弹窗并回传用户决策（幂等：confirm / cancel / 蒙层关闭只兑现一次）
+  const resolveLoginPrompt = (ok: boolean) => {
+    const resolve = loginPromptResolveRef.current;
+    loginPromptResolveRef.current = null;
+    setLoginPrompt(null);
+    resolve?.(ok);
+  };
+
   // Derive publishing state from store job — no local state needed
   const isPublishing = !!job;
+
+  // 选中的账号是否包含需要 Chromium 的平台
+  const needsChromium = selectedAccountIds.some((id) => {
+    const p = accounts.find((a) => a.id === id)?.platform;
+    return p != null && CHROMIUM_PLATFORMS.has(p);
+  });
+  const chromiumMissing = needsChromium && chromiumInstalled === false;
 
   // 文案持久化：hydrate 完成前禁止 autosave，避免用空值覆盖磁盘上的已存文案
   const hydratedRef = useRef(false);
 
   useEffect(() => {
     void loadAccounts();
-  }, [loadAccounts]);
+    void loadSettings();
+    return () => {
+      unsubQrcodeRef.current?.();
+      unsubQrcodeRef.current = null;
+    };
+  }, [loadAccounts, loadSettings]);
 
-  // ── 联动编辑器：预填视频文件与封面缩略图 ──
-  // 同会话：编辑器导出后写入 store.lastExportPath；跨重启：扫描项目目录最新成片。
+  // 勾选需要 Chromium 的平台时检测组件是否已安装（发布前门控）
   useEffect(() => {
-    if (lastExportPath) setFilePath((prev) => prev || lastExportPath);
-  }, [lastExportPath]);
+    if (!needsChromium) {
+      setChromiumInstalled(null);
+      return;
+    }
+    let cancelled = false;
+    setChromiumInstalled(null);
+    window.publishAPI
+      .getChromiumStatus()
+      .then((s) => {
+        if (!cancelled) setChromiumInstalled(s.installed);
+      })
+      .catch(() => {
+        if (!cancelled) setChromiumInstalled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [needsChromium]);
 
+  const handleDownloadChromium = async () => {
+    const { startTask, updateTask, completeTask, failTask } = useTaskProgressStore.getState();
+    setChromiumDownloading(true);
+    startTask({
+      id: CHROMIUM_TASK_ID,
+      category: 'publish',
+      label: '下载浏览器组件（Chromium）',
+      mode: 'indeterminate',
+      progress: 0,
+      phase: '准备中',
+      level: 0,
+      canCancel: false,
+    });
+    const unsub = window.publishAPI.onChromiumDownloadProgress((p) => {
+      if (p.phase === 'download' && typeof p.percent === 'number') {
+        updateTask(CHROMIUM_TASK_ID, { mode: 'determinate', progress: Math.min(100, Math.round(p.percent)), phase: '下载中' });
+      } else {
+        const phaseLabel = p.phase === 'resolve' ? '解析版本' : p.phase === 'install' ? '安装中' : '下载中';
+        updateTask(CHROMIUM_TASK_ID, { mode: 'indeterminate', phase: phaseLabel });
+      }
+    });
+    try {
+      const res = await window.publishAPI.downloadChromium();
+      if (res.success) {
+        completeTask(CHROMIUM_TASK_ID);
+        setChromiumInstalled(true);
+        setValidationError(null);
+      } else {
+        failTask(CHROMIUM_TASK_ID, res.error || '下载失败');
+        setValidationError(res.error || '浏览器组件下载失败');
+      }
+    } catch (err) {
+      failTask(CHROMIUM_TASK_ID, err instanceof Error ? err.message : '下载异常');
+      setValidationError(err instanceof Error ? err.message : '浏览器组件下载异常');
+    } finally {
+      unsub();
+      setChromiumDownloading(false);
+    }
+  };
+
+  // ── 联动编辑器：同会话刚导出且属于当前项目时，立即反映到视频文件输入 ──
+  // lastExportPath 为全局态、跨项目不清空，必须按当前 projectDir 过滤，避免串用上一个项目的成片。
   useEffect(() => {
-    if (!projectDir) return;
+    if (lastExportPath && projectDir && isInsideDir(lastExportPath, projectDir)) {
+      setFilePath((prev) => prev || lastExportPath);
+    }
+  }, [lastExportPath, projectDir]);
+
+  // ── 切换项目：重置并从「当前项目目录」解析视频文件（避免沿用上一个项目的路径） ──
+  useEffect(() => {
+    if (!projectDir) {
+      setFilePath('');
+      return;
+    }
     let cancelled = false;
     void (async () => {
-      // 视频文件兜底
+      // 视频文件：仅当 lastExportPath 属于当前项目才直接用；否则扫描本项目目录最新成片。
       const last = usePublishStore.getState().lastExportPath;
-      let resolved: string | null = last;
+      let resolved = last && isInsideDir(last, projectDir) ? last : null;
       if (!resolved) {
         resolved = await window.electronAPI.findLatestExport(projectDir).catch(() => null);
       }
-      if (resolved && !cancelled) setFilePath((prev) => prev || resolved!);
+      // 切项目即重置（resolved 为空则清空输入），不再 `prev ||` 保留旧项目路径。
+      if (!cancelled) setFilePath(resolved ?? '');
       // 封面：默认取编辑器选定的封面候选
       const selectedCover = useAIStore
         .getState()
@@ -232,8 +546,11 @@ export function PublishWorkbench({ projectDir }: { projectDir: string | null }) 
   // ── 文案持久化：项目切换时从 project.json 回填已存的标题/描述/标签/封面/覆盖 ──
   useEffect(() => {
     hydratedRef.current = false;
+    setHydrated(false);
+    setHistoryEntries([]);
     if (!projectDir) {
       hydratedRef.current = true;
+      setHydrated(true);
       return;
     }
     let cancelled = false;
@@ -256,13 +573,22 @@ export function PublishWorkbench({ projectDir }: { projectDir: string | null }) 
           setCovers((prev) => ({ ...saved!.covers, ...prev }));
         }
         if (saved.bilibiliTid) setBilibiliTid((prev) => prev || saved!.bilibiliTid!);
+        if (saved.history?.length) setHistoryEntries(saved.history);
       }
       hydratedRef.current = true;
+      setHydrated(true);
     })();
     return () => {
       cancelled = true;
     };
   }, [projectDir]);
+
+  // ── 封面按比例自动预填：扫描/生成出的 4:3 / 3:4 等比例图自动选中，无需手动点选。 ──
+  //    仅填补空槽（已选或已回填的比例保持不变），并在 hydration 完成后才运行，避免覆盖已存选择。
+  useEffect(() => {
+    if (!hydrated) return;
+    setCovers((prev) => autoFillCovers(coverStudio.groups, prev));
+  }, [hydrated, coverStudio.groups]);
 
   // ── 文案持久化：标题/描述/标签/封面/覆盖变更时防抖写回 project.json ──
   useEffect(() => {
@@ -274,6 +600,7 @@ export function PublishWorkbench({ projectDir }: { projectDir: string | null }) 
       thumbnail,
       covers,
       bilibiliTid,
+      history: historyEntries,
     };
     const timer = setTimeout(() => {
       window.electronAPI
@@ -281,7 +608,7 @@ export function PublishWorkbench({ projectDir }: { projectDir: string | null }) 
         .catch(() => {});
     }, 600);
     return () => clearTimeout(timer);
-  }, [projectDir, title, desc, tagsInput, thumbnail, covers, bilibiliTid]);
+  }, [projectDir, title, desc, tagsInput, thumbnail, covers, bilibiliTid, historyEntries]);
 
   const handleGenerateMeta = async () => {
     setMetaError(null);
@@ -383,6 +710,25 @@ export function PublishWorkbench({ projectDir }: { projectDir: string | null }) 
     if (path) setFilePath(path);
   };
 
+  // 扫描当前项目目录最新成片（用户手动触发；自动解析失败或导出后可一键刷新）。
+  const [scanMsg, setScanMsg] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const handleScanVideo = async () => {
+    if (!projectDir) {
+      setScanMsg('未打开项目，无法扫描');
+      return;
+    }
+    setScanMsg(null);
+    setIsScanning(true);
+    try {
+      const found = await window.electronAPI.findLatestExport(projectDir).catch(() => null);
+      if (found) setFilePath(found);
+      else setScanMsg('当前项目目录未找到可发布的 MP4 成片，请先在编辑器导出，或手动选择文件');
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
   const handlePickThumbnail = async () => {
     const path = await window.electronAPI.selectMediaFile('image');
     if (path) setThumbnail(path);
@@ -393,6 +739,12 @@ export function PublishWorkbench({ projectDir }: { projectDir: string | null }) 
     if (selectedAccountIds.length === 0) return;
 
     setValidationError(null);
+
+    // ── Chromium 组件门控：抖音/视频号/小红书/快手发布前必须已安装 Chromium ──
+    if (chromiumMissing) {
+      setValidationError('发布前请先下载浏览器组件（Chromium）');
+      return;
+    }
 
     const sharedTags = tagsInput
       .split(/[,，]/)
@@ -441,11 +793,142 @@ export function PublishWorkbench({ projectDir }: { projectDir: string | null }) 
       };
     });
 
+    // 历史记录的目标快照（含平台/昵称，供展示与就地重登）
+    const historyTargets: PublishHistoryTarget[] = selectedAccountIds.map((accountId) => {
+      const acc = accounts.find((a) => a.id === accountId);
+      return {
+        accountId,
+        platform: acc?.platform ?? accountId.split('_')[0],
+        accountName: acc?.accountName ?? accountId.split('_').slice(1).join('_'),
+        ...(acc?.platform === 'bilibili' && !isNaN(tid) ? { bilibiliTid: tid } : {}),
+      };
+    });
+
+    await runPublish(filePath, shared, targets, historyTargets);
+  };
+
+  // 执行发布并在完成后落一条历史记录（新发布与重新发布共用）
+  const runPublish = async (
+    fp: string,
+    shared: PublishShared,
+    targets: PublishTarget[],
+    historyTargets: PublishHistoryTarget[],
+  ) => {
     try {
-      await startPublish(filePath, shared, targets, true);
+      await startPublish(fp, shared, targets, true);
     } catch {
-      // errors are handled in the store (failTask)
+      // 错误已在 store 内处理（failTask）；下方仍据最终 results 落历史
     }
+    // 合并各账号最终结果（自动续发会逐账号覆盖）
+    const merged: Record<string, PublishResult> = { ...usePublishStore.getState().results };
+
+    // ── 登录态失效自动续发：弹窗确认 → 重登 → 立即重发该账号 ──
+    const expired = historyTargets.filter((t) => merged[t.accountId]?.state === 'login-expired');
+    for (const t of expired) {
+      const confirmed = await askRelogin(t);
+      if (!confirmed) continue; // 用户取消：保留失效态（落历史记为失败）
+      const loggedIn = await reloginAccount(t);
+      if (!loggedIn) continue; // 重登失败/取消扫码：保留
+      setReloginMsg({ text: `${t.accountName} 登录成功，正在继续发布…`, isError: false });
+      const single: PublishTarget = {
+        accountId: t.accountId,
+        ...(t.bilibiliTid != null ? { bilibili: { tid: t.bilibiliTid } } : {}),
+      };
+      try {
+        await startPublish(fp, shared, [single], true);
+      } catch {
+        /* 失败据 results 落历史 */
+      }
+      merged[t.accountId] = usePublishStore.getState().results[t.accountId] ?? merged[t.accountId];
+      const okNow = merged[t.accountId]?.state === 'success';
+      setReloginMsg({
+        text: okNow ? `${t.accountName} 发布成功` : `${t.accountName} 续发未成功，可稍后重试`,
+        isError: !okNow,
+      });
+    }
+
+    const resultMap: Record<string, PublishHistoryResult> = {};
+    let okCount = 0;
+    for (const t of historyTargets) {
+      const ok = merged[t.accountId]?.state === 'success';
+      if (ok) okCount += 1;
+      resultMap[t.accountId] = {
+        state: ok ? 'success' : 'failed',
+        message: ok ? undefined : merged[t.accountId]?.message,
+      };
+    }
+    const overallState: PublishHistoryEntry['overallState'] =
+      okCount === historyTargets.length ? 'success' : okCount === 0 ? 'failed' : 'partial';
+    const entry: PublishHistoryEntry = {
+      id: crypto.randomUUID(),
+      publishedAt: Date.now(),
+      fileName: baseName(fp),
+      filePath: fp,
+      shared: {
+        title: shared.title,
+        desc: shared.desc,
+        tags: shared.tags,
+        thumbnail: shared.thumbnail,
+        covers: shared.covers,
+        bilibiliTid: historyTargets.find((t) => t.bilibiliTid != null)?.bilibiliTid,
+      },
+      targets: historyTargets,
+      results: resultMap,
+      overallState,
+    };
+    setHistoryEntries((prev) => [entry, ...prev].slice(0, PUBLISH_HISTORY_MAX));
+  };
+
+  // 从历史记录重新发布（沿用当时的文件 / 文案 / 目标）
+  const handleRepublish = (entry: PublishHistoryEntry) => {
+    if (isPublishing) return;
+    const shared = {
+      title: entry.shared.title,
+      desc: entry.shared.desc,
+      tags: entry.shared.tags,
+      thumbnail: entry.shared.thumbnail,
+      covers: entry.shared.covers,
+    };
+    const targets: PublishTarget[] = entry.targets.map((t) => ({
+      accountId: t.accountId,
+      ...(t.bilibiliTid != null ? { bilibili: { tid: t.bilibiliTid } } : {}),
+    }));
+    void runPublish(entry.filePath, shared, targets, entry.targets);
+  };
+
+  // 重登核心：挂二维码事件 → 触发登录 → 返回是否成功。手动重登与发布中自动续发共用。
+  const reloginAccount = async (target: PublishHistoryTarget): Promise<boolean> => {
+    const platform = target.platform as PublishAccount['platform'];
+    setReloginBusyId(target.accountId);
+    setReloginMsg({
+      text: settings.headlessLogin
+        ? `正在为 ${target.accountName} 重新登录，二维码将显示在下方，请扫码…`
+        : `正在为 ${target.accountName} 打开浏览器扫码登录…`,
+      isError: false,
+    });
+    setQrcodePng(null);
+    if (!unsubQrcodeRef.current) {
+      unsubQrcodeRef.current = window.publishAPI.onQrcode((p) => setQrcodePng(p.png));
+    }
+    try {
+      const res = await addAccount(platform, target.accountName);
+      if (res.success) setQrcodePng(null);
+      else setReloginMsg({ text: res.message || '登录失败', isError: true });
+      return res.success;
+    } catch (err) {
+      setReloginMsg({ text: err instanceof Error ? err.message : '登录异常', isError: true });
+      return false;
+    } finally {
+      setReloginBusyId(null);
+      unsubQrcodeRef.current?.();
+      unsubQrcodeRef.current = null;
+    }
+  };
+
+  // 就地重新登录失败账号（无需进入设置页）；手动入口，成功后由用户手动重发
+  const handleRelogin = async (target: PublishHistoryTarget) => {
+    const ok = await reloginAccount(target);
+    if (ok) setReloginMsg({ text: '重新登录成功，可点「重新发布」重试', isError: false });
   };
 
   // Show results from last run (store clears job on completion but keeps results)
@@ -509,15 +992,38 @@ export function PublishWorkbench({ projectDir }: { projectDir: string | null }) 
           <div style={{ display: 'flex', gap: 8 }}>
             <Input
               value={filePath}
-              onChange={(e) => setFilePath(e.target.value)}
+              onChange={(e) => {
+                setScanMsg(null);
+                setFilePath(e.target.value);
+              }}
               placeholder="选择 MP4 文件或直接输入路径…"
               leftIcon={<Film size={14} />}
               style={{ flex: 1 }}
             />
+            <Button
+              variant="outline"
+              onClick={handleScanVideo}
+              disabled={!projectDir || isScanning}
+              style={{ flexShrink: 0 }}
+              leftIcon={
+                isScanning ? (
+                  <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                ) : (
+                  <RotateCcw size={14} />
+                )
+              }
+            >
+              扫描项目
+            </Button>
             <Button variant="outline" onClick={handlePickFile} style={{ flexShrink: 0 }}>
               选择…
             </Button>
           </div>
+          {scanMsg && (
+            <div style={{ marginTop: 6, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+              {scanMsg}
+            </div>
+          )}
         </Field>
 
         {/* Thumbnail (optional) + 封面联动面板 */}
@@ -559,7 +1065,7 @@ export function PublishWorkbench({ projectDir }: { projectDir: string | null }) 
           {showCoverPanel && (
             <div style={{ marginTop: 8 }}>
               <PublishCoverPanel
-                projectDir={projectDir}
+                studio={coverStudio}
                 selectedByRatio={covers}
                 onSelectRatio={(ratio, path) =>
                   setCovers((prev) => {
@@ -703,12 +1209,27 @@ export function PublishWorkbench({ projectDir }: { projectDir: string | null }) 
                     />
                     <AccountStatusBadge status={acc.status} />
                     {!isValid && (
-                      <span
-                        style={{ fontSize: 11, color: 'var(--color-system-blue)', cursor: 'pointer' }}
-                        title="前往设置重新登录"
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() =>
+                          void handleRelogin({
+                            accountId: acc.id,
+                            platform: acc.platform,
+                            accountName: acc.accountName,
+                          })
+                        }
+                        disabled={isPublishing || reloginBusyId === acc.id}
+                        style={{ flexShrink: 0 }}
+                        title="就地重新登录"
                       >
-                        去设置
-                      </span>
+                        {reloginBusyId === acc.id ? (
+                          <Spinner size={11} />
+                        ) : (
+                          <LogIn size={12} style={{ marginRight: 4 }} />
+                        )}
+                        <span style={{ marginLeft: reloginBusyId === acc.id ? 4 : 0 }}>重登</span>
+                      </Button>
                     )}
                   </div>
                 );
@@ -786,12 +1307,50 @@ export function PublishWorkbench({ projectDir }: { projectDir: string | null }) 
           </Field>
         )}
 
+        {/* Chromium 组件门控提示：未安装时引导下载，禁用发布 */}
+        {chromiumMissing && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              flexWrap: 'wrap',
+              padding: '12px 14px',
+              borderRadius: 8,
+              border: '1px solid color-mix(in srgb, var(--color-warning, #f59e0b) 40%, transparent)',
+              background: 'color-mix(in srgb, var(--color-warning, #f59e0b) 8%, transparent)',
+            }}
+          >
+            <span style={{ flex: 1, minWidth: 240, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+              抖音 / 视频号 / 小红书 / 快手发布需要浏览器组件（Chromium），首次使用请先下载（约 150MB，已走国内镜像加速）。
+            </span>
+            <Button
+              variant="primary"
+              onClick={() => void handleDownloadChromium()}
+              disabled={chromiumDownloading}
+              style={{ flexShrink: 0 }}
+            >
+              {chromiumDownloading ? (
+                <>
+                  <Spinner size={12} />
+                  <span style={{ marginLeft: 6 }}>下载中…</span>
+                </>
+              ) : (
+                <>
+                  <Download size={12} style={{ marginRight: 6 }} />
+                  下载浏览器组件
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+
         {/* Publish button */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <Button
             variant="primary"
             onClick={handlePublish}
-            disabled={isPublishing || !filePath || targetCount === 0}
+            disabled={isPublishing || !filePath || targetCount === 0 || chromiumMissing}
             style={{ minWidth: 140 }}
           >
             {isPublishing ? (
@@ -865,7 +1424,94 @@ export function PublishWorkbench({ projectDir }: { projectDir: string | null }) 
             ))}
           </div>
         )}
+
+        {/* 就地重登：状态提示 + 二维码 */}
+        {(reloginMsg || qrcodePng) && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              padding: '12px 14px',
+              borderRadius: 8,
+              border: '1px solid var(--color-border, rgba(0,0,0,0.1))',
+              background: 'var(--color-bg-elevated)',
+            }}
+          >
+            {reloginMsg && (
+              <span
+                style={{
+                  fontSize: 13,
+                  color: reloginMsg.isError
+                    ? 'var(--color-error, #ef4444)'
+                    : 'var(--color-text-secondary)',
+                }}
+              >
+                {reloginMsg.text}
+              </span>
+            )}
+            {qrcodePng && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                  请使用 App 扫描二维码登录
+                </span>
+                <img
+                  src={`file://${qrcodePng}`}
+                  alt="登录二维码"
+                  style={{ width: 160, height: 160, borderRadius: 6, background: '#fff' }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 发布历史 */}
+        {historyEntries.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                color: 'var(--color-text-secondary)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+              }}
+            >
+              <History size={13} />
+              发布历史
+            </div>
+            {historyEntries.map((entry) => (
+              <HistoryEntryCard
+                key={entry.id}
+                entry={entry}
+                disabled={isPublishing}
+                reloginBusyId={reloginBusyId}
+                onRepublish={handleRepublish}
+                onRelogin={(t) => void handleRelogin(t)}
+              />
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* 发布中检测到登录态失效：弹窗确认 → 重登 → 自动续发 */}
+      <ConfirmDialog
+        open={!!loginPrompt}
+        onOpenChange={() => {}}
+        title="账号登录已过期"
+        description={
+          loginPrompt
+            ? `${PLATFORM_LABEL[loginPrompt.platform] ?? loginPrompt.platform}账号「${loginPrompt.accountName}」登录态已失效，需要重新登录。确认后将打开扫码登录，扫码成功后自动继续发布。`
+            : ''
+        }
+        confirmText="重新登录"
+        cancelText="稍后再说"
+        onConfirm={() => resolveLoginPrompt(true)}
+        onCancel={() => resolveLoginPrompt(false)}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import type { PublishJob } from './types';
 import { getPlatform } from './platforms';
 import { parseAccountId } from './account-id';
 import { AccountStore } from './accounts';
+import { LoginExpiredError } from './errors';
 
 export async function runPublishJob(
   job: PublishJob,
@@ -41,7 +42,10 @@ export async function runPublishJob(
       });
       send('success', 100);
     } catch (err) {
-      send('failed', undefined, err instanceof Error ? err.message : String(err));
+      // 登录态失效单独标记 'login-expired'：Renderer 据此弹窗重登并自动续发，
+      // 区别于不可恢复的普通失败。
+      const state = err instanceof LoginExpiredError ? 'login-expired' : 'failed';
+      send(state, undefined, err instanceof Error ? err.message : String(err));
     }
   }
 }

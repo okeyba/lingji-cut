@@ -59,6 +59,35 @@ describe('createFfmpegRunner', () => {
     expect(loadCore).toHaveBeenCalledOnce();
   });
 
+  it('discards a wasm-crashed core so the next candidate rebuilds a clean one and can succeed', async () => {
+    // wasm 越界 abort 会把 core 置为 ABORT=true 永久毒化；若复用，后续每个候选源都会
+    // 立刻重抛同一句 out of bounds，令“换下一个候选源”兜底失效。崩溃后必须重建实例。
+    const bad = createFakeCore(new Uint8Array());
+    bad.exec = () => { throw new WebAssembly.RuntimeError('Aborted(memory access out of bounds)'); };
+    const good = createFakeCore(new Uint8Array([7]));
+    const cores = [bad, good];
+    const loadCore = vi.fn(async () => cores.shift()!);
+    const runner = createFfmpegRunner({ loadCore });
+
+    await expect(runner.transcodeToWav16kMono(new Uint8Array([1]))).rejects.toThrow(/out of bounds/);
+    const out = await runner.transcodeToWav16kMono(new Uint8Array([2]));
+
+    expect(out).toEqual(new Uint8Array([7]));
+    expect(loadCore).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps reusing the core after a clean non-zero exit (not a wasm crash)', async () => {
+    const core = createFakeCore(new Uint8Array([1]));
+    core.exec = () => { core.ret = 1; };
+    const loadCore = vi.fn(async () => core);
+    const runner = createFfmpegRunner({ loadCore });
+
+    await expect(runner.transcodeToWav16kMono(new Uint8Array([1]))).rejects.toThrow(/ffmpeg/i);
+    await expect(runner.transcodeToWav16kMono(new Uint8Array([2]))).rejects.toThrow(/ffmpeg/i);
+
+    expect(loadCore).toHaveBeenCalledOnce();
+  });
+
   it('cleans temp files even when exec throws', async () => {
     const core = createFakeCore(new Uint8Array());
     core.exec = () => { throw new Error('ffmpeg boom'); };

@@ -42,6 +42,49 @@ export interface ProjectPublishOverride {
   bilibiliTid: string;
 }
 
+/** 发布历史保留的最大条数（新→旧，超出淘汰）。 */
+export const PUBLISH_HISTORY_MAX = 20;
+
+/** 一条发布历史记录的单账号结果（最终态）。 */
+export interface PublishHistoryResult {
+  state: 'success' | 'failed';
+  message?: string;
+}
+
+/** 一条发布历史的目标账号快照（用于展示与重新发布）。 */
+export interface PublishHistoryTarget {
+  accountId: string;
+  platform: string;
+  accountName: string;
+  /** B站分区 id（仅 B站）。 */
+  bilibiliTid?: number;
+}
+
+/**
+ * 一次发布任务的历史记录。按发布任务粒度，含各账号最终结果。
+ * 保存足够字段以支持「重新发布」（filePath + shared + targets）。
+ */
+export interface PublishHistoryEntry {
+  id: string;
+  /** 发布发起时间戳（毫秒）。 */
+  publishedAt: number;
+  /** basename(filePath)，列表展示用。 */
+  fileName: string;
+  filePath: string;
+  shared: {
+    title: string;
+    desc: string;
+    tags: string[];
+    thumbnail?: string;
+    covers?: Partial<Record<'16:9' | '4:3' | '3:4', string>>;
+    bilibiliTid?: number;
+  };
+  targets: PublishHistoryTarget[];
+  /** 按 accountId 映射的最终结果。 */
+  results: Record<string, PublishHistoryResult>;
+  overallState: 'success' | 'partial' | 'failed';
+}
+
 /**
  * 发布选项卡的文案元数据。
  * AI 生成或手动填写的标题 / 描述 / 标签 / 封面随项目持久化，
@@ -57,6 +100,8 @@ export interface ProjectPublishMeta {
   covers?: Partial<Record<'16:9' | '4:3' | '3:4', string>>;
   /** B站分区 ID（tid，B站必填，全平台共享）。 */
   bilibiliTid?: string;
+  /** 发布历史（新→旧，最多 PUBLISH_HISTORY_MAX 条）；缺省视为空。 */
+  history?: PublishHistoryEntry[];
   /** @deprecated 已移除按账号文案覆盖，仅保留以兼容旧工程读取。 */
   overrides?: Record<string, ProjectPublishOverride>;
 }

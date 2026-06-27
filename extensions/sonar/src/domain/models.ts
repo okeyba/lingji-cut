@@ -147,13 +147,46 @@ export interface ProcessingTask {
   error?: SonarError;
 }
 
-export type WorkflowStatus = 'todo' | 'in_progress' | 'done';
+/**
+ * 工作流流水线阶段（取代旧的手动看板 todo/in_progress/done）：
+ * 拉入后自动 准备素材(抓取+转录) → 爆款拆解 → 待确认，确认后送进灵机剪影。
+ */
+export type WorkflowStage =
+  | 'collected' // 刚拉进来，待开始
+  | 'preparing' // 抓取源 + 转录中
+  | 'analyzing' // 爆款拆解中
+  | 'ready' // 拆解完成，待确认送二创
+  | 'pushed' // 已送进灵机剪影待创作箱
+  | 'failed'; // 某阶段失败
+
+/** 面向口播二创的爆款拆解报告（LLM 产出，validateInsight 校验）。 */
+export interface ViralInsight {
+  videoId: string;
+  /** 选题角度（一句话点破）。 */
+  angle: string;
+  /** 开头钩子（原话 + 为什么抓人）。 */
+  hook: string;
+  /** 内容骨架（分段提纲）。 */
+  structure: string[];
+  /** 记忆点 / 金句。 */
+  highlights: string[];
+  /** 引用的数据 / 论据（提醒二创核实或替换）。 */
+  dataPoints: string[];
+  /** 二创改造建议（换角度 / 换案例 / 换受众）。 */
+  remixSuggestions: string[];
+  model: string;
+  createdAt: number;
+}
 
 export interface WorkflowItem {
   id: string;
   videoId: string;
-  status: WorkflowStatus;
+  stage: WorkflowStage;
+  /** 失败阶段的原因（stage='failed' 时）。 */
+  error?: string;
   note: string;
+  /** 由 insight 存储水合（listWorkflowItems 注入）；落库记录不含此字段。 */
+  insight?: ViralInsight;
   createdAt: number;
   updatedAt: number;
 }

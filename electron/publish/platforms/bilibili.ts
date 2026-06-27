@@ -42,6 +42,12 @@ export function buildBiliupUploadArgs(
     '--tid', String(opts.tid),
   ];
 
+  // 封面：B站主封面为横版，优先 16:9，回退 4:3，再回退单图兜底。
+  const cover = opts.covers?.['16:9'] ?? opts.covers?.['4:3'] ?? opts.thumbnail;
+  if (cover) {
+    args.push('--cover', cover);
+  }
+
   if (opts.tags && opts.tags.length > 0) {
     args.push('--tag', opts.tags.join(','));
   }
