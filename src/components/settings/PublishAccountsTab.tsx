@@ -445,24 +445,28 @@ export function PublishAccountsTab() {
 
       <div className={styles.addSection}>
         <div className={styles.addRow}>
-          <Field label="平台" className={styles.addSelectWrap}>
-            <Select
-              options={PLATFORM_OPTIONS}
-              value={platform}
-              onChange={(e) => setPlatform(e.target.value as PublishPlatform)}
-            />
-          </Field>
-          <Field label="账号名称（备注）" className={styles.addInputWrap}>
-            <Input
-              value={accountName}
-              onChange={(e) => setAccountName(e.target.value)}
-              placeholder="例如：主账号"
-              disabled={loginBusy}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleLogin();
-              }}
-            />
-          </Field>
+          <div className={styles.addSelectWrap}>
+            <Field label="平台">
+              <Select
+                options={PLATFORM_OPTIONS}
+                value={platform}
+                onChange={(e) => setPlatform(e.target.value as PublishPlatform)}
+              />
+            </Field>
+          </div>
+          <div className={styles.addInputWrap}>
+            <Field label="账号名称（备注）">
+              <Input
+                value={accountName}
+                onChange={(e) => setAccountName(e.target.value)}
+                placeholder="例如：主账号"
+                disabled={loginBusy}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void handleLogin();
+                }}
+              />
+            </Field>
+          </div>
           <Button
             type="button"
             variant="primary"

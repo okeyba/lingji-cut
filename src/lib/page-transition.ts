@@ -28,7 +28,7 @@ const EASE_APPLE: [number, number, number, number] = [0.25, 0.1, 0.25, 1];
 /**
  * 工作区三个 tab：写稿工作台 / 视频编辑器 / 发布。
  * 它们共用同一棵子树（App.tsx 里用 display:contents/none 切换显隐），切换时
- * 必须共用稳定的 contentKey，避免 AnimatePresence mode="wait" 触发 exit→remount。
+ * 必须共用稳定的 contentKey，避免 AnimatePresence 触发 exit→remount。
  */
 const WORKSPACE_PAGES: ReadonlySet<AppPage> = new Set([
   'script-workbench',
@@ -62,7 +62,7 @@ export function resolvePageTransition({
 
   // 工作区内部三页（写稿/编辑器/发布）切换：共用稳定 contentKey，让
   // AnimatePresence 不介入。App.tsx 里这三页同属一棵子树，用 display 切换显隐，
-  // 切换走 CSS 而非 exit→remount，避免 framer-motion v12 mode="wait" 在
+  // 切换走 CSS 而非 exit→remount，避免 framer-motion v12 在
   // exit 动画与新 render 时序竞态下卡在「旧节点 opacity:0、新节点永不挂载」的空白态。
   // 历史上这里曾用 `crossfade:editor->script-workbench` 这种变化 key，触发空白。
   if (WORKSPACE_PAGES.has(toPage) && WORKSPACE_PAGES.has(fromPage)) {
@@ -74,7 +74,7 @@ export function resolvePageTransition({
       // 工作区内部切换走稳定 key，这份 exit 永不在 tab 互切时触发（元素不卸载）。
       // 它只在「离开工作区」时被 AnimatePresence 冻结使用（如 publish/editor → settings）。
       // 必须是真正改变 opacity 的动画：no-op exit（opacity 不变）在 framer-motion v12
-      // mode="wait" 下不触发 onExitComplete，会让目标页（Settings）永不挂载、内容卡空白。
+      // 的退出时序下容易让旧节点留在空白态，影响目标页（Settings）显示。
       exit: { opacity: 0 },
       transition: { duration: 0.18, ease: EASE_APPLE },
     };

@@ -27,6 +27,7 @@ const pageTitleMap: Record<Exclude<AppPage, 'editor'>, string> = {
   welcome: '欢迎页',
   setup: '欢迎页',
   'script-workbench': 'AI 写稿工作台',
+  publish: '发布',
   settings: '系统设置',
   'auto-run': '一键成稿',
 };
@@ -35,6 +36,7 @@ const pageStatusMap: Record<Exclude<AppPage, 'editor'>, string> = {
   welcome: '未打开工程',
   setup: '未打开工程',
   'script-workbench': '脚本创作流程',
+  publish: '多平台发布',
   settings: '全局配置',
   'auto-run': '一键成稿运行中',
 };

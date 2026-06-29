@@ -90,6 +90,19 @@ describe('resolvePageTransition', () => {
 
     expect(editorToSettings.enabled).toBe(true);
     expect(editorToSettings.contentKey).toBe('to-settings:editor');
+
+    const publishToSettings = resolvePageTransition({
+      fromPage: 'publish',
+      toPage: 'settings',
+      reason: 'default',
+      reducedMotion: false,
+    });
+
+    expect(publishToSettings.enabled).toBe(true);
+    expect(publishToSettings.contentKey).toBe('to-settings:publish');
+    expect(publishToSettings.initial).toMatchObject({ opacity: 0, y: -6 });
+    expect(publishToSettings.animate).toMatchObject({ opacity: 1, y: 0 });
+    expect(publishToSettings.exit).toMatchObject({ opacity: 0, y: -4 });
   });
 
   it('disables the close-project transition when reduced motion is preferred', () => {

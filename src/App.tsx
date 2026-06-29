@@ -1,5 +1,5 @@
-import { AnimatePresence, LayoutGroup, m } from 'framer-motion';
-import { useCallback, useEffect, useState } from 'react';
+import { AnimatePresence, LayoutGroup, m, useIsPresent } from 'framer-motion';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useToast } from './ui';
 import { AgentSidebar } from './components/agent/AgentSidebar';
 import { AppStatusBar } from './components/AppStatusBar';
@@ -11,7 +11,11 @@ import { createPersistedAIState } from './lib/ai-persistence';
 import { hydrateSettingsStorage } from './lib/settings-storage';
 import { useViewportSize } from './hooks/useViewportSize';
 import { getAppShortcutCommand, isTextEditingTarget } from './lib/native-shortcuts';
-import { resolvePageTransition, type PageTransitionReason } from './lib/page-transition';
+import {
+  resolvePageTransition,
+  type PageTransitionConfig,
+  type PageTransitionReason,
+} from './lib/page-transition';
 import { resolveProjectLandingPage } from './lib/project-navigation';
 import { createBlankScriptProjectState } from './lib/script-project';
 import { Editor } from './pages/Editor';
@@ -57,6 +61,37 @@ const APP_FONT_STACK =
   '"SF Pro Text", "SF Pro Display", "PingFang SC", -apple-system, BlinkMacSystemFont, sans-serif';
 const APP_LOADING_BACKGROUND = 'var(--color-window-bg)';
 const APP_WINDOW_BACKGROUND = 'var(--color-window-bg)';
+
+function PageTransitionFrame({
+  children,
+  pageTransition,
+}: {
+  children: ReactNode;
+  pageTransition: PageTransitionConfig;
+}) {
+  const isPresent = useIsPresent();
+
+  return (
+    <m.div
+      key={pageTransition.contentKey}
+      initial={pageTransition.initial}
+      animate={pageTransition.animate}
+      exit={pageTransition.exit}
+      transition={pageTransition.transition}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        height: '100%',
+        minHeight: 0,
+        overflow: 'hidden',
+        pointerEvents: isPresent ? 'auto' : 'none',
+        zIndex: isPresent ? 1 : 0,
+      }}
+    >
+      {children}
+    </m.div>
+  );
+}
 
 export default function App() {
   const viewport = useViewportSize();
@@ -1204,14 +1239,10 @@ export default function App() {
           <AppErrorBoundary onReset={() => resetToSetup()}>
           {/* LayoutGroup 让 setup → editor 的 layoutId 共享元素(Hero ② audio thumb)能跨 AnimatePresence morph */}
           <LayoutGroup id="page-shared-elements">
-          <AnimatePresence mode="wait" initial={false}>
-            <m.div
+          <AnimatePresence initial={false}>
+            <PageTransitionFrame
               key={pageTransition.contentKey}
-              initial={pageTransition.initial}
-              animate={pageTransition.animate}
-              exit={pageTransition.exit}
-              transition={pageTransition.transition}
-              style={{ height: '100%', minHeight: 0 }}
+              pageTransition={pageTransition}
             >
               {page === 'welcome' || page === 'setup' ? (
                 <Setup
@@ -1258,7 +1289,7 @@ export default function App() {
                   </div>
                 </>
               )}
-            </m.div>
+            </PageTransitionFrame>
           </AnimatePresence>
           </LayoutGroup>
           </AppErrorBoundary>
